@@ -65,7 +65,7 @@ export async function POST(
       console.log(`Generating regular season schedule for league: ${league.name}`);
 
       // Get team IDs
-      let teamIds = league.fantasyTeams.map((team) => team.id);
+      let teamIds = league.fantasyTeams.map((team: { id: string }) => team.id);
 
       // Optionally shuffle teams for randomness
       if (shuffle) {
@@ -139,7 +139,7 @@ export async function POST(
       });
 
       // Calculate wins for each team
-      const standings = teams.map((team) => {
+      const standings = teams.map((team: { id: string; displayName: string; homeMatchups: { homeScore: number | null; awayScore: number | null }[]; awayMatchups: { homeScore: number | null; awayScore: number | null }[] }) => {
         let wins = 0;
         let losses = 0;
         let pointsFor = 0;
@@ -182,13 +182,13 @@ export async function POST(
       });
 
       // Sort by wins (descending), then by points for (descending)
-      standings.sort((a, b) => {
+      standings.sort((a: { wins: number; pointsFor: number }, b: { wins: number; pointsFor: number }) => {
         if (b.wins !== a.wins) return b.wins - a.wins;
         return b.pointsFor - a.pointsFor;
       });
 
       // Get top 8 teams
-      const top8TeamIds = standings.slice(0, 8).map((team) => team.id);
+      const top8TeamIds = standings.slice(0, 8).map((team: { id: string }) => team.id);
 
       if (top8TeamIds.length < 8) {
         return NextResponse.json(
