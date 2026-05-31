@@ -3,6 +3,29 @@
 import { useState, useEffect } from "react";
 import { TEAMS, getTeamById } from "@/lib/teams";
 
+interface ImportedTeam {
+  teamId: string;
+  name: string;
+  goals: number;
+  wins: number;
+  isManualOverride: boolean;
+}
+
+interface ImportResult {
+  imported: number;
+  skipped: number;
+  manualOverrides: number;
+  matchesFound: number;
+  errors: string[];
+  teams: ImportedTeam[];
+}
+
+interface ScoreResult {
+  slotsScored: number;
+  matchupsUpdated: number;
+  teamsWithNoStats: string[];
+}
+
 interface ManualOverride {
   id: string;
   teamId: string;
@@ -20,6 +43,19 @@ interface ManualOverride {
 }
 
 export default function ManualStatsPage() {
+  // Sprocket import state
+  const [importWeek, setImportWeek] = useState(1);
+  const [importSeason, setImportSeason] = useState(20);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Score calculation state
+  const [calcWeek, setCalcWeek] = useState(1);
+  const [calculating, setCalculating] = useState(false);
+  const [calcResult, setCalcResult] = useState<ScoreResult | null>(null);
+  const [calcError, setCalcError] = useState<string | null>(null);
+
   // Manual stats override state
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualOverrides, setManualOverrides] = useState<ManualOverride[]>([]);
@@ -101,6 +137,46 @@ export default function ManualStatsPage() {
     }
   };
 
+  const runSprocketImport = async () => {
+    setImporting(true);
+    setImportResult(null);
+    setImportError(null);
+    try {
+      const res = await fetch("/api/admin/stats/import-sprocket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week: importWeek, season: importSeason }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Import failed");
+      setImportResult(data);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const runCalculateScores = async () => {
+    setCalculating(true);
+    setCalcResult(null);
+    setCalcError(null);
+    try {
+      const res = await fetch("/api/admin/stats/calculate-scores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week: calcWeek }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Calculation failed");
+      setCalcResult(data);
+    } catch (err) {
+      setCalcError(err instanceof Error ? err.message : "Calculation failed");
+    } finally {
+      setCalculating(false);
+    }
+  };
+
   const deleteManualOverride = async (id: string) => {
     if (!confirm("Are you sure you want to delete this manual override? The dataset data will be used instead.")) {
       return;
@@ -123,9 +199,170 @@ export default function ManualStatsPage() {
     }
   };
 
+  const selectStyle = {
+    padding: "0.75rem",
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    borderRadius: "6px",
+    color: "var(--text-main)",
+    fontSize: "0.9rem",
+    width: "100%",
+  };
+
   return (
     <div>
-      {/* Manual Stats Override Section */}
+      {/* Step 1: Import from Sprocket */}
+      <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
+          Step 1 — Import Stats from Sprocket
+        </h2>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
+          Fetches match results and player stats from the Sprocket public dataset and writes to TeamWeeklyStats.
+          Manual overrides take precedence over Sprocket data for any team that has one.
+        </p>
+
+        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+          <div>
+            <label style={{ display: "block", marginBottom: "0.4rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Season</label>
+            <select value={importSeason} onChange={(e) => setImportSeason(parseInt(e.target.value))} style={{ ...selectStyle, width: "120px" }}>
+              {[19, 20, 21].map((s) => <option key={s} value={s}>S{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: "block", marginBottom: "0.4rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Week</label>
+            <select value={importWeek} onChange={(e) => setImportWeek(parseInt(e.target.value))} style={{ ...selectStyle, width: "120px" }}>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((w) => (
+                <option key={w} value={w}>Week {w}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={runSprocketImport}
+            disabled={importing}
+            style={{ padding: "0.75rem 2rem", fontWeight: 700 }}
+          >
+            {importing ? "Importing..." : "Import Stats"}
+          </button>
+        </div>
+
+        {importError && (
+          <div style={{ padding: "1rem", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "8px", color: "#f87171", marginBottom: "1rem" }}>
+            {importError}
+          </div>
+        )}
+
+        {importResult && (
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "1.25rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+              {[
+                { label: "Matches Found", value: importResult.matchesFound },
+                { label: "Teams Imported", value: importResult.imported, color: "#22c55e" },
+                { label: "Manual Overrides", value: importResult.manualOverrides, color: "var(--accent)" },
+                { label: "Skipped", value: importResult.skipped, color: importResult.skipped > 0 ? "#f87171" : undefined },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {importResult.errors.length > 0 && (
+              <div style={{ marginBottom: "1rem" }}>
+                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#f87171", marginBottom: "0.5rem" }}>Errors ({importResult.errors.length})</div>
+                {importResult.errors.map((e, i) => (
+                  <div key={i} style={{ fontSize: "0.8rem", color: "#f87171", padding: "0.25rem 0" }}>{e}</div>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+                Imported Teams ({importResult.teams.length})
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.5rem" }}>
+                {importResult.teams.map((t) => (
+                  <div key={t.teamId} style={{
+                    padding: "0.5rem 0.75rem",
+                    background: "rgba(255,255,255,0.05)",
+                    borderRadius: "6px",
+                    fontSize: "0.8rem",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    borderLeft: t.isManualOverride ? "3px solid var(--accent)" : "3px solid transparent",
+                  }}>
+                    <span>{t.name}</span>
+                    <span style={{ color: "var(--text-muted)" }}>{t.goals}G / {t.wins}W</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Step 2: Calculate Scores */}
+      <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
+          Step 2 — Calculate Fantasy Scores
+        </h2>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
+          Applies scoring rules to TeamWeeklyStats, updates RosterSlot fantasy points, and calculates
+          Matchup scores. Run this after importing stats. Bench slots score but don{"'"}t count toward matchup totals.
+        </p>
+
+        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", marginBottom: "1.5rem" }}>
+          <div>
+            <label style={{ display: "block", marginBottom: "0.4rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Week</label>
+            <select value={calcWeek} onChange={(e) => setCalcWeek(parseInt(e.target.value))} style={{ ...selectStyle, width: "120px" }}>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((w) => (
+                <option key={w} value={w}>Week {w}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={runCalculateScores}
+            disabled={calculating}
+            style={{ padding: "0.75rem 2rem", fontWeight: 700 }}
+          >
+            {calculating ? "Calculating..." : "Calculate Scores"}
+          </button>
+        </div>
+
+        {calcError && (
+          <div style={{ padding: "1rem", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "8px", color: "#f87171" }}>
+            {calcError}
+          </div>
+        )}
+
+        {calcResult && (
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "1.25rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "1rem", marginBottom: calcResult.teamsWithNoStats.length > 0 ? "1rem" : 0 }}>
+              {[
+                { label: "Slots Scored", value: calcResult.slotsScored, color: "#22c55e" },
+                { label: "Matchups Updated", value: calcResult.matchupsUpdated, color: "#22c55e" },
+                { label: "Teams Missing Stats", value: calcResult.teamsWithNoStats.length, color: calcResult.teamsWithNoStats.length > 0 ? "#f87171" : undefined },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            {calcResult.teamsWithNoStats.length > 0 && (
+              <div>
+                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#f87171", marginBottom: "0.5rem" }}>Teams with no stats (scores left blank)</div>
+                <div style={{ fontSize: "0.8rem", color: "#f87171" }}>{calcResult.teamsWithNoStats.join(", ")}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Step 3: Manual Stats Override Section */}
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
           <h2
@@ -135,7 +372,7 @@ export default function ManualStatsPage() {
               color: "var(--accent)",
             }}
           >
-            Manual Stats Overrides
+            Step 3 (Optional) — Manual Stats Overrides
           </h2>
           <button
             className="btn btn-primary"
