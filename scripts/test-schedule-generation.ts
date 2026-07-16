@@ -55,7 +55,7 @@ async function main() {
 
   // Generate schedule
   console.log("\nGenerating regular season schedule (weeks 1-8)...\n");
-  const matchups = generateRegularSeasonSchedule(shuffledTeamIds);
+  const matchups = generateRegularSeasonSchedule(shuffledTeamIds, league.maxTeams);
 
   // Group by week
   const matchupsByWeek = new Map<number, typeof matchups>();

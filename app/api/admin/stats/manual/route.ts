@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
     const {
       teamId,
       week,
+      gamemode,
       goals,
       shots,
       saves,
@@ -56,9 +57,9 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!teamId || !week) {
+    if (!teamId || !week || !gamemode) {
       return NextResponse.json(
-        { error: "teamId and week are required" },
+        { error: "teamId, week, and gamemode ('2s' or '3s') are required" },
         { status: 400 }
       );
     }
@@ -74,9 +75,10 @@ export async function POST(request: NextRequest) {
     // Upsert the manual override (create or update if exists)
     const override = await prisma.manualStatsOverride.upsert({
       where: {
-        teamId_week: {
+        teamId_week_gamemode: {
           teamId,
           week: parseInt(week),
+          gamemode,
         },
       },
       update: {
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
       create: {
         teamId,
         week: parseInt(week),
+        gamemode,
         goals: parseInt(goals),
         shots: parseInt(shots),
         saves: parseInt(saves),

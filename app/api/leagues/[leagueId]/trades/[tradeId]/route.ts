@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { tradeVetoDeadline } from "@/lib/tradeExecution";
+import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 
 /**
  * PATCH /api/leagues/[leagueId]/trades/[tradeId]
@@ -15,6 +17,17 @@ export async function PATCH(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { status: true },
+    });
+    if (user?.status === "suspended") {
+      return NextResponse.json(
+        { error: "Suspended users cannot respond to trades" },
+        { status: 403 }
+      );
     }
 
     const { leagueId, tradeId } = await params;
@@ -79,100 +92,56 @@ export async function PATCH(
       });
     }
 
-    // Action is "accept" - execute the trade
-    // This requires swapping teams between rosters
-    const result = await prisma.$transaction(async (tx) => {
-      // Get current week from league
-      const league = await tx.fantasyLeague.findUnique({
-        where: { id: leagueId },
-        select: { currentWeek: true },
-      });
+    const league = await prisma.fantasyLeague.findUnique({
+      where: { id: leagueId },
+      select: { currentWeek: true, draftStatus: true },
+    });
+    if (league?.draftStatus !== "completed") {
+      return NextResponse.json(
+        { error: "Trades are not allowed until the draft is complete" },
+        { status: 403 }
+      );
+    }
 
-      if (!league) {
-        throw new Error("League not found");
+    // Neither side's offered teams can be locked at accept time either —
+    // lock state may have changed since the trade was proposed.
+    const currentWeek = league?.currentWeek ?? 1;
+
+    for (const mleTeamId of trade.proposerGives) {
+      const lockedSlot = await findLockedSlotForTeam(trade.proposerTeamId, currentWeek, mleTeamId);
+      if (lockedSlot) {
+        return NextResponse.json(
+          { error: lockedTeamErrorMessage(lockedSlot.mleTeam) },
+          { status: 400 }
+        );
       }
-
-      const currentWeek = league.currentWeek;
-
-      // Get roster slots for both teams
-      const proposerSlots = await tx.rosterSlot.findMany({
-        where: {
-          fantasyTeamId: trade.proposerTeamId,
-          mleTeamId: {
-            in: trade.proposerGives as string[],
-          },
-          week: currentWeek,
-        },
-      });
-
-      const receiverSlots = await tx.rosterSlot.findMany({
-        where: {
-          fantasyTeamId: trade.receiverTeamId,
-          mleTeamId: {
-            in: trade.receiverGives as string[],
-          },
-          week: currentWeek,
-        },
-      });
-
-      // Swap the teams
-      // Update proposer's slots to point to receiver's team
-      for (const slot of proposerSlots) {
-        await tx.rosterSlot.update({
-          where: { id: slot.id },
-          data: { fantasyTeamId: trade.receiverTeamId },
-        });
+    }
+    for (const mleTeamId of trade.receiverGives) {
+      const lockedSlot = await findLockedSlotForTeam(trade.receiverTeamId, currentWeek, mleTeamId);
+      if (lockedSlot) {
+        return NextResponse.json(
+          { error: lockedTeamErrorMessage(lockedSlot.mleTeam) },
+          { status: 400 }
+        );
       }
+    }
 
-      // Update receiver's slots to point to proposer's team
-      for (const slot of receiverSlots) {
-        await tx.rosterSlot.update({
-          where: { id: slot.id },
-          data: { fantasyTeamId: trade.proposerTeamId },
-        });
-      }
-
-      // Update trade status
-      const updatedTrade = await tx.trade.update({
-        where: { id: tradeId },
-        data: {
-          status: "accepted",
-        },
-      });
-
-      // Create transaction records
-      await tx.transaction.create({
-        data: {
-          fantasyLeagueId: leagueId,
-          fantasyTeamId: trade.proposerTeamId,
-          userId: trade.proposerUserId,
-          type: "trade",
-          addTeamId: (trade.receiverGives as string[])[0] || null, // Simplified
-          dropTeamId: (trade.proposerGives as string[])[0] || null, // Simplified
-          status: "approved",
-          processedAt: new Date(),
-        },
-      });
-
-      await tx.transaction.create({
-        data: {
-          fantasyLeagueId: leagueId,
-          fantasyTeamId: trade.receiverTeamId,
-          userId: trade.receiverUserId,
-          type: "trade",
-          addTeamId: (trade.proposerGives as string[])[0] || null, // Simplified
-          dropTeamId: (trade.receiverGives as string[])[0] || null, // Simplified
-          status: "approved",
-          processedAt: new Date(),
-        },
-      });
-
-      return updatedTrade;
+    // Action is "accept" - don't execute yet. Trades auto-process 12 hours
+    // after acceptance unless an admin vetoes them in that window (see
+    // lib/tradeExecution.ts).
+    const acceptedAt = new Date();
+    const updatedTrade = await prisma.trade.update({
+      where: { id: tradeId },
+      data: {
+        status: "awaiting_veto",
+        acceptedAt,
+      },
     });
 
     return NextResponse.json({
       success: true,
-      trade: result,
+      trade: updatedTrade,
+      vetoDeadline: tradeVetoDeadline(acceptedAt),
     });
   } catch (error) {
     console.error("Error updating trade:", error);

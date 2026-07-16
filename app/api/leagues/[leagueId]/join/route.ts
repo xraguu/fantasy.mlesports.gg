@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyTeamId } from "@/lib/id-generator";
+import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
 
 // POST /api/leagues/[leagueId]/join - Join a fantasy league
 export async function POST(
@@ -47,9 +48,9 @@ export async function POST(
       );
     }
 
-    if (shortCode.length !== 3) {
+    if (shortCode.length < 1 || shortCode.length > 3) {
       return NextResponse.json(
-        { error: "Short code must be exactly 3 characters" },
+        { error: "Short code must be 1-3 characters" },
         { status: 400 }
       );
     }
@@ -124,6 +125,15 @@ export async function POST(
         league: true,
       },
     });
+
+    // Auto-generate the regular season schedule the moment the league fills up
+    if (league.fantasyTeams.length + 1 === league.maxTeams) {
+      try {
+        await generateAndSaveRegularSeason(leagueId);
+      } catch (scheduleError) {
+        console.error("Error auto-generating schedule after league filled:", scheduleError);
+      }
+    }
 
     return NextResponse.json({ fantasyTeam }, { status: 201 });
   } catch (error) {

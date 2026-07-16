@@ -1,31 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { runDraftAutopickSweep } from "@/lib/draftAutopick";
+import { getTeamHistoricalStats, getAvailableHistoricalSeasons, HistoricalLens } from "@/lib/teamHistoricalStats";
+import { generateDraftPickOrder } from "@/lib/draftPickOrder";
 
 /**
  * GET /api/leagues/[leagueId]/draft
  * Returns the current draft state including:
- * - All draft picks (completed and upcoming)
+ * - All draft picks (completed and upcoming), with full MLE team info for
+ *   picked ones
  * - Current pick information
  * - Draft settings (timer, status)
- * - All fantasy team rosters
+ * - All fantasy team rosters, draft queues, and autodraft flags
+ * - Available MLE teams with real last-season stats (?mode=2s|3s|combined)
  */
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ leagueId: string }> }
 ) {
   try {
-    console.log("[Draft API] Starting draft state fetch");
     const session = await auth();
     if (!session?.user?.id) {
-      console.log("[Draft API] Unauthorized - no session");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { leagueId } = await params;
-    console.log("[Draft API] Fetching draft for league:", leagueId);
+    const { searchParams } = new URL(req.url);
+    const mode = (searchParams.get("mode") as HistoricalLens) || "combined";
 
-    // Get the fantasy league
+    await runDraftAutopickSweep(leagueId);
+
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
       include: {
@@ -57,54 +62,100 @@ export async function GET(
       );
     }
 
-    // Find current pick (first unpicked)
-    const currentPick = league.draftPicks.find((pick) => !pick.pickedAt);
+    // Before the draft is initialized, no real DraftPick rows exist yet — the
+    // draft room still shows the full recent-picks ticker and grid, just as
+    // it will look once the draft is live, by previewing the pick order that
+    // initialize-draft would create (same shared algorithm, nothing
+    // persisted here).
+    let picksSource = league.draftPicks;
+    const isPreview = picksSource.length === 0 && league.fantasyTeams.length > 0;
+    if (isPreview) {
+      const rosterConfig = league.rosterConfig as any;
+      const numRounds =
+        (rosterConfig["2s"] || 0) +
+        (rosterConfig["3s"] || 0) +
+        (rosterConfig["flx"] || 0) +
+        (rosterConfig["be"] || 0);
+      picksSource = generateDraftPickOrder(league.fantasyTeams, league.draftType, numRounds).map(
+        (entry) => ({
+          id: `preview-${entry.overallPick}`,
+          fantasyLeagueId: league.id,
+          round: entry.round,
+          pickNumber: entry.pickNumber,
+          overallPick: entry.overallPick,
+          fantasyTeamId: entry.fantasyTeamId,
+          mleTeamId: null,
+          pickedAt: null,
+        })
+      );
+    }
 
-    // Get available MLE teams (not drafted yet)
-    const draftedTeamIds = league.draftPicks
+    // No pick is actually "on the clock" until the draft is really running —
+    // in preview mode every slot renders as upcoming rather than falsely
+    // highlighting pick #1 as current.
+    const currentPick = isPreview ? undefined : picksSource.find((pick) => !pick.pickedAt);
+
+    const draftedTeamIds = picksSource
       .filter((pick) => pick.mleTeamId)
       .map((pick) => pick.mleTeamId as string);
 
-    const availableTeams = await prisma.mLETeam.findMany({
-      where: {
-        id: {
-          notIn: draftedTeamIds,
-        },
-      },
-      include: {
-        league: true,
-        weeklyStats: {
-          orderBy: {
-            week: "desc",
-          },
-          take: 1,
-        },
-      },
-      orderBy: {
-        id: "asc",
-      },
+    // Every MLE team ID this response needs full details for: picked teams
+    // (for the grid/recent-picks) and every team's own draft queue entries.
+    const queueTeamIds = league.fantasyTeams.flatMap((t) => t.draftQueue);
+    const allNeededIds = [...new Set([...draftedTeamIds, ...queueTeamIds])];
+    const neededTeams = await prisma.mLETeam.findMany({
+      where: { id: { in: allNeededIds } },
+    });
+    const teamById = new Map(neededTeams.map((t) => [t.id, t]));
+
+    const toTeamSummary = (t: (typeof neededTeams)[number]) => ({
+      id: t.id,
+      name: t.name,
+      leagueId: t.leagueId,
+      slug: t.slug,
+      logoPath: t.logoPath,
+      primaryColor: t.primaryColor,
+      secondaryColor: t.secondaryColor,
     });
 
-    // Get draft metadata from league (stored as JSON or separate table)
-    // For now, we'll use a simple approach with league fields
-    // Note: These custom fields need to be added to the Prisma schema
-    const leagueAny = league as any;
+    const availableTeams = await prisma.mLETeam.findMany({
+      where: { id: { notIn: draftedTeamIds } },
+      orderBy: { id: "asc" },
+    });
+
+    // Real last-season team stats, keyed off the admin's configured
+    // "Current Season" (falls back to the most recent season on file so
+    // this isn't broken before an admin sets one).
+    const settings = await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
+    let statsSeason = settings?.draftStatsSeason ?? null;
+    if (!statsSeason) {
+      const seasons = await getAvailableHistoricalSeasons();
+      statsSeason = seasons[0] ?? null;
+    }
+    const historicalStats = statsSeason
+      ? await getTeamHistoricalStats(statsSeason, mode)
+      : new Map();
+
     const draftState = {
       leagueId: league.id,
       leagueName: league.name,
       draftType: league.draftType,
-      status: leagueAny.draftStatus || "not_started", // "not_started" | "in_progress" | "paused" | "completed"
+      status: league.draftStatus || "not_started",
       currentPickNumber: currentPick?.overallPick || null,
-      currentPickDeadline: leagueAny.draftPickDeadline || null, // ISO timestamp
-      pickTimeSeconds: leagueAny.draftPickTimeSeconds || 90, // configurable per league
+      currentPickDeadline: league.draftPickDeadline || null,
+      pickTimeSeconds: league.draftPickTimeSeconds || 90,
+      statsSeason,
 
-      picks: league.draftPicks.map((pick) => ({
+      picks: picksSource.map((pick) => ({
         id: pick.id,
         round: pick.round,
         pickNumber: pick.pickNumber,
         overallPick: pick.overallPick,
         fantasyTeamId: pick.fantasyTeamId,
         mleTeamId: pick.mleTeamId,
+        mleTeam: pick.mleTeamId && teamById.has(pick.mleTeamId)
+          ? toTeamSummary(teamById.get(pick.mleTeamId)!)
+          : null,
         pickedAt: pick.pickedAt,
       })),
 
@@ -116,44 +167,50 @@ export async function GET(
         ownerUserId: team.ownerUserId,
         ownerDisplayName: team.owner.displayName,
         ownerDiscordId: team.owner.discordId,
+        autodraftEnabled: team.autodraftEnabled,
+        draftQueue: team.draftQueue
+          .map((id) => teamById.get(id))
+          .filter((t): t is NonNullable<typeof t> => !!t)
+          .map(toTeamSummary),
         roster: team.roster.map((slot) => ({
           week: slot.week,
           position: slot.position,
           slotIndex: slot.slotIndex,
           mleTeamId: slot.mleTeamId,
-          mleTeam: slot.mleTeam
-            ? {
-                id: slot.mleTeam.id,
-                name: slot.mleTeam.name,
-                leagueId: slot.mleTeam.leagueId,
-                logoPath: slot.mleTeam.logoPath,
-              }
-            : null,
+          mleTeam: slot.mleTeam ? toTeamSummary(slot.mleTeam) : null,
         })),
       })),
 
-      availableTeams: availableTeams.map((team) => ({
-        id: team.id,
-        name: team.name,
-        leagueId: team.leagueId,
-        slug: team.slug,
-        logoPath: team.logoPath,
-        primaryColor: team.primaryColor,
-        secondaryColor: team.secondaryColor,
-        // Include latest stats if available
-        latestStats: (team as any).weeklyStats?.[0] || null,
-      })),
+      availableTeams: availableTeams.map((team) => {
+        const stats = historicalStats.get(team.id);
+        return {
+          ...toTeamSummary(team),
+          stats: stats
+            ? {
+                fpts: stats.fpts,
+                avg: stats.avg,
+                goals: stats.goals,
+                shots: stats.shots,
+                saves: stats.saves,
+                assists: stats.assists,
+                demosInflicted: stats.demosInflicted,
+                demosTaken: stats.demosTaken,
+                gamesPlayed: stats.gamesPlayed,
+                sprocketRating: stats.sprocketRating,
+                record: stats.record,
+              }
+            : null,
+        };
+      }),
     };
 
-    console.log("[Draft API] Successfully fetched draft state");
     return NextResponse.json(draftState);
   } catch (error) {
     console.error("[Draft API] Error fetching draft state:", error);
-    console.error("[Draft API] Error stack:", error instanceof Error ? error.stack : "No stack trace");
     return NextResponse.json(
       {
         error: "Failed to fetch draft state",
-        details: error instanceof Error ? error.message : String(error)
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );

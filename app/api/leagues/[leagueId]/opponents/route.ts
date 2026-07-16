@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTeamSeasonStats, GamemodeLens, lensForPosition, getWithinLeagueStandings } from "@/lib/teamSeasonStats";
+import { getFantasyStandings, formatPlacement } from "@/lib/standings";
+import { runAutoLockSweep } from "@/lib/autoLock";
 
 /**
  * GET /api/leagues/[leagueId]/opponents
@@ -18,6 +21,8 @@ export async function GET(
     }
 
     const { leagueId } = await params;
+    await runAutoLockSweep(leagueId);
+
     const url = new URL(req.url);
     const week = parseInt(url.searchParams.get("week") || "1");
 
@@ -37,12 +42,13 @@ export async function GET(
     }
 
     // Parse roster config to know how many slots each position has
+    // (position values are lowercase everywhere in this app: "2s"/"3s"/"flx"/"be")
     const rosterConfig = league.rosterConfig as any;
     const expectedSlots = [
       ...Array(rosterConfig["2s"] || 0).fill("2s"),
       ...Array(rosterConfig["3s"] || 0).fill("3s"),
-      ...Array(rosterConfig.flx || 0).fill("FLX"),
-      ...Array(rosterConfig.be || 0).fill("BE"),
+      ...Array(rosterConfig.flx || 0).fill("flx"),
+      ...Array(rosterConfig.be || 0).fill("be"),
     ];
 
     // Get all fantasy teams in the league (excluding current user's team)
@@ -67,253 +73,228 @@ export async function GET(
       },
     });
 
+    // Fetch every opponent's roster for this week up front, so the maps below
+    // can be built once instead of per-team.
+    const rosterSlotsByTeam = new Map(
+      await Promise.all(
+        allTeams.map(async (team) => {
+          const slots = await prisma.rosterSlot.findMany({
+            where: { fantasyTeamId: team.id, week },
+            include: { mleTeam: true },
+            orderBy: [{ position: "asc" }, { slotIndex: "asc" }],
+          });
+          return [team.id, slots] as const;
+        })
+      )
+    );
+
+    const allRosteredMleTeamIds = [
+      ...new Set([...rosterSlotsByTeam.values()].flat().map((s) => s.mleTeamId)),
+    ];
+
+    // Real MLE opponent this week for every rostered team, via the Match
+    // schedule + week date range (batched in one query for the whole page).
+    const settings = await prisma.seasonSettings.findFirst({
+      orderBy: { season: "desc" },
+    });
+    const weekDates =
+      (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
+    const weekConfig = weekDates.find((w) => w.week === week);
+
+    const opponentByMleTeamId = new Map<string, { id: string; name: string; leagueId: string; slug: string; logoPath: string; primaryColor: string; secondaryColor: string }>();
+    if (weekConfig?.startDate && weekConfig?.endDate && allRosteredMleTeamIds.length > 0) {
+      const start = new Date(weekConfig.startDate);
+      const end = new Date(weekConfig.endDate);
+      end.setHours(23, 59, 59, 999);
+
+      const matches = await prisma.match.findMany({
+        where: {
+          scheduledDate: { gte: start, lte: end },
+          OR: [
+            { homeTeamId: { in: allRosteredMleTeamIds } },
+            { awayTeamId: { in: allRosteredMleTeamIds } },
+          ],
+        },
+        include: { homeTeam: true, awayTeam: true },
+      });
+
+      for (const match of matches) {
+        if (allRosteredMleTeamIds.includes(match.homeTeamId) && !opponentByMleTeamId.has(match.homeTeamId)) {
+          opponentByMleTeamId.set(match.homeTeamId, match.awayTeam);
+        }
+        if (allRosteredMleTeamIds.includes(match.awayTeamId) && !opponentByMleTeamId.has(match.awayTeamId)) {
+          opponentByMleTeamId.set(match.awayTeamId, match.homeTeam);
+        }
+      }
+    }
+
+    // Fprk/Oprk: rank every MLE team by cumulative fpts through this week,
+    // once per lens (2s/3s/bestball) for the whole page — not per slot.
+    const allMleTeams = await prisma.mLETeam.findMany({ select: { id: true } });
+    const allMleTeamIds = allMleTeams.map((t) => t.id);
+
+    const rankByLens = new Map<GamemodeLens, Map<string, number>>();
+    const statsByLens = new Map<GamemodeLens, Awaited<ReturnType<typeof getTeamSeasonStats>>>();
+    const standingsByLens = new Map<GamemodeLens, Awaited<ReturnType<typeof getWithinLeagueStandings>>>();
+    for (const lens of ["2s", "3s", "bestball"] as GamemodeLens[]) {
+      const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: week, lens });
+      statsByLens.set(lens, stats);
+      const sorted = [...stats.entries()].sort((a, b) => b[1].fpts - a[1].fpts);
+      const rank = new Map<string, number>();
+      sorted.forEach(([id], idx) => rank.set(id, idx + 1));
+      rankByLens.set(lens, rank);
+      standingsByLens.set(lens, await getWithinLeagueStandings(week, lens));
+    }
+
+    // All matchups in the league, fetched once and reused for every team's
+    // last/current matchup lookup (previously refetched per-team, identical each time).
+    const allLeagueMatchups = await prisma.matchup.findMany({
+      where: { fantasyLeagueId: leagueId },
+      include: {
+        homeTeam: { select: { id: true, displayName: true } },
+        awayTeam: { select: { id: true, displayName: true } },
+      },
+    });
+
+    // Shared win/loss/points/rank source (honors double-win if enabled)
+    const fantasyStandings = await getFantasyStandings(leagueId);
+    const standingByTeamId = new Map(fantasyStandings.map((s) => [s.teamId, s]));
+
     // For each team, get their roster and calculate stats
-    const opponents = await Promise.all(
-      allTeams.map(async (team) => {
-        // Get roster for the specified week
-        const rosterSlots = await prisma.rosterSlot.findMany({
-          where: {
-            fantasyTeamId: team.id,
-            week,
-          },
-          include: {
-            mleTeam: {
-              include: {
-                weeklyStats: {
-                  where: { week },
-                  take: 1,
-                },
-              },
-            },
-          },
-          orderBy: [{ position: "asc" }, { slotIndex: "asc" }],
-        });
+    const opponents = allTeams.map((team) => {
+      const rosterSlots = rosterSlotsByTeam.get(team.id) ?? [];
+      const matchups = allLeagueMatchups.filter(
+        (m) => m.homeTeamId === team.id || m.awayTeamId === team.id
+      );
 
-        // Get all matchups for this team to calculate record
-        const matchups = await prisma.matchup.findMany({
-          where: {
-            fantasyLeagueId: leagueId,
-            OR: [
-              { homeTeamId: team.id },
-              { awayTeamId: team.id },
-            ],
-          },
-          include: {
-            homeTeam: {
-              select: {
-                id: true,
-                displayName: true,
-              },
-            },
-            awayTeam: {
-              select: {
-                id: true,
-                displayName: true,
-              },
-            },
-          },
-        });
+      const base = standingByTeamId.get(team.id);
+      const wins = base?.wins ?? 0;
+      const losses = base?.losses ?? 0;
+      const totalPoints = base?.pointsFor ?? 0;
 
-        // Calculate wins, losses, total points
-        let wins = 0;
-        let losses = 0;
-        let totalPoints = 0;
+      const actualGamesPlayed = matchups.filter(
+        (m) => m.homeScore !== null && m.awayScore !== null
+      ).length;
+      const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
-        matchups.forEach((matchup) => {
-          if (!matchup.homeScore || !matchup.awayScore) return;
+      const place = base?.rank ?? 0;
 
-          const isHome = matchup.homeTeamId === team.id;
-          const myScore = isHome ? matchup.homeScore : matchup.awayScore;
-          const oppScore = isHome ? matchup.awayScore : matchup.homeScore;
+      // Get last and current matchup
+      const sortedMatchups = matchups
+        .filter((m) => m.homeScore !== null && m.awayScore !== null)
+        .sort((a, b) => a.week - b.week);
 
-          totalPoints += myScore;
+      const lastMatchup = sortedMatchups[sortedMatchups.length - 2];
+      const currentMatchup = sortedMatchups[sortedMatchups.length - 1];
 
-          if (myScore > oppScore) {
-            wins++;
-          } else if (myScore < oppScore) {
-            losses++;
-          }
-        });
+      // Create a map of filled roster slots by position
+      const filledSlots = new Map<string, (typeof rosterSlots)[0]>();
+      rosterSlots.forEach((slot) => {
+        filledSlots.set(`${slot.position}-${slot.slotIndex}`, slot);
+      });
 
-        const gamesPlayed = wins + losses;
-        const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
+      // Build roster array with all expected slots (including empty ones)
+      let seenCounts: Record<string, number> = {};
+      const roster = expectedSlots.map((slotName) => {
+        const slotIndex = seenCounts[slotName] ?? 0;
+        seenCounts[slotName] = slotIndex + 1;
 
-        // Calculate standings place (simplified - just sort by wins)
-        const allTeamsWithRecords = await prisma.matchup.findMany({
-          where: { fantasyLeagueId: leagueId },
-          select: {
-            homeTeamId: true,
-            awayTeamId: true,
-            homeScore: true,
-            awayScore: true,
-          },
-        });
+        const slot = filledSlots.get(`${slotName}-${slotIndex}`);
 
-        // Group by team and calculate wins
-        const teamWins = new Map<string, number>();
-        allTeamsWithRecords.forEach((m) => {
-          if (!m.homeScore || !m.awayScore) return;
+        if (!slot) {
+          return {
+            slot: slotName,
+            name: "",
+            score: 0,
+            opponent: "",
+            opponentTeam: null,
+            opponentStanding: null,
+            oprk: 0,
+            fprk: 0,
+            fpts: 0,
+            avg: 0,
+            last: 0,
+            goals: 0,
+            shots: 0,
+            saves: 0,
+            assists: 0,
+            demos: 0,
+            teamRecord: "",
+            opponentGameRecord: "",
+            opponentFantasyRank: 0,
+          };
+        }
 
-          const homeWins = teamWins.get(m.homeTeamId) || 0;
-          const awayWins = teamWins.get(m.awayTeamId) || 0;
+        const lens = lensForPosition(slot.position);
+        const s = statsByLens.get(lens)!.get(slot.mleTeamId);
+        const fprk = rankByLens.get(lens)!.get(slot.mleTeamId) ?? 0;
+        const oppTeam = opponentByMleTeamId.get(slot.mleTeamId);
+        const oprk = oppTeam ? rankByLens.get(lens)!.get(oppTeam.id) ?? 0 : 0;
+        const oppStats = oppTeam ? statsByLens.get(lens)!.get(oppTeam.id) : undefined;
 
-          if (m.homeScore > m.awayScore) {
-            teamWins.set(m.homeTeamId, homeWins + 1);
-          } else if (m.awayScore > m.homeScore) {
-            teamWins.set(m.awayTeamId, awayWins + 1);
-          }
-        });
-
-        // Sort teams by wins and find place
-        const sortedTeams = Array.from(teamWins.entries())
-          .sort((a, b) => b[1] - a[1]);
-        const place = sortedTeams.findIndex(([teamId]) => teamId === team.id) + 1;
-
-        // Get last and current matchup
-        const sortedMatchups = matchups
-          .filter(m => m.homeScore !== null && m.awayScore !== null)
-          .sort((a, b) => a.week - b.week);
-
-        const lastMatchup = sortedMatchups[sortedMatchups.length - 2];
-        const currentMatchup = sortedMatchups[sortedMatchups.length - 1];
-
-        // Create a map of filled roster slots by position
-        const filledSlots = new Map<string, typeof rosterSlots[0]>();
-        rosterSlots.forEach(slot => {
-          const key = `${slot.position}-${slot.slotIndex}`;
-          filledSlots.set(key, slot);
-        });
-
-        // Build roster array with all expected slots (including empty ones)
-        const roster = await Promise.all(
-          expectedSlots.map(async (slotName, index) => {
-            // Determine position and slotIndex based on slot name
-            let position = "";
-            let slotIndex = 0;
-
-            if (slotName === "2s") {
-              position = "2s";
-              slotIndex = expectedSlots.slice(0, index).filter(s => s === "2s").length;
-            } else if (slotName === "3s") {
-              position = "3s";
-              slotIndex = expectedSlots.slice(0, index).filter(s => s === "3s").length;
-            } else if (slotName === "FLX") {
-              position = "FLX";
-              slotIndex = expectedSlots.slice(0, index).filter(s => s === "FLX").length;
-            } else if (slotName === "BE") {
-              position = "BE";
-              slotIndex = expectedSlots.slice(0, index).filter(s => s === "BE").length;
-            }
-
-            const key = `${position}-${slotIndex}`;
-            const slot = filledSlots.get(key);
-
-            // If slot is empty, return empty slot data
-            if (!slot) {
-              return {
-                slot: slotName,
-                name: "",
-                score: 0,
-                opponent: "",
-                oprk: 0,
-                fprk: 0,
-                fpts: 0,
-                avg: 0,
-                last: 0,
-                goals: 0,
-                shots: 0,
-                saves: 0,
-                assists: 0,
-                demos: 0,
-                teamRecord: "",
-                opponentGameRecord: "",
-                opponentFantasyRank: 0,
-              };
-            }
-
-            // Process filled slot
-            return await (async () => {
-            // Get all weekly stats for this team to calculate totals
-            const allWeeklyStats = await prisma.teamWeeklyStats.findMany({
-              where: { teamId: slot.mleTeam.id },
-            });
-
-            // Calculate total stats
-            const totalGoals = allWeeklyStats.reduce((sum, s) => sum + s.goals, 0);
-            const totalShots = allWeeklyStats.reduce((sum, s) => sum + s.shots, 0);
-            const totalSaves = allWeeklyStats.reduce((sum, s) => sum + s.saves, 0);
-            const totalAssists = allWeeklyStats.reduce((sum, s) => sum + s.assists, 0);
-            const totalDemos = allWeeklyStats.reduce((sum, s) => sum + s.demosInflicted, 0);
-            const totalWins = allWeeklyStats.reduce((sum, s) => sum + s.wins, 0);
-            const totalLosses = allWeeklyStats.reduce((sum, s) => sum + s.losses, 0);
-
-            // Calculate fantasy points
-            const calculateFantasyPoints = (stats: any) => {
-              return (stats.goals * 2) + (stats.shots * 0.1) + (stats.saves * 1) + (stats.assists * 1.5) + (stats.demosInflicted * 0.5);
-            };
-
-            const totalFantasyPoints = allWeeklyStats.reduce((sum, s) => sum + calculateFantasyPoints(s), 0);
-            const avgFantasyPoints = allWeeklyStats.length > 0 ? totalFantasyPoints / allWeeklyStats.length : 0;
-            const lastWeekStats = allWeeklyStats.find(s => s.week === week - 1);
-            const lastWeekPoints = lastWeekStats ? calculateFantasyPoints(lastWeekStats) : 0;
-            const currentWeekStats = slot.mleTeam.weeklyStats[0];
-            const currentWeekPoints = currentWeekStats ? calculateFantasyPoints(currentWeekStats) : 0;
-
-              // Get opponent info for this week (simplified - would need Match data)
-              const opponent = "TBD"; // TODO: Get actual opponent from Match data
-              const oprk = 0; // TODO: Calculate opponent rank
-              const fprk = 0; // TODO: Calculate fantasy points rank
-              const opponentGameRecord = "0-0"; // TODO: Get actual record
-              const opponentFantasyRank = 0; // TODO: Get actual rank
-
-              return {
-                slot: slotName,
-                name: `${slot.mleTeam.leagueId} ${slot.mleTeam.name}`,
-                score: currentWeekPoints,
-                opponent,
-                oprk,
-                fprk,
-                fpts: totalFantasyPoints,
-                avg: avgFantasyPoints,
-                last: lastWeekPoints,
-                goals: totalGoals,
-                shots: totalShots,
-                saves: totalSaves,
-                assists: totalAssists,
-                demos: totalDemos,
-                teamRecord: `${totalWins}-${totalLosses}`,
-                opponentGameRecord,
-                opponentFantasyRank,
-              };
-            })();
-          })
-        );
+        const oppStanding = oppTeam ? standingsByLens.get(lens)!.get(oppTeam.id) ?? null : null;
 
         return {
-          id: team.id,
-          name: team.owner.displayName,
-          teamName: team.displayName,
-          record: `${wins}-${losses}`,
-          place: place > 0 ? `${place}${place === 1 ? "st" : place === 2 ? "nd" : place === 3 ? "rd" : "th"}` : "N/A",
-          totalPoints: Math.round(totalPoints),
-          avgPoints: Math.round(avgPoints),
-          currentWeek: league.currentWeek,
-          lastMatchup: lastMatchup ? {
-            myTeam: team.displayName,
-            myScore: lastMatchup.homeTeamId === team.id ? Math.round(lastMatchup.homeScore || 0) : Math.round(lastMatchup.awayScore || 0),
-            opponent: lastMatchup.homeTeamId === team.id ? lastMatchup.awayTeam.displayName : lastMatchup.homeTeam.displayName,
-            opponentScore: lastMatchup.homeTeamId === team.id ? Math.round(lastMatchup.awayScore || 0) : Math.round(lastMatchup.homeScore || 0),
-          } : undefined,
-          currentMatchup: currentMatchup ? {
-            myTeam: team.displayName,
-            myScore: currentMatchup.homeTeamId === team.id ? Math.round(currentMatchup.homeScore || 0) : Math.round(currentMatchup.awayScore || 0),
-            opponent: currentMatchup.homeTeamId === team.id ? currentMatchup.awayTeam.displayName : currentMatchup.homeTeam.displayName,
-            opponentScore: currentMatchup.homeTeamId === team.id ? Math.round(currentMatchup.awayScore || 0) : Math.round(currentMatchup.homeScore || 0),
-          } : undefined,
-          teams: roster,
+          slot: slotName,
+          name: `${slot.mleTeam.leagueId} ${slot.mleTeam.name}`,
+          score: slot.fantasyPoints ?? 0,
+          opponent: oppTeam ? `${oppTeam.leagueId} ${oppTeam.name}` : "",
+          opponentTeam: oppTeam
+            ? {
+                id: oppTeam.id,
+                name: oppTeam.name,
+                leagueId: oppTeam.leagueId,
+                slug: oppTeam.slug,
+                logoPath: oppTeam.logoPath,
+                primaryColor: oppTeam.primaryColor,
+                secondaryColor: oppTeam.secondaryColor,
+              }
+            : null,
+          opponentStanding: oppStanding,
+          oprk,
+          fprk,
+          fpts: s?.fpts ?? 0,
+          avg: s?.avg ?? 0,
+          last: s?.last ?? 0,
+          goals: s?.goals ?? 0,
+          shots: s?.shots ?? 0,
+          saves: s?.saves ?? 0,
+          assists: s?.assists ?? 0,
+          demos: s?.demosInflicted ?? 0,
+          teamRecord: s?.record ?? "0-0",
+          opponentGameRecord: oppStats?.record ?? "0-0",
+          opponentFantasyRank: oprk,
         };
-      })
-    );
+      });
+
+      return {
+        id: team.id,
+        name: team.owner.displayName,
+        teamName: team.displayName,
+        record: `${wins}-${losses}`,
+        place: place > 0 ? formatPlacement(place) : "N/A",
+        totalPoints: Math.round(totalPoints),
+        avgPoints: Math.round(avgPoints),
+        currentWeek: league.currentWeek,
+        lastMatchup: lastMatchup ? {
+          id: lastMatchup.id,
+          week: lastMatchup.week,
+          myTeam: team.displayName,
+          myScore: lastMatchup.homeTeamId === team.id ? Math.round(lastMatchup.homeScore || 0) : Math.round(lastMatchup.awayScore || 0),
+          opponent: lastMatchup.homeTeamId === team.id ? lastMatchup.awayTeam.displayName : lastMatchup.homeTeam.displayName,
+          opponentScore: lastMatchup.homeTeamId === team.id ? Math.round(lastMatchup.awayScore || 0) : Math.round(lastMatchup.homeScore || 0),
+        } : undefined,
+        currentMatchup: currentMatchup ? {
+          id: currentMatchup.id,
+          week: currentMatchup.week,
+          myTeam: team.displayName,
+          myScore: currentMatchup.homeTeamId === team.id ? Math.round(currentMatchup.homeScore || 0) : Math.round(currentMatchup.awayScore || 0),
+          opponent: currentMatchup.homeTeamId === team.id ? currentMatchup.awayTeam.displayName : currentMatchup.homeTeam.displayName,
+          opponentScore: currentMatchup.homeTeamId === team.id ? Math.round(currentMatchup.awayScore || 0) : Math.round(currentMatchup.homeScore || 0),
+        } : undefined,
+        teams: roster,
+      };
+    });
 
     return NextResponse.json({
       opponents,

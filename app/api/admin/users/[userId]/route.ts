@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminActivity } from "@/lib/adminActivity";
 
 export async function PATCH(
   req: NextRequest,
@@ -46,6 +47,19 @@ export async function PATCH(
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
+    });
+
+    const changeDescriptions: string[] = [];
+    if (updateData.role) changeDescriptions.push(`role -> ${updateData.role}`);
+    if (updateData.status) changeDescriptions.push(`status -> ${updateData.status}`);
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "user.update",
+      description: `Updated user "${updatedUser.displayName}" (${changeDescriptions.join(", ")})`,
+      targetType: "User",
+      targetId: userId,
+      metadata: updateData,
     });
 
     return NextResponse.json(updatedUser);

@@ -8,19 +8,34 @@ datasource db {
 }
 
 model User {
-  id             String        @id
-  discordId      String        @unique
+  id             String             @id
+  discordId      String             @unique
   displayName    String
   avatarUrl      String?
-  role           String        @default("user")
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  status         String        @default("active")
+  role           String             @default("user")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  status         String             @default("active")
   fantasyTeams   FantasyTeam[]
-  proposedTrades Trade[]       @relation("TradeProposer")
-  receivedTrades Trade[]       @relation("TradeReceiver")
+  proposedTrades Trade[]            @relation("TradeProposer")
+  receivedTrades Trade[]            @relation("TradeReceiver")
   transactions   Transaction[]
   waiverClaims   WaiverClaim[]
+  activityLogs   AdminActivityLog[]
+}
+
+model AdminActivityLog {
+  id          String   @id @default(cuid())
+  adminUserId String
+  action      String
+  description String
+  targetType  String?
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  admin       User     @relation(fields: [adminUserId], references: [id])
+
+  @@index([createdAt])
 }
 
 model MLELeague {
@@ -45,6 +60,7 @@ model MLETeam {
   homeMatches    Match[]           @relation("HomeTeam")
   rosterSlots    RosterSlot[]
   weeklyStats    TeamWeeklyStats[]
+  historicalStats TeamHistoricalStats[]
 }
 
 model MLEPlayer {
@@ -146,6 +162,7 @@ model TeamWeeklyStats {
   id             String  @id @default(cuid())
   teamId         String
   week           Int
+  gamemode       String
   goals          Int
   shots          Int
   saves          Int
@@ -157,7 +174,35 @@ model TeamWeeklyStats {
   losses         Int
   team           MLETeam @relation(fields: [teamId], references: [id])
 
-  @@unique([teamId, week])
+  @@unique([teamId, week, gamemode])
+  @@index([week, gamemode])
+}
+
+// Pre-aggregated team-level stats for a completed MLE season, imported from
+// historicalAggregatedPlayerStats.csv (summed up from that season's
+// per-player rows). Distinct from TeamWeeklyStats, which only ever holds the
+// current in-progress season's live weekly data — old seasons' raw CSVs get
+// deleted on transition, so this is the only place "last season" team stats
+// (e.g. for the draft room) can be read from.
+model TeamHistoricalStats {
+  id             String  @id @default(cuid())
+  teamId         String
+  season         String
+  gamemode       String
+  gamesPlayed    Int
+  goals          Int
+  shots          Int
+  saves          Int
+  assists        Int
+  demosInflicted Int
+  demosTaken     Int
+  sprocketRating Float
+  wins           Int     @default(0)
+  losses         Int     @default(0)
+  team           MLETeam @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, season, gamemode])
+  @@index([season, gamemode])
 }
 
 model FantasyLeague {
@@ -176,23 +221,54 @@ model FantasyLeague {
   draftPickDeadline    DateTime?
   draftPickTimeSeconds Int?          @default(90)
   draftStatus          String?       @default("not_started")
+  doubleWinEnabled     Boolean       @default(false)
   draftPicks           DraftPick[]
   fantasyTeams         FantasyTeam[]
   matchups             Matchup[]
   trades               Trade[]
   transactions         Transaction[]
   waivers              WaiverClaim[]
+  weekLockEvents       WeekLockEvent[]
+  teamWaiverPeriods    TeamWaiverPeriod[]
+}
+
+model WeekLockEvent {
+  id              String        @id @default(cuid())
+  fantasyLeagueId String
+  week            Int
+  type            String // "lock" | "unlock"
+  firedAt         DateTime      @default(now())
+  league          FantasyLeague @relation(fields: [fantasyLeagueId], references: [id])
+
+  @@unique([fantasyLeagueId, week, type])
+}
+
+// Tracks an MLE team that was just dropped by a manager and is in the
+// waiver-clearance window (visible to other managers as "on waivers" rather
+// than free agent). Cleared when someone picks it up via a waiver claim, or
+// released back to free agency the next time waivers are processed for this
+// league if nobody claimed it.
+model TeamWaiverPeriod {
+  id              String        @id @default(cuid())
+  fantasyLeagueId String
+  mleTeamId       String
+  droppedAt       DateTime      @default(now())
+  league          FantasyLeague @relation(fields: [fantasyLeagueId], references: [id])
+
+  @@unique([fantasyLeagueId, mleTeamId])
 }
 
 model FantasyTeam {
-  id              String        @id
-  fantasyLeagueId String
-  ownerUserId     String
-  displayName     String
-  shortCode       String
-  draftPosition   Int?
-  faabRemaining   Int?
-  waiverPriority  Int?
+  id                String        @id
+  fantasyLeagueId   String
+  ownerUserId       String
+  displayName       String
+  shortCode         String
+  draftPosition     Int?
+  faabRemaining     Int?
+  waiverPriority    Int?
+  autodraftEnabled  Boolean       @default(false)
+  draftQueue        String[]      @default([])
   league          FantasyLeague @relation(fields: [fantasyLeagueId], references: [id])
   owner           User          @relation(fields: [ownerUserId], references: [id])
   awayMatchups    Matchup[]     @relation("AwayFantasyTeam")
@@ -247,6 +323,7 @@ model Trade {
   proposerGives   String[]
   receiverGives   String[]
   status          String        @default("pending")
+  acceptedAt      DateTime?
   executedAt      DateTime?
   createdAt       DateTime      @default(now())
   league          FantasyLeague @relation(fields: [fantasyLeagueId], references: [id])
@@ -325,6 +402,7 @@ model SeasonSettings {
   weekDates        Json
   scoringRules     Json
   waiverSchedule   Json
+  draftStatsSeason String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -333,6 +411,7 @@ model ManualStatsOverride {
   id             String   @id @default(cuid())
   teamId         String
   week           Int
+  gamemode       String
   goals          Int
   shots          Int
   saves          Int
@@ -345,7 +424,7 @@ model ManualStatsOverride {
   gameRecord     String
   saveRate       Float
 
-  @@unique([teamId, week])
+  @@unique([teamId, week, gamemode])
   @@index([week])
   @@index([teamId])
 }

@@ -4,45 +4,10 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Image from "next/image";
-import { TEAMS } from "@/lib/teams";
 import TeamModal from "@/components/TeamModal";
+import InfoGuideModal from "@/components/InfoGuideModal";
 
 // Mock leagues data removed - now fetched from /api/leagues based on user session
-
-// Top performing teams - using actual MLE teams
-// Static values to prevent hydration errors (no Math.random())
-const mockTopTeams = TEAMS.slice(0, 10).map((team, index) => ({
-  ...team,
-  rank: index + 1,
-  tier:
-    team.leagueId === "PL"
-      ? "Premier"
-      : team.leagueId === "ML"
-      ? "Master"
-      : team.leagueId === "CL"
-      ? "Champion"
-      : team.leagueId === "AL"
-      ? "Academy"
-      : "Foundation",
-  division: team.leagueId,
-  weekPoints: 42.5 - index * 0.5,
-  totalPoints: 385.5 - index * 8.5,
-  wins: 7 - Math.floor(index / 2),
-  losses: 1 + Math.floor(index / 3),
-  gameScore: 18 - index,
-  ppg: 48.1 - index * 1.2,
-  score: 50 - index * 2,
-  fpts: 380 - index * 8,
-  avg: 50 - index * 1.5,
-  last: 48 - index * 1.8,
-  goals: 140 - index * 4,
-  shots: 750 - index * 15,
-  saves: 220 - index * 7,
-  assists: 95 - index * 3.5,
-  demos: 55 - index * 2.5,
-  record: `${7 - Math.floor(index / 2)}-${1 + Math.floor(index / 2)}`,
-  status: "free-agent" as const,
-}));
 
 type SortKey =
   | "rank"
@@ -121,10 +86,15 @@ export default function HomePage() {
   const { data: session } = useSession();
   const [selectedTeam, setSelectedTeam] = useState<any | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [topTeams, setTopTeams] = useState<any[]>(mockTopTeams);
+  const [topTeamsByMode, setTopTeamsByMode] = useState<{
+    twoS: any[];
+    threeS: any[];
+    combined: any[];
+  }>({ twoS: [], threeS: [], combined: [] });
   const [loading, setLoading] = useState(true);
   const [userLeagues, setUserLeagues] = useState<any[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(true);
@@ -132,19 +102,25 @@ export default function HomePage() {
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
   const [gameMode, setGameMode] = useState<"2s" | "3s" | "all">("all");
 
-  // Fetch top teams from API
+  // Fetch top teams from API (real 2s/3s/combined season leaderboards)
   useEffect(() => {
     const fetchTopTeams = async () => {
       try {
         const response = await fetch(`/api/teams/top`);
         if (response.ok) {
           const data = await response.json();
-          setTopTeams(data.teams);
+          setTopTeamsByMode({
+            twoS: data.twoS ?? [],
+            threeS: data.threeS ?? [],
+            combined: data.combined ?? [],
+          });
         } else {
-          console.warn("Failed to fetch top teams, using mock data");
+          console.warn("Failed to fetch top teams");
+          setTopTeamsByMode({ twoS: [], threeS: [], combined: [] });
         }
       } catch (error) {
         console.error("Error fetching top teams:", error);
+        setTopTeamsByMode({ twoS: [], threeS: [], combined: [] });
       } finally {
         setLoading(false);
       }
@@ -232,21 +208,15 @@ export default function HomePage() {
     }
   };
 
-  // Filter teams by game mode
-  const filteredTeams = topTeams.filter((team) => {
-    if (gameMode === "all") return true;
-    // Check if team league is 2s or 3s based on leagueId
-    // Assuming 2s leagues: PL, ML, CL
-    // Assuming 3s leagues: AL, FL
-    const is2sLeague = ["PL", "ML", "CL"].includes(team.leagueId);
-    const is3sLeague = ["AL", "FL"].includes(team.leagueId);
+  // Pick the real per-mode top-10 list matching the selected toggle
+  const topTeams =
+    gameMode === "2s"
+      ? topTeamsByMode.twoS
+      : gameMode === "3s"
+      ? topTeamsByMode.threeS
+      : topTeamsByMode.combined;
 
-    if (gameMode === "2s") return is2sLeague;
-    if (gameMode === "3s") return is3sLeague;
-    return true;
-  });
-
-  const sortedTeams = [...filteredTeams].sort((a, b) => {
+  const sortedTeams = [...topTeams].sort((a, b) => {
     let aValue: number | string = 0;
     let bValue: number | string = 0;
 
@@ -325,6 +295,9 @@ export default function HomePage() {
         }
         onClose={() => setShowModal(false)}
       />
+
+      {/* Info Guide Modal */}
+      <InfoGuideModal open={showInfoModal} onClose={() => setShowInfoModal(false)} />
 
       <main>
         {/* Header Section */}
@@ -436,14 +409,55 @@ export default function HomePage() {
               Sign Out
             </button>
 
+            {/* Info Button */}
+            <button
+              onClick={() => setShowInfoModal(true)}
+              style={{
+                padding: "0.65rem 1.5rem",
+                backgroundColor: "rgba(42, 75, 130, 0.85)",
+                color: "var(--accent)",
+                border: "2px solid rgba(242, 182, 50, 0.5)",
+                borderRadius: "12px",
+                fontWeight: 700,
+                fontSize: "0.95rem",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
+                e.currentTarget.style.borderColor = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
+                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
+              }}
+            >
+              Info
+            </button>
+
             {/* Help Section */}
-            <div
+            <a
+              href="https://discordapp.com/channels/@me/1419789164240699513"
+              target="_blank"
+              rel="noopener noreferrer"
               style={{
                 textAlign: "right",
                 padding: "0.75rem 1rem",
                 backgroundColor: "rgba(42, 75, 130, 0.85)",
                 borderRadius: "12px",
                 border: "1px solid rgba(242, 182, 50, 0.3)",
+                textDecoration: "none",
+                display: "block",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
+                e.currentTarget.style.borderColor = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
+                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.3)";
               }}
             >
               <div
@@ -464,7 +478,7 @@ export default function HomePage() {
               >
                 Contact MLE Mailbox
               </div>
-            </div>
+            </a>
           </div>
         </div>
 
@@ -926,7 +940,20 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedTeams.map((team) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={12} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                      Loading team stats...
+                    </td>
+                  </tr>
+                ) : sortedTeams.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                      No team stats available yet
+                    </td>
+                  </tr>
+                ) : (
+                sortedTeams.map((team) => (
                   <tr
                     key={team.rank}
                     style={{
@@ -1044,7 +1071,8 @@ export default function HomePage() {
                       {team.demos}
                     </td>
                   </tr>
-                ))}
+                ))
+                )}
               </tbody>
             </table>
           </div>

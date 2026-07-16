@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminActivity } from "@/lib/adminActivity";
+import { runAutoLockSweep } from "@/lib/autoLock";
+
+const POSITION_ORDER: Record<string, number> = { "2s": 0, "3s": 1, flx: 2, be: 3 };
 
 /**
  * GET /api/admin/weeks/lock-lineups
@@ -35,6 +39,8 @@ export async function GET(req: NextRequest) {
     }
 
     const weekNumber = parseInt(week, 10);
+
+    await runAutoLockSweep(leagueId && leagueId !== "all" ? leagueId : undefined);
 
     // Build where clause
     const whereClause: any = { week: weekNumber };
@@ -104,8 +110,17 @@ export async function GET(req: NextRequest) {
 
     // Convert map to array and add locked status
     const lineups = Array.from(teamMap.values()).map((team) => {
-      const allLocked = team.slots.every((slot: any) => slot.isLocked);
-      const anyLocked = team.slots.some((slot: any) => slot.isLocked);
+      team.slots.sort((a: any, b: any) => {
+        const posDiff = (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99);
+        if (posDiff !== 0) return posDiff;
+        return a.slotIndex - b.slotIndex;
+      });
+
+      // Bench slots never lock, so "fully locked" is judged only on the
+      // lockable (non-bench) slots — otherwise no team could ever show as locked.
+      const lockableSlots = team.slots.filter((slot: any) => slot.position !== "be");
+      const allLocked = lockableSlots.length > 0 && lockableSlots.every((slot: any) => slot.isLocked);
+      const anyLocked = lockableSlots.some((slot: any) => slot.isLocked);
 
       return {
         ...team,
@@ -162,18 +177,26 @@ export async function POST(req: NextRequest) {
 
     // If slotIds provided, lock/unlock specific slots
     if (slotIds && Array.isArray(slotIds)) {
-      await prisma.rosterSlot.updateMany({
+      const result = await prisma.rosterSlot.updateMany({
         where: {
           id: { in: slotIds },
+          // bench slots never lock — managers can always work the bench
+          ...(isLocked ? { position: { not: "be" } } : {}),
         },
         data: {
           isLocked,
         },
       });
 
+      await logAdminActivity({
+        adminUserId: session.user.id!,
+        action: "lineup.lock_slots",
+        description: `${isLocked ? "Locked" : "Unlocked"} ${result.count} roster slot(s) for week ${weekNumber}`,
+      });
+
       return NextResponse.json({
         success: true,
-        message: `${slotIds.length} slots ${isLocked ? "locked" : "unlocked"}`,
+        message: `${result.count} slots ${isLocked ? "locked" : "unlocked"}`,
       });
     }
 
@@ -183,10 +206,20 @@ export async function POST(req: NextRequest) {
         where: {
           fantasyTeamId,
           week: weekNumber,
+          // bench slots never lock — managers can always work the bench
+          ...(isLocked ? { position: { not: "be" } } : {}),
         },
         data: {
           isLocked,
         },
+      });
+
+      await logAdminActivity({
+        adminUserId: session.user.id!,
+        action: "lineup.lock_team",
+        description: `${isLocked ? "Locked" : "Unlocked"} all slots for a team, week ${weekNumber}`,
+        targetType: "FantasyTeam",
+        targetId: fantasyTeamId,
       });
 
       return NextResponse.json({
@@ -201,12 +234,22 @@ export async function POST(req: NextRequest) {
     if (leagueId && leagueId !== "all") {
       whereClause.fantasyTeam = { fantasyLeagueId: leagueId };
     }
+    if (isLocked) {
+      // bench slots never lock — managers can always work the bench
+      whereClause.position = { not: "be" };
+    }
 
     const result = await prisma.rosterSlot.updateMany({
       where: whereClause,
       data: {
         isLocked,
       },
+    });
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "lineup.lock_week",
+      description: `${isLocked ? "Locked" : "Unlocked"} all lineups for week ${weekNumber}${leagueId && leagueId !== "all" ? ` (league ${leagueId})` : ""}`,
     });
 
     return NextResponse.json({

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyTeamId } from "@/lib/id-generator";
+import { logAdminActivity } from "@/lib/adminActivity";
+import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
 
 // POST /api/admin/leagues/[leagueId]/teams - Add a user to the league (admin only)
 export async function POST(
@@ -26,9 +28,9 @@ export async function POST(
       );
     }
 
-    if (shortCode.length !== 3) {
+    if (shortCode.length < 1 || shortCode.length > 3) {
       return NextResponse.json(
-        { error: "Short code must be exactly 3 characters" },
+        { error: "Short code must be 1-3 characters" },
         { status: 400 }
       );
     }
@@ -113,6 +115,22 @@ export async function POST(
         },
       },
     });
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "team.add",
+      description: `Added manager "${fantasyTeam.owner.displayName}" as "${fantasyTeam.displayName}" (${fantasyTeam.shortCode}) to league "${league.name}"`,
+      targetType: "FantasyTeam",
+      targetId: fantasyTeam.id,
+    });
+
+    if (league.fantasyTeams.length + 1 === league.maxTeams) {
+      try {
+        await generateAndSaveRegularSeason(leagueId);
+      } catch (scheduleError) {
+        console.error("Error auto-generating schedule after league filled:", scheduleError);
+      }
+    }
 
     return NextResponse.json({ fantasyTeam, success: true }, { status: 201 });
   } catch (error) {

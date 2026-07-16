@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyLeagueId } from "@/lib/id-generator";
+import { logAdminActivity } from "@/lib/adminActivity";
 
 // GET /api/admin/leagues - List all fantasy leagues (admin only)
 export async function GET(request: NextRequest) {
@@ -103,6 +104,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // League size is restricted to 8, 10, or 12 managers
+    const parsedMaxTeams = parseInt(maxTeams);
+    if (![8, 10, 12].includes(parsedMaxTeams)) {
+      return NextResponse.json(
+        { error: "maxTeams must be 8, 10, or 12" },
+        { status: 400 }
+      );
+    }
+
     // Generate custom league ID
     const leagueId = generateFantasyLeagueId(parseInt(season), name);
 
@@ -112,7 +122,7 @@ export async function POST(request: NextRequest) {
         id: leagueId,
         name,
         season: parseInt(season),
-        maxTeams: parseInt(maxTeams),
+        maxTeams: parsedMaxTeams,
         playoffTeams: parseInt(playoffTeams),
         draftType,
         waiverSystem,
@@ -127,6 +137,14 @@ export async function POST(request: NextRequest) {
           },
         },
       },
+    });
+
+    await logAdminActivity({
+      adminUserId: session.user.id,
+      action: "league.create",
+      description: `Created league "${league.name}" (season ${league.season}, ${league.maxTeams} teams)`,
+      targetType: "FantasyLeague",
+      targetId: league.id,
     });
 
     return NextResponse.json({ league, success: true }, { status: 201 });

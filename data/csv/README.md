@@ -22,7 +22,7 @@ Place the following CSV files in this directory:
 
    - Columns: match_id, fixture_id, match_group_id, scheduling_start_time, scheduling_end_time, home, away, league, game_mode, home_wins, away_wins, winning_team
 
-5. **rounds_s18.csv** - Season 18 rounds data
+5. **rounds_s19.csv** - Season 19 rounds data
 
    - Columns: match_id, round_id, Home, Home Goals, Away, Away Goals
 
@@ -34,7 +34,7 @@ Place the following CSV files in this directory:
 
    - Columns: doubles_uses, standard_uses, total_uses, season_number, team_name, league, role
 
-8. **player_stats_s18.csv** - Player match statistics
+8. **player_stats_s19.csv** - Player match statistics
 
    - Columns: member_id, team_name, skill_group, gamemode, match_id, round_id, replays_submitted_at, home_won, dpi, gpi, opi, goals, saves, score, shots, assists, goals_against, shots_against, demos_inflicted, demos_taken
 

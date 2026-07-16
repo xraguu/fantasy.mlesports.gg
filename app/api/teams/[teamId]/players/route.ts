@@ -49,7 +49,7 @@ export async function GET(
         const doublesStats = await prisma.playerHistoricalStats.findFirst({
           where: {
             playerId: player.id,
-            gamemode: "doubles",
+            gamemode: "RL_DOUBLES",
           },
           orderBy: {
             season: "desc",
@@ -59,7 +59,7 @@ export async function GET(
         const standardStats = await prisma.playerHistoricalStats.findFirst({
           where: {
             playerId: player.id,
-            gamemode: "standard",
+            gamemode: "RL_STANDARD",
           },
           orderBy: {
             season: "desc",

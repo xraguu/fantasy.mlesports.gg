@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyLeagueId } from "@/lib/id-generator";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
 // GET /api/leagues - List leagues user has access to
 export async function GET(request: NextRequest) {
@@ -12,6 +13,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Only show the current season's leagues in "My Leagues" — past-season
+    // leagues are still viewable via the admin League Archive page.
+    const currentSeason = await getCurrentSeason();
+
     // Get all leagues where user has a fantasy team
     const leagues = await prisma.fantasyLeague.findMany({
       where: {
@@ -20,6 +25,7 @@ export async function GET(request: NextRequest) {
             ownerUserId: session.user.id,
           },
         },
+        ...(currentSeason !== null ? { season: currentSeason } : {}),
       },
       include: {
         fantasyTeams: {

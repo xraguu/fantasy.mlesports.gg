@@ -2,149 +2,505 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { getPlayoffBracketShape } from "@/lib/playoffBracketShape";
 
-interface Standing {
-  rank: number;
-  fantasyTeamId: string;
-  manager: string;
-  team: string;
-  wins: number;
-  losses: number;
-  points: number;
-}
+const CARD_WIDTH = "260px";
+const GOLD = "#f2b632";
 
-interface TeamProps {
-  seed: number;
+interface TeamDTO {
+  id: string;
   teamName: string;
-  manager: string;
-  record: string;
-  score: number;
-  leagueId: string;
-  onManagerClick: (manager: string) => void;
+  managerName: string;
+  rank: number | null;
 }
 
-const TeamCard = ({ seed, teamName, manager, record, score, onManagerClick }: TeamProps) => {
+interface RealMatchupDTO {
+  id: string;
+  week: number;
+  homeTeam: { id: string; teamName: string; managerName: string };
+  awayTeam: { id: string; teamName: string; managerName: string };
+  homeScore: number | null;
+  awayScore: number | null;
+}
+
+interface RealRoundDTO {
+  week: number;
+  roundNumber: number;
+  moneyByes: TeamDTO[];
+  moneyMatchups: RealMatchupDTO[];
+  consolationMatchups: RealMatchupDTO[];
+}
+
+interface PlayoffsResponse {
+  maxTeams: number;
+  regularSeasonWeeks: number;
+  error: string | null;
+  realRounds: RealRoundDTO[];
+  projectedRound1: {
+    moneyByes: TeamDTO[];
+    moneyPairs: [TeamDTO, TeamDTO][];
+    consolationPairs: [TeamDTO, TeamDTO][];
+  } | null;
+}
+
+type Slot =
+  | {
+      kind: "match";
+      id: string;
+      week: number | null;
+      label?: string;
+      homeName: string;
+      homeManager: string;
+      homeScore: number | null;
+      awayName: string;
+      awayManager: string;
+      awayScore: number | null;
+      projected: boolean;
+    }
+  | { kind: "bye"; id: string; label?: string; name: string; manager: string; rank: number | null; projected: boolean }
+  | { kind: "tbd"; id: string; label?: string };
+
+interface Theme {
+  accent: string;
+  cardFrom: string;
+  cardTo: string;
+  borderIdle: string;
+  borderActive: string;
+  glow: string;
+  muted: string;
+  winnerBg: string;
+  headerBg: string;
+  headerBorder: string;
+}
+
+const GOLD_THEME: Theme = {
+  accent: GOLD,
+  cardFrom: "#0d1526",
+  cardTo: "#182036",
+  borderIdle: "rgba(242,182,50,0.2)",
+  borderActive: "rgba(242,182,50,0.55)",
+  glow: "0 0 18px rgba(242,182,50,0.16)",
+  muted: "rgba(242,182,50,0.55)",
+  winnerBg: "rgba(242,182,50,0.12)",
+  headerBg: "linear-gradient(90deg, rgba(242,182,50,0.18), rgba(242,182,50,0.05))",
+  headerBorder: "rgba(242,182,50,0.4)",
+};
+
+const GRAY_THEME: Theme = {
+  accent: "#e5e7eb",
+  cardFrom: "#1e2139",
+  cardTo: "#252844",
+  borderIdle: "rgba(255,255,255,0.15)",
+  borderActive: "rgba(255,255,255,0.35)",
+  glow: "none",
+  muted: "rgba(255,255,255,0.5)",
+  winnerBg: "rgba(255,255,255,0.07)",
+  headerBg: "rgba(255,255,255,0.08)",
+  headerBorder: "rgba(255,255,255,0.2)",
+};
+
+function RoundHeader({ label, theme }: { label: string; theme: Theme }) {
   return (
-    <div style={{
-      background: "linear-gradient(135deg, #1e2139 0%, #252844 100%)",
-      borderRadius: "8px",
-      padding: "1rem 1.25rem",
-      border: "2px solid rgba(74, 85, 162, 0.3)",
-      minHeight: "70px",
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "center"
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-        {seed > 0 && (
-          <div style={{
-            background: "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
-            color: "#1a1a2e",
-            fontWeight: 700,
-            fontSize: "1rem",
-            width: "28px",
-            height: "28px",
-            borderRadius: "4px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0
-          }}>
-            {seed}
-          </div>
-        )}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            onClick={() => onManagerClick(manager)}
-            onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
-            onMouseLeave={(e) => e.currentTarget.style.color = "#ffffff"}
-            style={{
-              fontSize: "1rem",
-              fontWeight: 700,
-              color: "#ffffff",
-              marginBottom: "0.25rem",
-              cursor: "pointer",
-              transition: "color 0.2s"
-            }}
-          >
-            {teamName}
-          </div>
-          <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.5)" }}>
-            <span
-              onClick={() => onManagerClick(manager)}
-              onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
-              onMouseLeave={(e) => e.currentTarget.style.color = "rgba(255,255,255,0.5)"}
-              style={{
-                cursor: "pointer",
-                transition: "color 0.2s"
-              }}
-            >
-              {manager}
-            </span> {record}
-          </div>
+    <div
+      style={{
+        textAlign: "center",
+        padding: "0.5rem 0.75rem",
+        marginBottom: "1.25rem",
+        borderRadius: "6px",
+        background: theme.headerBg,
+        border: `1px solid ${theme.headerBorder}`,
+        color: theme.accent,
+        fontWeight: 700,
+        fontSize: "0.8rem",
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function SlotLabel({ label, theme }: { label: string; theme: Theme }) {
+  return (
+    <div
+      style={{
+        textAlign: "center",
+        marginBottom: "0.4rem",
+        fontSize: "0.7rem",
+        fontWeight: 700,
+        letterSpacing: "0.05em",
+        textTransform: "uppercase",
+        color: theme.muted,
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function TeamRow({
+  name,
+  manager,
+  score,
+  won,
+  played,
+  theme,
+  onClick,
+}: {
+  name: string;
+  manager: string;
+  score: number | null;
+  won: boolean;
+  played: boolean;
+  theme: Theme;
+  onClick?: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0.65rem 0.9rem",
+        background: won ? theme.winnerBg : "transparent",
+        opacity: played && !won ? 0.5 : 1,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          onClick={onClick}
+          style={{
+            fontSize: "0.95rem",
+            fontWeight: won ? 700 : 600,
+            color: won ? theme.accent : "#f5f6f7",
+            cursor: onClick ? "pointer" : "default",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {name}
         </div>
-        <div style={{
-          fontSize: "1.5rem",
-          fontWeight: 700,
-          color: "#f2b632"
-        }}>
+        <div
+          style={{
+            fontSize: "0.75rem",
+            color: theme.muted,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {manager}
+        </div>
+      </div>
+      {score !== null && (
+        <div style={{ fontSize: "1.3rem", fontWeight: 800, color: won ? theme.accent : "rgba(255,255,255,0.65)", flexShrink: 0, marginLeft: "0.5rem" }}>
           {score.toFixed(1)}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SlotCard({
+  slot,
+  theme,
+  onManagerClick,
+  onMatchClick,
+}: {
+  slot: Slot;
+  theme: Theme;
+  onManagerClick: (manager: string) => void;
+  onMatchClick: (week: number, matchupId: string) => void;
+}) {
+  return (
+    <div>
+      {slot.label && <SlotLabel label={slot.label} theme={theme} />}
+      <SlotBody slot={slot} theme={theme} onManagerClick={onManagerClick} onMatchClick={onMatchClick} />
+    </div>
+  );
+}
+
+function SlotBody({
+  slot,
+  theme,
+  onManagerClick,
+  onMatchClick,
+}: {
+  slot: Slot;
+  theme: Theme;
+  onManagerClick: (manager: string) => void;
+  onMatchClick: (week: number, matchupId: string) => void;
+}) {
+  if (slot.kind === "tbd") {
+    return (
+      <div
+        style={{
+          borderRadius: "10px",
+          border: `1px dashed ${theme.borderIdle}`,
+          padding: "1.4rem 0.9rem",
+          textAlign: "center",
+          color: theme.muted,
+          fontSize: "0.75rem",
+          fontWeight: 700,
+          letterSpacing: "0.06em",
+        }}
+      >
+        TBD
+      </div>
+    );
+  }
+
+  if (slot.kind === "bye") {
+    return (
+      <div
+        style={{
+          background: `linear-gradient(160deg, ${theme.cardFrom} 0%, ${theme.cardTo} 100%)`,
+          borderRadius: "10px",
+          border: `1px ${slot.projected ? "dashed" : "solid"} ${theme.borderActive}`,
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.65rem 0.9rem" }}>
+          <div style={{ minWidth: 0 }}>
+            <div
+              onClick={() => onManagerClick(slot.manager)}
+              style={{ fontSize: "0.95rem", fontWeight: 700, color: theme.accent, cursor: "pointer" }}
+            >
+              {slot.name}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: theme.muted }}>{slot.manager}</div>
+          </div>
+          {slot.rank !== null && (
+            <div
+              style={{
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                color: theme.accent,
+                border: `1px solid ${theme.borderActive}`,
+                borderRadius: "4px",
+                padding: "0.15rem 0.45rem",
+                flexShrink: 0,
+                marginLeft: "0.5rem",
+              }}
+            >
+              #{slot.rank}
+            </div>
+          )}
+        </div>
+        <div
+          style={{
+            fontSize: "0.65rem",
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            color: theme.accent,
+            textAlign: "center",
+            padding: "0.35rem 0",
+            borderTop: `1px solid ${theme.borderIdle}`,
+          }}
+        >
+          {slot.projected ? "PROJECTED BYE" : "ROUND 1 BYE"}
+        </div>
+      </div>
+    );
+  }
+
+  const played = slot.homeScore !== null && slot.awayScore !== null;
+  const homeWon = played && slot.homeScore! > slot.awayScore!;
+  const awayWon = played && slot.awayScore! > slot.homeScore!;
+  const isRealMatch = !slot.projected && slot.week !== null;
+
+  return (
+    <div
+      onClick={isRealMatch ? () => onMatchClick(slot.week!, slot.id) : undefined}
+      style={{
+        background: `linear-gradient(160deg, ${theme.cardFrom} 0%, ${theme.cardTo} 100%)`,
+        borderRadius: "10px",
+        border: `1px ${slot.projected ? "dashed" : "solid"} ${played ? theme.borderActive : theme.borderIdle}`,
+        boxShadow: played ? theme.glow : "none",
+        overflow: "hidden",
+        cursor: isRealMatch ? "pointer" : "default",
+      }}
+    >
+      <TeamRow
+        name={slot.homeName}
+        manager={slot.homeManager}
+        score={slot.homeScore}
+        won={homeWon}
+        played={played}
+        theme={theme}
+        onClick={
+          isRealMatch
+            ? undefined
+            : (e: React.MouseEvent) => {
+                e.stopPropagation();
+                onManagerClick(slot.homeManager);
+              }
+        }
+      />
+      <div style={{ height: "1px", background: `linear-gradient(90deg, transparent, ${theme.borderIdle}, transparent)` }} />
+      <TeamRow
+        name={slot.awayName}
+        manager={slot.awayManager}
+        score={slot.awayScore}
+        won={awayWon}
+        played={played}
+        theme={theme}
+        onClick={
+          isRealMatch
+            ? undefined
+            : (e: React.MouseEvent) => {
+                e.stopPropagation();
+                onManagerClick(slot.awayManager);
+              }
+        }
+      />
+      <div
+        style={{
+          fontSize: "0.65rem",
+          fontWeight: 700,
+          letterSpacing: "0.06em",
+          color: theme.accent,
+          opacity: played ? 0.65 : slot.projected ? 0.55 : 0.65,
+          textAlign: "center",
+          padding: "0.35rem 0",
+          borderTop: `1px solid ${theme.borderIdle}`,
+        }}
+      >
+        {slot.projected ? "PROJECTED" : played ? "VIEW MATCHUP →" : "UPCOMING — VIEW MATCHUP →"}
       </div>
     </div>
   );
-};
+}
+
+function buildRoundSlots(
+  roundNumber: number,
+  shapeMoney: { matches: number; byes: number; labels?: string[] },
+  shapeConsolation: { matches: number; labels?: string[] },
+  real: RealRoundDTO | undefined,
+  projected: PlayoffsResponse["projectedRound1"]
+): { moneySlots: Slot[]; consolationSlots: Slot[] } {
+  let moneySlots: Slot[];
+  let consolationSlots: Slot[];
+
+  if (real) {
+    moneySlots = [
+      ...real.moneyByes.map((t): Slot => ({ kind: "bye", id: `bye-${t.id}`, name: t.teamName, manager: t.managerName, rank: t.rank, projected: false })),
+      ...real.moneyMatchups.map(
+        (m, i): Slot => ({
+          kind: "match",
+          id: m.id,
+          week: m.week,
+          label: shapeMoney.labels?.[i],
+          homeName: m.homeTeam.teamName,
+          homeManager: m.homeTeam.managerName,
+          homeScore: m.homeScore,
+          awayName: m.awayTeam.teamName,
+          awayManager: m.awayTeam.managerName,
+          awayScore: m.awayScore,
+          projected: false,
+        })
+      ),
+    ];
+    consolationSlots = real.consolationMatchups.map(
+      (m, i): Slot => ({
+        kind: "match",
+        id: m.id,
+        week: m.week,
+        label: shapeConsolation.labels?.[i],
+        homeName: m.homeTeam.teamName,
+        homeManager: m.homeTeam.managerName,
+        homeScore: m.homeScore,
+        awayName: m.awayTeam.teamName,
+        awayManager: m.awayTeam.managerName,
+        awayScore: m.awayScore,
+        projected: false,
+      })
+    );
+  } else if (roundNumber === 1 && projected) {
+    moneySlots = [
+      ...projected.moneyByes.map((t): Slot => ({ kind: "bye", id: `pbye-${t.id}`, name: t.teamName, manager: t.managerName, rank: t.rank, projected: true })),
+      ...projected.moneyPairs.map(
+        ([a, b], i): Slot => ({
+          kind: "match",
+          id: `pmoney-${i}`,
+          week: null,
+          homeName: a.teamName,
+          homeManager: a.managerName,
+          homeScore: null,
+          awayName: b.teamName,
+          awayManager: b.managerName,
+          awayScore: null,
+          projected: true,
+        })
+      ),
+    ];
+    consolationSlots = projected.consolationPairs.map(
+      ([a, b], i): Slot => ({
+        kind: "match",
+        id: `pconsolation-${i}`,
+        week: null,
+        homeName: a.teamName,
+        homeManager: a.managerName,
+        homeScore: null,
+        awayName: b.teamName,
+        awayManager: b.managerName,
+        awayScore: null,
+        projected: true,
+      })
+    );
+  } else {
+    moneySlots = [
+      ...Array.from({ length: shapeMoney.byes }, (_, i): Slot => ({ kind: "tbd", id: `tbd-mbye-${roundNumber}-${i}` })),
+      ...Array.from({ length: shapeMoney.matches }, (_, i): Slot => ({ kind: "tbd", id: `tbd-money-${roundNumber}-${i}`, label: shapeMoney.labels?.[i] })),
+    ];
+    consolationSlots = Array.from(
+      { length: shapeConsolation.matches },
+      (_, i): Slot => ({ kind: "tbd", id: `tbd-cons-${roundNumber}-${i}`, label: shapeConsolation.labels?.[i] })
+    );
+  }
+
+  return { moneySlots, consolationSlots };
+}
 
 export default function PlayoffsPage() {
   const params = useParams();
   const router = useRouter();
   const leagueId = params.LeagueID as string;
 
-  const [standings, setStandings] = useState<Standing[]>([]);
+  const [data, setData] = useState<PlayoffsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch standings data
   useEffect(() => {
-    const fetchStandings = async () => {
+    if (!leagueId) return;
+
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/leagues/${leagueId}/standings`);
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch standings");
-        }
-
-        const data = await response.json();
-        setStandings(data.standings || []);
+        const res = await fetch(`/api/leagues/${leagueId}/playoffs`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Failed to load playoffs");
+        setData(json);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load standings");
+        setError(err instanceof Error ? err.message : "Failed to load playoffs");
       } finally {
         setLoading(false);
       }
     };
 
-    if (leagueId) {
-      fetchStandings();
-    }
+    fetchData();
   }, [leagueId]);
 
   const handleManagerClick = (manager: string) => {
     router.push(`/leagues/${leagueId}/opponents?manager=${encodeURIComponent(manager)}`);
   };
 
-  // Create projected playoff matchups from current standings
-  const getTeamByRank = (rank: number) => {
-    const team = standings.find(s => s.rank === rank);
-    if (!team) return null;
-    return {
-      seed: rank,
-      teamName: team.team,
-      manager: team.manager,
-      record: `${team.wins}-${team.losses}`,
-      score: team.points
-    };
+  const handleMatchClick = (week: number, matchupId: string) => {
+    router.push(`/leagues/${leagueId}/scoreboard?week=${week}&matchup=${matchupId}`);
   };
 
   if (loading) {
@@ -155,347 +511,157 @@ export default function PlayoffsPage() {
     );
   }
 
-  if (error) {
+  if (error || !data) {
     return (
       <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "#ef4444", fontSize: "1.1rem" }}>
-          Error: {error}
-        </div>
+        <div style={{ color: "#ef4444", fontSize: "1.1rem" }}>Error: {error || "Could not load playoffs"}</div>
       </div>
     );
   }
 
-  // Semi Finals matchups
-  const semiFinal1Team1 = getTeamByRank(1);
-  const semiFinal1Team2 = getTeamByRank(4);
-  const semiFinal2Team1 = getTeamByRank(2);
-  const semiFinal2Team2 = getTeamByRank(3);
+  const header = (
+    <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "2rem" }}>
+      <button
+        onClick={() => router.push(`/leagues/${leagueId}/standings`)}
+        style={{
+          backgroundColor: "rgba(255,255,255,0.1)",
+          color: "var(--text-main)",
+          padding: "0.5rem 1rem",
+          borderRadius: "0.5rem",
+          fontWeight: 600,
+          fontSize: "0.9rem",
+          border: "1px solid rgba(255,255,255,0.2)",
+          cursor: "pointer",
+          transition: "all 0.2s ease",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.15)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.1)";
+        }}
+      >
+        ← Back to Standings
+      </button>
+      <h1 style={{ fontSize: "2.5rem", fontWeight: 700, color: GOLD, margin: 0, textShadow: "0 0 24px rgba(242,182,50,0.25)" }}>
+        Playoffs
+      </h1>
+    </div>
+  );
 
-  // Grand Finals (projected winners - higher seeds) - remove seed numbers
-  const grandFinalTeam1 = semiFinal1Team1 ? { ...semiFinal1Team1, seed: 0 } : null;
-  const grandFinalTeam2 = semiFinal2Team1 ? { ...semiFinal2Team1, seed: 0 } : null;
+  if (data.error) {
+    return (
+      <div style={{ minHeight: "100vh", padding: "2rem 1rem" }}>
+        {header}
+        <p style={{ color: "var(--text-muted)" }}>{data.error}</p>
+      </div>
+    );
+  }
 
-  // 3rd Place Game (projected losers - lower seeds) - remove seed numbers
-  const thirdPlaceTeam1 = semiFinal1Team2 ? { ...semiFinal1Team2, seed: 0 } : null;
-  const thirdPlaceTeam2 = semiFinal2Team2 ? { ...semiFinal2Team2, seed: 0 } : null;
-
-  // Consolation Round 1 matchups (4 matchups)
-  const consolationR1 = [
-    { team1: getTeamByRank(5), team2: getTeamByRank(12) },
-    { team1: getTeamByRank(6), team2: getTeamByRank(11) },
-    { team1: getTeamByRank(7), team2: getTeamByRank(10) },
-    { team1: getTeamByRank(8), team2: getTeamByRank(9) },
-  ];
-
-  // Consolation Round 2 (4 matchups: winners bracket + losers bracket) - remove seed numbers
-  const consolationR2Winners = [
-    {
-      team1: getTeamByRank(5) ? { ...getTeamByRank(5)!, seed: 0 } : null,
-      team2: getTeamByRank(6) ? { ...getTeamByRank(6)!, seed: 0 } : null
-    },
-    {
-      team1: getTeamByRank(7) ? { ...getTeamByRank(7)!, seed: 0 } : null,
-      team2: getTeamByRank(8) ? { ...getTeamByRank(8)!, seed: 0 } : null
-    },
-  ];
-
-  const consolationR2Losers = [
-    {
-      team1: getTeamByRank(12) ? { ...getTeamByRank(12)!, seed: 0 } : null,
-      team2: getTeamByRank(11) ? { ...getTeamByRank(11)!, seed: 0 } : null
-    },
-    {
-      team1: getTeamByRank(10) ? { ...getTeamByRank(10)!, seed: 0 } : null,
-      team2: getTeamByRank(9) ? { ...getTeamByRank(9)!, seed: 0 } : null
-    },
-  ];
+  const shape = getPlayoffBracketShape(data.maxTeams);
+  const realRoundByNumber = new Map(data.realRounds.map((r) => [r.roundNumber, r]));
 
   return (
-    <div style={{ minHeight: "100vh", padding: "2rem 1rem" }}>
-      {/* Page Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "2rem" }}>
-        <button
-          onClick={() => router.push(`/leagues/${leagueId}/standings`)}
-          style={{
-            backgroundColor: "rgba(255,255,255,0.1)",
-            color: "var(--text-main)",
-            padding: "0.5rem 1rem",
-            borderRadius: "0.5rem",
-            fontWeight: 600,
-            fontSize: "0.9rem",
-            border: "1px solid rgba(255,255,255,0.2)",
-            cursor: "pointer",
-            transition: "all 0.2s ease"
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.15)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.1)";
-          }}
-        >
-          ← Back to Standings
-        </button>
-        <h1 style={{
-          fontSize: "2.5rem",
-          fontWeight: 700,
-          color: "#f2b632",
-          margin: 0
-        }}>
-          Playoffs
-        </h1>
-      </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: "2rem 1rem",
+        background: "radial-gradient(ellipse at top, rgba(242,182,50,0.06), transparent 60%)",
+      }}
+    >
+      {header}
+      <p style={{ color: "var(--text-muted)", marginBottom: "2rem", fontSize: "0.85rem" }}>
+        Click any matchup box to see the full lineups and live scoring on the Scoreboard.
+      </p>
 
-      {/* Semi Finals and Grand Finals Section */}
-      <div style={{
-        background: "transparent",
-        borderRadius: "12px",
-        padding: "0",
-        marginBottom: "3rem"
-      }}>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "3rem",
-          marginBottom: "3rem"
-        }}>
-          {/* Semi Finals */}
-          <div>
-            <h2 style={{
-              fontSize: "1.5rem",
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.5)",
-              marginBottom: "1.5rem",
-              textAlign: "center",
-              borderBottom: "2px solid rgba(255,255,255,0.1)",
-              paddingBottom: "0.75rem"
-            }}>
-              Semi Finals
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {semiFinal1Team1 && (
-                <TeamCard
-                  {...semiFinal1Team1}
-                  leagueId={leagueId}
-                  onManagerClick={handleManagerClick}
-                />
-              )}
-              {semiFinal1Team2 && (
-                <TeamCard
-                  {...semiFinal1Team2}
-                  leagueId={leagueId}
-                  onManagerClick={handleManagerClick}
-                />
-              )}
-            </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "3rem" }}>
+        {/* Championship Bracket */}
+        <div>
+          <h2
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: 700,
+              color: GOLD,
+              marginBottom: "1.25rem",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.6rem",
+            }}
+          >
+            <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: GOLD, boxShadow: "0 0 8px rgba(242,182,50,0.7)" }} />
+            Championship Bracket
+          </h2>
+          <div style={{ overflowX: "auto", paddingBottom: "0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "2rem", minWidth: "min-content" }}>
+              {shape.map((round, idx) => {
+                const real = realRoundByNumber.get(round.roundNumber);
+                const { moneySlots } = buildRoundSlots(
+                  round.roundNumber,
+                  { matches: round.moneyMatches, byes: round.moneyByes, labels: round.moneyMatchLabels },
+                  { matches: round.consolationMatches, labels: round.consolationMatchLabels },
+                  real,
+                  data.projectedRound1
+                );
+                const gap = Math.min(24 * Math.pow(2, idx), 160);
 
-            {/* Second Semi Final */}
-            <div style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {semiFinal2Team1 && (
-                <TeamCard
-                  {...semiFinal2Team1}
-                  leagueId={leagueId}
-                  onManagerClick={handleManagerClick}
-                />
-              )}
-              {semiFinal2Team2 && (
-                <TeamCard
-                  {...semiFinal2Team2}
-                  leagueId={leagueId}
-                  onManagerClick={handleManagerClick}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Grand Finals and 3rd Place */}
-          <div>
-            <h2 style={{
-              fontSize: "1.5rem",
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.5)",
-              marginBottom: "1.5rem",
-              textAlign: "center",
-              borderBottom: "2px solid rgba(255,255,255,0.1)",
-              paddingBottom: "0.75rem"
-            }}>
-              Grand Finals
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {grandFinalTeam1 && (
-                <TeamCard
-                  {...grandFinalTeam1}
-                  leagueId={leagueId}
-                  onManagerClick={handleManagerClick}
-                />
-              )}
-              {grandFinalTeam2 && (
-                <TeamCard
-                  {...grandFinalTeam2}
-                  leagueId={leagueId}
-                  onManagerClick={handleManagerClick}
-                />
-              )}
-            </div>
-
-            {/* 3rd Place Game */}
-            <div style={{ marginTop: "2rem" }}>
-              <h2 style={{
-                fontSize: "1.5rem",
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.5)",
-                marginBottom: "1.5rem",
-                textAlign: "center",
-                borderBottom: "2px solid rgba(255,255,255,0.1)",
-                paddingBottom: "0.75rem"
-              }}>
-                3rd Place Game
-              </h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {thirdPlaceTeam1 && (
-                  <TeamCard
-                    {...thirdPlaceTeam1}
-                    leagueId={leagueId}
-                    onManagerClick={handleManagerClick}
-                  />
-                )}
-                {thirdPlaceTeam2 && (
-                  <TeamCard
-                    {...thirdPlaceTeam2}
-                    leagueId={leagueId}
-                    onManagerClick={handleManagerClick}
-                  />
-                )}
-              </div>
+                return (
+                  <div key={round.roundNumber} style={{ display: "flex", flexDirection: "column", flexShrink: 0, width: CARD_WIDTH }}>
+                    <RoundHeader label={`Round ${round.roundNumber}`} theme={GOLD_THEME} />
+                    <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: `${gap}px` }}>
+                      {moneySlots.map((slot) => (
+                        <SlotCard key={slot.id} slot={slot} theme={GOLD_THEME} onManagerClick={handleManagerClick} onMatchClick={handleMatchClick} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Consolation Rounds Section */}
-      <div style={{
-        background: "transparent",
-        borderRadius: "12px",
-        padding: "0",
-      }}>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "3rem"
-        }}>
-          {/* Consolation Round 1 */}
-          <div>
-            <h2 style={{
-              fontSize: "1.5rem",
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.5)",
-              marginBottom: "1.5rem",
-              textAlign: "center",
-              borderBottom: "2px solid rgba(255,255,255,0.1)",
-              paddingBottom: "0.75rem"
-            }}>
-              Consolation Round 1
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-              {consolationR1.map((matchup, idx) => (
-                <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                  {matchup.team1 && (
-                    <TeamCard
-                      {...matchup.team1}
-                      leagueId={leagueId}
-                      onManagerClick={handleManagerClick}
-                    />
-                  )}
-                  {matchup.team2 && (
-                    <TeamCard
-                      {...matchup.team2}
-                      leagueId={leagueId}
-                      onManagerClick={handleManagerClick}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* Consolation Bracket */}
+        <div>
+          <h2
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: 700,
+              color: "var(--text-muted)",
+              marginBottom: "1.25rem",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.6rem",
+            }}
+          >
+            <span style={{ width: "10px", height: "10px", borderRadius: "50%", border: "2px solid rgba(255,255,255,0.4)" }} />
+            Consolation Bracket
+          </h2>
+          <div style={{ overflowX: "auto", paddingBottom: "0.5rem" }}>
+            <div style={{ display: "flex", gap: "1.5rem", minWidth: "min-content" }}>
+              {shape.map((round) => {
+                const real = realRoundByNumber.get(round.roundNumber);
+                const { consolationSlots } = buildRoundSlots(
+                  round.roundNumber,
+                  { matches: round.moneyMatches, byes: round.moneyByes, labels: round.moneyMatchLabels },
+                  { matches: round.consolationMatches, labels: round.consolationMatchLabels },
+                  real,
+                  data.projectedRound1
+                );
 
-          {/* Consolation Round 2 */}
-          <div>
-            <h2 style={{
-              fontSize: "1.5rem",
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.5)",
-              marginBottom: "1.5rem",
-              textAlign: "center",
-              borderBottom: "2px solid rgba(255,255,255,0.1)",
-              paddingBottom: "0.75rem"
-            }}>
-              Consolation Round 2
-            </h2>
-
-            {/* Winners Bracket */}
-            <div style={{ marginBottom: "2rem" }}>
-              <h3 style={{
-                fontSize: "1rem",
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.4)",
-                marginBottom: "1rem",
-                textAlign: "center"
-              }}>
-                Winners Bracket
-              </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-                {consolationR2Winners.map((matchup, idx) => (
-                  <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {matchup.team1 && (
-                      <TeamCard
-                        {...matchup.team1}
-                        leagueId={leagueId}
-                        onManagerClick={handleManagerClick}
-                      />
-                    )}
-                    {matchup.team2 && (
-                      <TeamCard
-                        {...matchup.team2}
-                        leagueId={leagueId}
-                        onManagerClick={handleManagerClick}
-                      />
-                    )}
+                return (
+                  <div key={round.roundNumber} style={{ display: "flex", flexDirection: "column", flexShrink: 0, width: CARD_WIDTH }}>
+                    <RoundHeader label={`Round ${round.roundNumber}`} theme={GRAY_THEME} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                      {consolationSlots.map((slot) => (
+                        <SlotCard key={slot.id} slot={slot} theme={GRAY_THEME} onManagerClick={handleManagerClick} onMatchClick={handleMatchClick} />
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Losers Bracket */}
-            <div>
-              <h3 style={{
-                fontSize: "1rem",
-                fontWeight: 600,
-                color: "rgba(255,255,255,0.4)",
-                marginBottom: "1rem",
-                textAlign: "center"
-              }}>
-                Losers Bracket
-              </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-                {consolationR2Losers.map((matchup, idx) => (
-                  <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                    {matchup.team1 && (
-                      <TeamCard
-                        {...matchup.team1}
-                        leagueId={leagueId}
-                        onManagerClick={handleManagerClick}
-                      />
-                    )}
-                    {matchup.team2 && (
-                      <TeamCard
-                        {...matchup.team2}
-                        leagueId={leagueId}
-                        onManagerClick={handleManagerClick}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           </div>
         </div>

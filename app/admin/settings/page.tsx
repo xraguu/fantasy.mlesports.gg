@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAlert } from "@/components/AlertProvider";
 
 // Week date structure
 interface WeekDate {
@@ -11,18 +12,12 @@ interface WeekDate {
 
 // Settings structure matching requirements
 const defaultSettings = {
-  season: {
-    currentYear: 2025,
-    currentWeek: 1,
-    playoffStartWeek: 9, // Weeks 9-10 are playoffs
-    tradeCutoffWeek: 8, // Can't trade during playoffs
-    lineupLockTime: "00:01", // 12:01am on game day
-  },
   weekDates: Array.from({ length: 10 }, (_, i) => ({
     week: i + 1,
     startDate: "",
     endDate: "",
   })) as WeekDate[],
+  draftStatsSeason: null as string | null,
   scoring: {
     goals: 2,
     goalsAgainst: -2,
@@ -42,10 +37,6 @@ const defaultSettings = {
     gameWin: 10,
     gameLoss: 0, // Can be negative
   },
-  league: {
-    maxTeamsPerLeague: 12, // Fixed
-    playoffTeams: 4, // Fixed
-  },
   waivers: {
     processingSchedule: [
       { day: "Wednesday", time: "03:00" },
@@ -55,10 +46,12 @@ const defaultSettings = {
 };
 
 export default function SettingsPage() {
+  const showAlert = useAlert();
   const [settings, setSettings] = useState(defaultSettings);
   const [hasChanges, setHasChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [availableHistoricalSeasons, setAvailableHistoricalSeasons] = useState<string[]>([]);
 
   // Load settings from API on mount
   useEffect(() => {
@@ -67,22 +60,16 @@ export default function SettingsPage() {
         const response = await fetch("/api/admin/settings");
         if (response.ok) {
           const data = await response.json();
+          setAvailableHistoricalSeasons(data.availableHistoricalSeasons || []);
           if (data.settings) {
             // Transform API data to match UI structure
             setSettings({
-              season: {
-                currentYear: data.settings.season,
-                currentWeek: data.settings.currentWeek,
-                playoffStartWeek: data.settings.playoffStartWeek,
-                tradeCutoffWeek: data.settings.tradeCutoffWeek,
-                lineupLockTime: data.settings.lineupLockTime,
-              },
               weekDates: data.settings.weekDates || defaultSettings.weekDates,
               scoring: data.settings.scoringRules || defaultSettings.scoring,
-              league: defaultSettings.league,
               waivers: {
                 processingSchedule: data.settings.waiverSchedule || defaultSettings.waivers.processingSchedule,
               },
+              draftStatsSeason: data.settings.draftStatsSeason ?? null,
             });
           }
         }
@@ -95,17 +82,6 @@ export default function SettingsPage() {
 
     loadSettings();
   }, []);
-
-  const updateSeasonSetting = (key: string, value: any) => {
-    setSettings((prev) => ({
-      ...prev,
-      season: {
-        ...prev.season,
-        [key]: value,
-      },
-    }));
-    setHasChanges(true);
-  };
 
   const updateScoringSetting = (key: string, value: number | any) => {
     setSettings((prev) => ({
@@ -174,16 +150,13 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      // Transform UI structure to API format
+      // Transform UI structure to API format — season/playoffStartWeek/
+      // lineupLockTime are no longer sent; the API derives/fixes those itself.
       const apiData = {
-        season: settings.season.currentYear,
-        currentWeek: settings.season.currentWeek,
-        playoffStartWeek: settings.season.playoffStartWeek,
-        tradeCutoffWeek: settings.season.tradeCutoffWeek,
-        lineupLockTime: settings.season.lineupLockTime,
         weekDates: settings.weekDates,
         scoringRules: settings.scoring,
         waiverSchedule: settings.waivers.processingSchedule,
+        draftStatsSeason: settings.draftStatsSeason,
       };
 
       const response = await fetch("/api/admin/settings", {
@@ -195,15 +168,15 @@ export default function SettingsPage() {
       });
 
       if (response.ok) {
-        alert("Settings saved successfully!");
+        showAlert("Settings saved successfully!", "success");
         setHasChanges(false);
       } else {
         const error = await response.json();
-        alert(`Failed to save settings: ${error.error || "Unknown error"}`);
+        showAlert(`Failed to save settings: ${error.error || "Unknown error"}`, "error");
       }
     } catch (error) {
       console.error("Error saving settings:", error);
-      alert("Failed to save settings. Please try again.");
+      showAlert("Failed to save settings. Please try again.", "error");
     } finally {
       setIsSaving(false);
     }
@@ -283,178 +256,61 @@ export default function SettingsPage() {
         >
           Season Settings
         </h2>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-            gap: "1.5rem",
-            marginBottom: "2rem",
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Current Season
-            </label>
-            <input
-              type="number"
-              value={settings.season.currentYear}
-              onChange={(e) =>
-                updateSeasonSetting("currentYear", Number(e.target.value))
-              }
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-main)",
-                fontSize: "0.95rem",
-              }}
-            />
-          </div>
+        <div style={{ marginBottom: "1.5rem", padding: "1rem", background: "rgba(242, 182, 50, 0.1)", borderRadius: "6px", borderLeft: "3px solid var(--accent)" }}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+            Season number, playoff start week, and lineup lock time are no longer manually
+            configured here — they're now fully automatic per league:
+          </p>
+          <ul style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6, margin: "0.5rem 0 0", paddingLeft: "1.25rem" }}>
+            <li><strong style={{ color: "var(--text-main)" }}>Season</strong> is set when a league is created.</li>
+            <li><strong style={{ color: "var(--text-main)" }}>Playoff start week</strong> is derived from each league's manager count (week 8 for 12-manager leagues, week 9 for 8/10-manager leagues).</li>
+            <li><strong style={{ color: "var(--text-main)" }}>Lineup lock time</strong> is always 3:00am ET on a week's start date (below). Need a different time for a specific week? Lock/unlock it manually from Admin → Lock Lineups.</li>
+            <li><strong style={{ color: "var(--text-main)" }}>Trade cutoff</strong> is 11:59pm ET the night before each league's first playoff week, based on the week dates below.</li>
+          </ul>
+        </div>
 
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Current Week
-            </label>
-            <input
-              type="number"
-              value={settings.season.currentWeek}
-              onChange={(e) =>
-                updateSeasonSetting("currentWeek", Number(e.target.value))
-              }
-              min={1}
-              max={10}
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-main)",
-                fontSize: "0.95rem",
-              }}
-            />
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Playoff Start Week
-            </label>
-            <input
-              type="number"
-              value={settings.season.playoffStartWeek}
-              onChange={(e) =>
-                updateSeasonSetting("playoffStartWeek", Number(e.target.value))
-              }
-              min={1}
-              max={10}
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-main)",
-                fontSize: "0.95rem",
-              }}
-            />
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-              Fantasy regular season: Weeks 1-8, Playoffs: Weeks 9-10
-            </p>
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Trade Cutoff Week
-            </label>
-            <input
-              type="number"
-              value={settings.season.tradeCutoffWeek}
-              onChange={(e) =>
-                updateSeasonSetting("tradeCutoffWeek", Number(e.target.value))
-              }
-              min={1}
-              max={10}
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-main)",
-                fontSize: "0.95rem",
-              }}
-            />
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-              No trades allowed after this week (before playoffs)
-            </p>
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Lineup Lock Time
-            </label>
-            <input
-              type="time"
-              value={settings.season.lineupLockTime}
-              onChange={(e) =>
-                updateSeasonSetting("lineupLockTime", e.target.value)
-              }
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-main)",
-                fontSize: "0.95rem",
-              }}
-            />
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-              Lineups auto-lock at this time on game day (from fixture dates)
-            </p>
-          </div>
+        {/* Current Season (draft stats) */}
+        <div style={{ marginBottom: "1.5rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "0.5rem",
+              fontSize: "0.9rem",
+              color: "var(--text-muted)",
+              fontWeight: 600,
+            }}
+          >
+            Current Season
+          </label>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+            Which completed season&apos;s stats show as &quot;last season&quot; in the draft room&apos;s Available Teams tab.
+          </p>
+          <select
+            value={settings.draftStatsSeason ?? ""}
+            onChange={(e) => {
+              setSettings((prev) => ({ ...prev, draftStatsSeason: e.target.value || null }));
+              setHasChanges(true);
+            }}
+            style={{
+              width: "100%",
+              maxWidth: "300px",
+              padding: "0.75rem",
+              background: "rgba(255,255,255,0.1)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "6px",
+              color: "var(--text-main)",
+              fontSize: "0.95rem",
+            }}
+          >
+            <option value="">
+              {availableHistoricalSeasons.length > 0 ? "Most recent available" : "No historical seasons imported yet"}
+            </option>
+            {availableHistoricalSeasons.map((season) => (
+              <option key={season} value={season}>
+                {season}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Weekly Schedule */}
@@ -979,100 +835,6 @@ export default function SettingsPage() {
               <strong style={{ color: "var(--text-main)" }}>Example:</strong> If a team has SR of 65, and the range 51-70 has +10 points, that team will receive an additional 10 points to their total fantasy points.
             </p>
           </div>
-        </div>
-      </div>
-
-      {/* League Configuration */}
-      <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
-        <h2
-          style={{
-            fontSize: "1.5rem",
-            fontWeight: 700,
-            marginBottom: "1.5rem",
-            color: "var(--accent)",
-          }}
-        >
-          League Configuration
-        </h2>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-            gap: "1.5rem",
-          }}
-        >
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Max Teams per League
-            </label>
-            <input
-              type="number"
-              value={settings.league.maxTeamsPerLeague}
-              disabled
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-muted)",
-                fontSize: "0.95rem",
-                cursor: "not-allowed",
-              }}
-            />
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-              Fixed at 12 managers per league
-            </p>
-          </div>
-
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontSize: "0.9rem",
-                color: "var(--text-muted)",
-                fontWeight: 600,
-              }}
-            >
-              Playoff Teams
-            </label>
-            <input
-              type="number"
-              value={settings.league.playoffTeams}
-              disabled
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "var(--text-muted)",
-                fontSize: "0.95rem",
-                cursor: "not-allowed",
-              }}
-            />
-            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-              Top 4 teams make playoffs
-            </p>
-          </div>
-        </div>
-
-        <div style={{ marginTop: "1.5rem", padding: "1rem", background: "rgba(242, 182, 50, 0.1)", borderRadius: "6px", borderLeft: "3px solid var(--accent)" }}>
-          <p style={{ fontSize: "0.9rem", color: "var(--text-main)", marginBottom: "0.5rem", fontWeight: 600 }}>
-            Per-League Settings
-          </p>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
-            Draft type (Snake/Linear), waiver system (FAAB/Rolling/Fixed), and roster structure (positions) are configured individually when creating each fantasy league.
-          </p>
         </div>
       </div>
 

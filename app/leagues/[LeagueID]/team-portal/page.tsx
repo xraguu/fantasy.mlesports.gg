@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
+import { useAlert } from "@/components/AlertProvider";
 
 interface MLETeam {
   id: string;
@@ -28,6 +29,7 @@ interface TeamWithStats extends MLETeam {
   demos: number;
   record: string;
   status: "free-agent" | "waiver" | "rostered";
+  rosteredBy?: { rosterName: string; managerName: string };
 }
 
 type SortColumn = "rank" | "fpts" | "avg" | "last" | "goals" | "shots" | "saves" | "assists" | "demos";
@@ -39,9 +41,12 @@ interface RosterData {
     displayName: string;
     shortCode: string;
     ownerDisplayName: string;
+    waiverPriority: number | null;
+    faabRemaining: number | null;
   };
   league: {
     currentWeek: number;
+    waiverSystem: string;
     rosterConfig: {
       "2s": number;
       "3s": number;
@@ -54,6 +59,7 @@ interface RosterData {
     position: string;
     slotIndex: number;
     fantasyPoints: number | null;
+    isLocked: boolean;
     mleTeam: {
       id: string;
       name: string;
@@ -79,6 +85,7 @@ const SortIcon = ({ column, sortColumn, sortDirection }: { column: SortColumn; s
 };
 
 export default function TeamPortalPage() {
+  const showAlert = useAlert();
   const params = useParams();
   const { data: session } = useSession();
   const leagueId = params?.LeagueID as string;
@@ -90,6 +97,8 @@ export default function TeamPortalPage() {
   const [showWaiverModal, setShowWaiverModal] = useState(false);
   const [selectedWaiverTeam, setSelectedWaiverTeam] = useState<TeamWithStats | null>(null);
   const [selectedDropTeam, setSelectedDropTeam] = useState<string | null>(null);
+  const [submittingWaiver, setSubmittingWaiver] = useState(false);
+  const [faabBidInput, setFaabBidInput] = useState("");
   const [showFAConfirmModal, setShowFAConfirmModal] = useState(false);
   const [selectedFATeam, setSelectedFATeam] = useState<TeamWithStats | null>(null);
   const [leagueFilter, setLeagueFilter] = useState<"All" | "Foundation" | "Academy" | "Champion" | "Master" | "Premier">("All");
@@ -106,10 +115,34 @@ export default function TeamPortalPage() {
   const [rosterData, setRosterData] = useState<RosterData | null>(null);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [loadingRoster, setLoadingRoster] = useState(true);
+  const [draftStatus, setDraftStatus] = useState<string | null>(null);
+  const draftIncomplete = draftStatus !== null && draftStatus !== "completed";
 
   // MLE teams data
   const [mleTeams, setMleTeams] = useState<TeamWithStats[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(true);
+
+  // The waiver/drop modal serves two different flows: an instant free-agent
+  // swap (must respect locks, always needs a specific slot to replace) vs a
+  // genuine waiver claim on a "waiver"-status team (can target a locked
+  // slot — only checked at process time — and can skip picking a drop
+  // target entirely if there's an empty slot to land in).
+  const isFreeAgentPickup = selectedWaiverTeam?.status === "free-agent";
+  const waiverModalRosterConfig = rosterData?.league.rosterConfig;
+  const waiverModalTotalSlots = waiverModalRosterConfig
+    ? waiverModalRosterConfig["2s"] + waiverModalRosterConfig["3s"] + waiverModalRosterConfig.flx + waiverModalRosterConfig.be
+    : 0;
+  const waiverModalFilledSlots = rosterData?.rosterSlots.filter((s) => s.mleTeam !== null).length ?? 0;
+  const waiverModalHasEmptySlot = waiverModalRosterConfig
+    ? waiverModalFilledSlots < waiverModalTotalSlots
+    : false;
+  // FAAB bidding only applies to real (contested) waiver claims — an
+  // instant free-agent pickup never competes with anyone, so no bid needed.
+  const isFaabClaim = !isFreeAgentPickup && rosterData?.league.waiverSystem === "faab";
+
+  useEffect(() => {
+    setFaabBidInput("");
+  }, [selectedWaiverTeam?.id]);
 
   // Fetch user's team ID for this league
   useEffect(() => {
@@ -126,6 +159,7 @@ export default function TeamPortalPage() {
           if (myTeam) {
             setMyTeamId(myTeam.id);
           }
+          setDraftStatus(data.league?.draftStatus ?? null);
         }
       } catch (error) {
         console.error("Error fetching user's team:", error);
@@ -168,8 +202,8 @@ export default function TeamPortalPage() {
       }
 
       try {
-        // Fetch all MLE teams
-        const teamsResponse = await fetch("/api/mle-teams");
+        // Fetch all MLE teams with real stats for the selected gamemode
+        const teamsResponse = await fetch(`/api/mle-teams?mode=${modeFilter}`);
         if (!teamsResponse.ok) {
           throw new Error("Failed to fetch teams");
         }
@@ -179,8 +213,8 @@ export default function TeamPortalPage() {
         const leagueResponse = await fetch(`/api/leagues/${leagueId}`);
         const leagueData = leagueResponse.ok ? await leagueResponse.json() : null;
 
-        // Build a set of rostered team IDs
-        const rosteredTeamIds = new Set<string>();
+        // Build a map of rostered team IDs -> who rosters them
+        const rosteredByMap = new Map<string, { rosterName: string; managerName: string }>();
         if (leagueData?.league?.fantasyTeams) {
           for (const fantasyTeam of leagueData.league.fantasyTeams) {
             try {
@@ -189,7 +223,10 @@ export default function TeamPortalPage() {
                 const rosterData = await rosterResponse.json();
                 rosterData.rosterSlots.forEach((slot: any) => {
                   if (slot.mleTeam) {
-                    rosteredTeamIds.add(slot.mleTeam.id);
+                    rosteredByMap.set(slot.mleTeam.id, {
+                      rosterName: fantasyTeam.displayName,
+                      managerName: fantasyTeam.owner?.displayName ?? "Unknown",
+                    });
                   }
                 });
               }
@@ -199,7 +236,10 @@ export default function TeamPortalPage() {
           }
         }
 
-        // Fetch pending waiver claims to determine waiver status
+        // Fetch pending waiver claims + post-drop waiver clearance windows to
+        // determine waiver status (a team can show as "waiver" either because
+        // someone has a pending claim to add it, or because it was just
+        // dropped and hasn't cleared back to free agency yet).
         const waiverResponse = await fetch(`/api/leagues/${leagueId}/waivers`);
         const waiverTeamIds = new Set<string>();
         if (waiverResponse.ok) {
@@ -211,26 +251,23 @@ export default function TeamPortalPage() {
               }
             });
           }
+          if (waiverData.waiverPeriodTeamIds) {
+            waiverData.waiverPeriodTeamIds.forEach((id: string) => waiverTeamIds.add(id));
+          }
         }
 
         // Transform teams with status based on roster check and waiver claims
-        const teamsWithStats: TeamWithStats[] = teamsData.teams.map((team: MLETeam, index: number) => ({
+        // (fpts/avg/last/goals/shots/saves/assists/demos/record already come
+        // from the API, computed for the selected gamemode)
+        const teamsWithStats: TeamWithStats[] = teamsData.teams.map((team: Omit<TeamWithStats, "rank" | "status" | "rosteredBy">, index: number) => ({
           ...team,
           rank: index + 1,
-          fpts: 0,
-          avg: 0,
-          last: 0,
-          goals: 0,
-          shots: 0,
-          saves: 0,
-          assists: 0,
-          demos: 0,
-          record: "0-0",
-          status: rosteredTeamIds.has(team.id)
+          status: rosteredByMap.has(team.id)
             ? "rostered" as const
             : waiverTeamIds.has(team.id)
             ? "waiver" as const
             : "free-agent" as const,
+          rosteredBy: rosteredByMap.get(team.id),
         }));
         setMleTeams(teamsWithStats);
       } catch (error) {
@@ -241,7 +278,7 @@ export default function TeamPortalPage() {
     };
 
     fetchTeams();
-  }, [session?.user?.id, leagueId]);
+  }, [session?.user?.id, leagueId, modeFilter]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -282,9 +319,6 @@ export default function TeamPortalPage() {
       return false;
     });
 
-    // Filter by mode (this won't work with mock data, but ready for database)
-    // When database is connected, you would filter by team.mode === "2s" or "3s"
-
     // Then sort the filtered data
     return filteredData.sort((a, b) => {
       const aValue = a[sortColumn];
@@ -302,10 +336,7 @@ export default function TeamPortalPage() {
     <>
       {/* Team Stats Modal */}
       <TeamModal
-        team={showModal && selectedTeam ? {
-          ...selectedTeam,
-          rosteredBy: (selectedTeam.rank ?? 0) % 2 === 0 ? { rosterName: "Fantastic Ballers", managerName: "xenn" } : undefined
-        } : null}
+        team={showModal && selectedTeam ? selectedTeam : null}
         onClose={() => setShowModal(false)}
       />
 
@@ -426,7 +457,7 @@ export default function TeamPortalPage() {
                         });
 
                         if (!emptySlot) {
-                          alert("No empty slots found");
+                          showAlert("No empty slots found", "warning");
                           return;
                         }
 
@@ -443,7 +474,7 @@ export default function TeamPortalPage() {
                         });
 
                         if (response.ok) {
-                          alert(`${selectedFATeam.name} successfully added to your roster!`);
+                          showAlert(`${selectedFATeam.name} successfully added to your roster!`, "success");
                           // Refetch roster to update UI
                           const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}`);
                           if (rosterResponse.ok) {
@@ -452,11 +483,11 @@ export default function TeamPortalPage() {
                           }
                         } else {
                           const error = await response.json();
-                          alert(`Failed to add team: ${error.error || "Unknown error"}`);
+                          showAlert(`Failed to add team: ${error.error || "Unknown error"}`, "error");
                         }
                       } catch (error) {
                         console.error("Error adding team:", error);
-                        alert("Failed to add team. Please try again.");
+                        showAlert("Failed to add team. Please try again.", "error");
                       }
                       setSelectedFATeam(null);
                     } else {
@@ -550,20 +581,87 @@ export default function TeamPortalPage() {
 
             {/* Confirm button */}
             <button
-              onClick={() => {
-                if (selectedDropTeam) {
-                  const isFreeAgent = selectedWaiverTeam.status === "free-agent";
-                  const message = isFreeAgent
-                    ? `Free agent successfully added to your roster!`
-                    : `Waiver claim submitted! Adding ${selectedWaiverTeam.name} and dropping ${selectedDropTeam}`;
-                  alert(message);
+              onClick={async () => {
+                if (!myTeamId || !rosterData) {
+                  showAlert("Could not determine your team", "error");
+                  return;
+                }
+
+                // Instant swaps always need a specific slot to replace;
+                // waiver claims only need one if there's no empty slot to
+                // land in.
+                if (!selectedDropTeam && (isFreeAgentPickup || !waiverModalHasEmptySlot)) {
+                  showAlert("Please select a team to drop", "warning");
+                  return;
+                }
+
+                let faabBid: number | undefined;
+                if (isFaabClaim) {
+                  faabBid = Number(faabBidInput);
+                  if (faabBidInput.trim() === "" || !Number.isFinite(faabBid) || faabBid < 0 || !Number.isInteger(faabBid)) {
+                    showAlert("Please enter a valid whole-dollar bid", "warning");
+                    return;
+                  }
+                  if (faabBid > (rosterData.fantasyTeam.faabRemaining ?? 0)) {
+                    showAlert(`Bid exceeds your remaining budget ($${rosterData.fantasyTeam.faabRemaining ?? 0})`, "warning");
+                    return;
+                  }
+                }
+
+                setSubmittingWaiver(true);
+                try {
+                  const response = isFreeAgentPickup
+                    ? await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}/swap`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          week: rosterData.league.currentWeek,
+                          dropMleTeamId: selectedDropTeam,
+                          addMleTeamId: selectedWaiverTeam.id,
+                        }),
+                      })
+                    : await fetch(`/api/leagues/${leagueId}/waivers`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          fantasyTeamId: myTeamId,
+                          addTeamId: selectedWaiverTeam.id,
+                          dropTeamId: selectedDropTeam || undefined,
+                          faabBid,
+                        }),
+                      });
+                  const data = await response.json();
+
+                  if (!response.ok) {
+                    // Locked-slot rejections land here with a clear reason
+                    // from the API (see lib/rosterLocks.ts) — surface it
+                    // as-is rather than a generic failure message.
+                    showAlert(data.error || "Failed to submit", "error");
+                    return;
+                  }
+
+                  showAlert(
+                    isFreeAgentPickup
+                      ? `${selectedWaiverTeam.leagueId} ${selectedWaiverTeam.name} added to your roster!`
+                      : `Waiver claim submitted for ${selectedWaiverTeam.leagueId} ${selectedWaiverTeam.name}.`,
+                    "success"
+                  );
                   setShowWaiverModal(false);
                   setSelectedWaiverTeam(null);
                   setSelectedDropTeam(null);
-                } else {
-                  alert("Please select a team to drop");
+
+                  if (isFreeAgentPickup) {
+                    const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}`);
+                    if (rosterResponse.ok) setRosterData(await rosterResponse.json());
+                  }
+                } catch (error) {
+                  console.error("Error submitting:", error);
+                  showAlert("Failed. Please try again.", "error");
+                } finally {
+                  setSubmittingWaiver(false);
                 }
               }}
+              disabled={submittingWaiver}
               style={{
                 position: "absolute",
                 top: "1rem",
@@ -574,13 +672,14 @@ export default function TeamPortalPage() {
                 padding: "0.65rem 2rem",
                 borderRadius: "8px",
                 border: "none",
-                cursor: "pointer",
+                cursor: submittingWaiver ? "not-allowed" : "pointer",
+                opacity: submittingWaiver ? 0.6 : 1,
                 fontSize: "1rem",
                 boxShadow: "0 4px 12px rgba(242, 182, 50, 0.4)",
                 zIndex: 10,
               }}
             >
-              Confirm
+              {submittingWaiver ? "Submitting..." : "Confirm"}
             </button>
 
             {/* Header - Team Info */}
@@ -594,6 +693,13 @@ export default function TeamPortalPage() {
               {rosterData?.record && (
                 <div style={{ fontSize: "0.95rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
                   {rosterData.record.wins} - {rosterData.record.losses} {rosterData.rank && `• ${rosterData.rank}th`}
+                </div>
+              )}
+              {rosterData && !isFreeAgentPickup && (
+                <div style={{ fontSize: "0.9rem", color: "var(--accent)", fontWeight: 600, marginTop: "0.5rem" }}>
+                  {rosterData.league.waiverSystem === "faab"
+                    ? `Your FAAB Budget: $${rosterData.fantasyTeam.faabRemaining ?? 0} remaining`
+                    : `Your Waiver Priority: #${rosterData.fantasyTeam.waiverPriority ?? "-"}`}
                 </div>
               )}
             </div>
@@ -621,6 +727,35 @@ export default function TeamPortalPage() {
               </div>
             </div>
 
+            {/* FAAB Bid Input */}
+            {isFaabClaim && (
+              <div style={{ padding: "1.5rem 2rem 0", display: "flex", alignItems: "center", gap: "1rem" }}>
+                <label style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--text-main)" }}>
+                  Your Bid ($):
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={faabBidInput}
+                  onChange={(e) => setFaabBidInput(e.target.value)}
+                  placeholder="0"
+                  style={{
+                    width: "120px",
+                    padding: "0.5rem 0.75rem",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "6px",
+                    color: "var(--text-main)",
+                    fontSize: "0.95rem",
+                  }}
+                />
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  ${rosterData?.fantasyTeam.faabRemaining ?? 0} remaining — highest bid wins, ties broken by priority
+                </span>
+              </div>
+            )}
+
             {/* Roster Table with Checkboxes */}
             <div style={{ padding: "1.5rem 2rem" }}>
               {loadingRoster ? (
@@ -633,6 +768,42 @@ export default function TeamPortalPage() {
                 </div>
               ) : (
                 <div style={{ overflowX: "auto" }}>
+                  {!isFreeAgentPickup && (
+                    <div
+                      style={{
+                        padding: "0.75rem 1rem",
+                        marginBottom: "1rem",
+                        borderRadius: "6px",
+                        background: "rgba(59, 130, 246, 0.1)",
+                        color: "var(--text-main)",
+                        fontSize: "0.85rem",
+                      }}
+                    >
+                      This team is on waivers, so this becomes a pending claim instead of an
+                      instant add — you can pick a team to drop now (even a locked one; that's
+                      only checked once the claim actually processes), or leave it blank if you
+                      have an empty slot.
+                    </div>
+                  )}
+                  {isFreeAgentPickup &&
+                    rosterData.rosterSlots.filter((s) => s.mleTeam !== null).length > 0 &&
+                    rosterData.rosterSlots
+                      .filter((s) => s.mleTeam !== null)
+                      .every((s) => s.isLocked) && (
+                      <div
+                        style={{
+                          padding: "0.75rem 1rem",
+                          marginBottom: "1rem",
+                          borderRadius: "6px",
+                          background: "rgba(239, 68, 68, 0.1)",
+                          color: "#ef4444",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        Every team on your roster is currently locked — you can't drop any of
+                        them to make room for this free agent until at least one unlocks.
+                      </div>
+                    )}
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ borderBottom: "2px solid rgba(255, 255, 255, 0.2)" }}>
@@ -645,12 +816,24 @@ export default function TeamPortalPage() {
                     <tbody>
                       {rosterData.rosterSlots
                         .filter(slot => slot.mleTeam !== null)
-                        .map((slot) => (
+                        .map((slot) => {
+                          const mleTeamId = slot.mleTeam!.id;
+                          const isSelected = selectedDropTeam === mleTeamId;
+                          // Locks only block an instant free-agent swap —
+                          // a waiver claim can target a locked slot (it's
+                          // only re-checked once the claim processes).
+                          const rowBlockedByLock = isFreeAgentPickup && slot.isLocked;
+                          return (
                           <tr
                             key={slot.id}
                             style={{
                               borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
-                              backgroundColor: selectedDropTeam === slot.id ? "rgba(242, 182, 50, 0.1)" : "transparent",
+                              backgroundColor: rowBlockedByLock
+                                ? "rgba(239, 68, 68, 0.06)"
+                                : isSelected
+                                ? "rgba(242, 182, 50, 0.1)"
+                                : "transparent",
+                              opacity: rowBlockedByLock ? 0.6 : 1,
                             }}
                           >
                             <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.9rem", color: "var(--accent)", fontWeight: 700 }}>
@@ -668,6 +851,14 @@ export default function TeamPortalPage() {
                                 <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
                                   {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
                                 </span>
+                                {slot.isLocked && (
+                                  <span style={{ fontSize: "0.75rem", color: isFreeAgentPickup ? "#ef4444" : "var(--text-muted)" }} title="Locked">
+                                    🔒{" "}
+                                    {isFreeAgentPickup
+                                      ? "Locked — can't drop this team for a free agent pickup right now"
+                                      : "Locked — OK to select for a waiver claim, just won't process until it unlocks"}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 600, fontSize: "0.9rem", color: "var(--accent)" }}>
@@ -675,18 +866,22 @@ export default function TeamPortalPage() {
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                               <button
-                                onClick={() => setSelectedDropTeam(selectedDropTeam === slot.id ? null : slot.id)}
+                                onClick={() =>
+                                  !rowBlockedByLock &&
+                                  setSelectedDropTeam(isSelected ? null : mleTeamId)
+                                }
+                                disabled={rowBlockedByLock}
                                 style={{
                                   width: "24px",
                                   height: "24px",
-                                  border: "2px solid var(--accent)",
+                                  border: `2px solid ${rowBlockedByLock ? "rgba(239, 68, 68, 0.4)" : "var(--accent)"}`,
                                   borderRadius: "4px",
-                                  background: selectedDropTeam === slot.id ? "var(--accent)" : "transparent",
-                                  cursor: "pointer",
+                                  background: isSelected ? "var(--accent)" : "transparent",
+                                  cursor: rowBlockedByLock ? "not-allowed" : "pointer",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
-                                  color: selectedDropTeam === slot.id ? "#1a1a2e" : "transparent",
+                                  color: isSelected ? "#1a1a2e" : "transparent",
                                   fontWeight: 700,
                                   fontSize: "1rem",
                                 }}
@@ -695,7 +890,8 @@ export default function TeamPortalPage() {
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                     </tbody>
                   </table>
                 </div>
@@ -711,6 +907,23 @@ export default function TeamPortalPage() {
           Teams
         </h1>
       </div>
+
+      {draftIncomplete && (
+        <div
+          style={{
+            marginBottom: "1.5rem",
+            padding: "0.85rem 1.25rem",
+            borderRadius: "8px",
+            background: "rgba(242, 182, 50, 0.1)",
+            border: "1px solid rgba(242, 182, 50, 0.35)",
+            color: "var(--accent)",
+            fontSize: "0.9rem",
+            fontWeight: 600,
+          }}
+        >
+          Adding and dropping teams is disabled until the draft is complete.
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
@@ -1048,7 +1261,23 @@ export default function TeamPortalPage() {
                     </div>
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "left" }}>
-                    {team.status === "free-agent" ? (
+                    {draftIncomplete && team.status !== "rostered" ? (
+                      <div
+                        title="Adding and dropping teams is disabled until the draft is complete"
+                        style={{
+                          border: "1px solid var(--text-muted)",
+                          borderRadius: "6px",
+                          padding: "0.4rem 0.9rem",
+                          fontSize: "0.85rem",
+                          color: "var(--text-muted)",
+                          fontWeight: 600,
+                          display: "inline-block",
+                          cursor: "not-allowed",
+                        }}
+                      >
+                        Draft in progress
+                      </div>
+                    ) : team.status === "free-agent" ? (
                       <button
                         className="btn btn-warning"
                         style={{

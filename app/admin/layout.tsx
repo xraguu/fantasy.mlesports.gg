@@ -112,14 +112,13 @@ export default function AdminLayout({
   // Admin users see the admin panel
   const adminNavItems = [
     { label: "Dashboard", path: "/admin" },
+    { label: "Manage Users", path: "/admin/users" },
     { label: "Manage Leagues", path: "/admin/leagues" },
-    { label: "Draft Import", path: "/admin/draft-import" },
-    { label: "Generate Schedule", path: "/admin/generate-schedule" },
     { label: "Lock Lineups", path: "/admin/lock-lineups" },
     { label: "Transactions", path: "/admin/waivers" },
-    { label: "Manual Stats Override", path: "/admin/stats" },
-    { label: "Manage Users", path: "/admin/users" },
     { label: "Settings", path: "/admin/settings" },
+    { label: "Manual Stats", path: "/admin/stats" },
+    { label: "League Archive", path: "/admin/leagues/archive" },
     { label: "Database Tools", path: "/admin/database" },
   ];
 

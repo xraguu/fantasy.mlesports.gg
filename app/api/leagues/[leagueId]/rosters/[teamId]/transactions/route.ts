@@ -58,16 +58,34 @@ export async function GET(
       },
     });
 
+    // Trade rows reference the other side via tradePartnerTeamId — batch
+    // resolve those to real team/manager names instead of a placeholder.
+    const partnerTeamIds = [
+      ...new Set(
+        transactions
+          .filter((t) => t.type === "trade" && t.tradePartnerTeamId)
+          .map((t) => t.tradePartnerTeamId as string)
+      ),
+    ];
+    const partnerTeams = await prisma.fantasyTeam.findMany({
+      where: { id: { in: partnerTeamIds } },
+      include: { owner: { select: { displayName: true } } },
+    });
+    const partnerTeamById = new Map(partnerTeams.map((t) => [t.id, t]));
+
     // Format transactions
     const formattedTransactions = transactions.map((transaction) => {
       if (transaction.type === "trade") {
+        const partner = transaction.tradePartnerTeamId
+          ? partnerTeamById.get(transaction.tradePartnerTeamId)
+          : undefined;
         return {
           id: transaction.id,
           type: "trade",
           fromTeam: fantasyTeam.displayName,
           fromManager: fantasyTeam.owner.displayName,
-          toTeam: "Trade Partner", // TODO: Fetch actual partner team name
-          toManager: "Trade Partner Manager", // TODO: Fetch actual partner manager
+          toTeam: partner?.displayName ?? "Unknown Team",
+          toManager: partner?.owner.displayName ?? "Unknown Manager",
           givingTeams: transaction.dropTeamId ? [transaction.dropTeamId] : [],
           receivingTeams: transaction.addTeamId ? [transaction.addTeamId] : [],
           status: transaction.status === "approved" ? "Accepted" : "Denied",

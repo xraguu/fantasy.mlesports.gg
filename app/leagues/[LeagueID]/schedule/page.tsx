@@ -20,6 +20,7 @@ type FantasyTeamData = {
   id: string;
   displayName: string;
   manager: string;
+  isYou: boolean;
 };
 
 export default function SchedulePage() {
@@ -46,11 +47,13 @@ export default function SchedulePage() {
           id: standing.fantasyTeamId,
           displayName: standing.team,
           manager: standing.manager,
+          isYou: standing.isYou,
         }));
 
         setTeams(teamsData);
         if (teamsData.length > 0 && !activeTeamId) {
-          setActiveTeamId(teamsData[0].id);
+          const own = teamsData.find((t: FantasyTeamData) => t.isYou);
+          setActiveTeamId(own ? own.id : teamsData[0].id);
         }
       } catch (err) {
         console.error("Error fetching teams:", err);

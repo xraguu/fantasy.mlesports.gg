@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { processExpiredTradeVetoWindows, tradeVetoDeadline } from "@/lib/tradeExecution";
 
 /**
  * GET /api/leagues/[leagueId]/trades
@@ -15,6 +16,10 @@ export async function GET(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Auto-process any trades whose 12-hour veto window has closed since
+    // the last time anyone loaded this page.
+    await processExpiredTradeVetoWindows();
 
     const { leagueId } = await params;
     const url = new URL(req.url);
@@ -130,6 +135,8 @@ export async function GET(
           id: trade.id,
           status: trade.status,
           createdAt: trade.createdAt,
+          acceptedAt: trade.acceptedAt,
+          vetoDeadline: trade.acceptedAt ? tradeVetoDeadline(trade.acceptedAt) : null,
           isProposer,
           proposer: {
             teamId: trade.proposerTeamId,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getFantasyStandings } from "@/lib/standings";
 
 /**
  * GET /api/leagues/[leagueId]/standings
@@ -45,21 +46,30 @@ export async function GET(
       },
     });
 
-    // Get all matchups for the league
+    // Get all matchups for the league (used for streak calc below)
     const matchups = await prisma.matchup.findMany({
       where: { fantasyLeagueId: leagueId },
     });
 
+    // Shared win/loss/points source (honors double-win if enabled on this league)
+    const fantasyStandings = await getFantasyStandings(leagueId);
+    const standingByTeamId = new Map(fantasyStandings.map((s) => [s.teamId, s]));
+
     // Calculate standings for each team
     const standings = await Promise.all(
       fantasyTeams.map(async (team) => {
-        // Calculate wins, losses, points from matchups
-        let wins = 0;
-        let losses = 0;
-        let totalPoints = 0;
-        let pointsAgainst = 0;
-        const gameResults: ("W" | "L")[] = [];
+        const base = standingByTeamId.get(team.id);
+        const wins = base?.wins ?? 0;
+        const losses = base?.losses ?? 0;
+        const totalPoints = base?.pointsFor ?? 0;
+        const pointsAgainst = base?.pointsAgainst ?? 0;
 
+        // Streak calc still needs per-game W/L sequence (double-win bonuses
+        // aren't "games", so streaks/gamesPlayed are based on actual matchup
+        // results only, not the wins/losses totals above which may include
+        // double-win bonuses)
+        const gameResults: ("W" | "L")[] = [];
+        let actualGamesPlayed = 0;
         matchups.forEach((matchup) => {
           if (!matchup.homeScore || !matchup.awayScore) return;
 
@@ -71,20 +81,15 @@ export async function GET(
           const myScore = isHome ? matchup.homeScore : matchup.awayScore;
           const oppScore = isHome ? matchup.awayScore : matchup.homeScore;
 
-          totalPoints += myScore;
-          pointsAgainst += oppScore;
-
+          actualGamesPlayed++;
           if (myScore > oppScore) {
-            wins++;
             gameResults.push("W");
           } else if (myScore < oppScore) {
-            losses++;
             gameResults.push("L");
           }
         });
 
-        const gamesPlayed = wins + losses;
-        const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
+        const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
         // Calculate streak (looking at last 5 games)
         const recentGames = gameResults.slice(-5);

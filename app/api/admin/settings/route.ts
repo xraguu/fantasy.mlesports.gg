@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminActivity } from "@/lib/adminActivity";
+import { getAvailableHistoricalSeasons } from "@/lib/teamHistoricalStats";
 
 // GET /api/admin/settings - Get current season settings
 export async function GET(request: NextRequest) {
@@ -26,15 +28,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const availableHistoricalSeasons = await getAvailableHistoricalSeasons();
+
     // If no settings exist, return defaults
     if (!settings) {
+      const latestLeague = await prisma.fantasyLeague.findFirst({
+        orderBy: { season: "desc" },
+        select: { season: true },
+      });
+
       return NextResponse.json({
         settings: {
-          season: new Date().getFullYear(),
+          season: latestLeague?.season ?? 1,
           currentWeek: 1,
           playoffStartWeek: 9,
           tradeCutoffWeek: 8,
-          lineupLockTime: "00:01",
+          lineupLockTime: "03:00",
           weekDates: Array.from({ length: 10 }, (_, i) => ({
             week: i + 1,
             startDate: "",
@@ -47,7 +56,13 @@ export async function GET(request: NextRequest) {
             assists: 1.5,
             demosInflicted: 0.5,
             demosTaken: -0.5,
-            sprocketRating: 0.1,
+            sprocketRatingRanges: [
+              { min: 0, max: 30, points: 0 },
+              { min: 31, max: 50, points: 5 },
+              { min: 51, max: 70, points: 10 },
+              { min: 71, max: 90, points: 15 },
+              { min: 91, max: 100, points: 20 },
+            ],
             gameWin: 10,
             gameLoss: 0,
           },
@@ -55,11 +70,13 @@ export async function GET(request: NextRequest) {
             { day: "Wednesday", time: "03:00" },
             { day: "Sunday", time: "03:00" },
           ],
+          draftStatsSeason: null,
         },
+        availableHistoricalSeasons,
       });
     }
 
-    return NextResponse.json({ settings });
+    return NextResponse.json({ settings, availableHistoricalSeasons });
   } catch (error) {
     console.error("Error fetching season settings:", error);
     return NextResponse.json(
@@ -78,29 +95,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const {
-      season,
-      currentWeek,
-      playoffStartWeek,
-      tradeCutoffWeek,
-      lineupLockTime,
-      weekDates,
-      scoringRules,
-      waiverSchedule,
-    } = body;
+    const { weekDates, scoringRules, waiverSchedule, draftStatsSeason } = body;
 
     // Validate required fields
-    if (!season || !currentWeek || !weekDates || !scoringRules) {
+    if (!weekDates || !scoringRules) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
-
-    // Validate week ranges
-    if (currentWeek < 1 || currentWeek > 10) {
-      return NextResponse.json(
-        { error: "Current week must be between 1 and 10" },
         { status: 400 }
       );
     }
@@ -113,30 +113,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upsert the settings (create or update if exists)
+    // Season is no longer admin-entered — it's derived from the most
+    // recently created league, since a season only really exists once a
+    // league for it has been created.
+    const latestLeague = await prisma.fantasyLeague.findFirst({
+      orderBy: { season: "desc" },
+      select: { season: true },
+    });
+    if (!latestLeague) {
+      return NextResponse.json(
+        { error: "Create a league first — settings apply to the season of your most recent league" },
+        { status: 400 }
+      );
+    }
+    const season = latestLeague.season;
+
+    // currentWeek/tradeCutoffWeek/playoffStartWeek/lineupLockTime columns are
+    // unused elsewhere (currentWeek is tracked per-league on FantasyLeague;
+    // playoff start week and lineup lock time are now fixed rules computed
+    // from league size / week dates, not admin-configurable; trade cutoff is
+    // computed from weekDates via lib/tradeCutoff.ts) — kept populated with
+    // harmless placeholder values so the non-nullable columns stay satisfied.
     const settings = await prisma.seasonSettings.upsert({
-      where: {
-        season: parseInt(season),
-      },
+      where: { season },
       update: {
-        currentWeek: parseInt(currentWeek),
-        playoffStartWeek: parseInt(playoffStartWeek),
-        tradeCutoffWeek: parseInt(tradeCutoffWeek),
-        lineupLockTime,
         weekDates,
         scoringRules,
         waiverSchedule: waiverSchedule || [],
+        draftStatsSeason: draftStatsSeason || null,
       },
       create: {
-        season: parseInt(season),
-        currentWeek: parseInt(currentWeek),
-        playoffStartWeek: parseInt(playoffStartWeek),
-        tradeCutoffWeek: parseInt(tradeCutoffWeek),
-        lineupLockTime,
+        season,
+        currentWeek: 1,
+        playoffStartWeek: 9,
+        tradeCutoffWeek: 8,
+        lineupLockTime: "03:00",
         weekDates,
         scoringRules,
         waiverSchedule: waiverSchedule || [],
+        draftStatsSeason: draftStatsSeason || null,
       },
+    });
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "settings.save",
+      description: `Updated season settings for season ${settings.season}`,
     });
 
     return NextResponse.json({ settings, success: true });

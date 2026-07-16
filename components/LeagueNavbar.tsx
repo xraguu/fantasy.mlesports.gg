@@ -12,7 +12,7 @@ export default function LeagueNavbar() {
   const leagueId = params?.LeagueID as string;
   const { data: session } = useSession();
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
-  const [isDraftComplete, setIsDraftComplete] = useState(false);
+  const [draftStatus, setDraftStatus] = useState<string>("not_started");
   const [currentWeek, setCurrentWeek] = useState(1);
 
   // Fetch the user's fantasy team ID and league data
@@ -31,9 +31,9 @@ export default function LeagueNavbar() {
           if (myTeam) {
             setMyTeamId(myTeam.id);
           }
-          // Check if draft is complete and get current week
+          // Track draft status and current week
           if (data.league) {
-            setIsDraftComplete(data.league.draftStatus === "completed");
+            setDraftStatus(data.league.draftStatus || "not_started");
             setCurrentWeek(data.league.currentWeek || 1);
           }
         }
@@ -74,39 +74,40 @@ export default function LeagueNavbar() {
 
         {/* Right: links */}
         <nav className="nav-links flex items-center gap-4">
-          {/* Draft Button - Hidden for now (using CSV import instead) */}
-          {/* Uncomment for next season when draft feature is ready */}
-          {/* <Link
-            href={`/leagues/${leagueId}/draft`}
-            style={{
-              background: "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
-              color: "#ffffff",
-              padding: "0.5rem 1.5rem",
-              borderRadius: "20px",
-              fontWeight: 700,
-              fontSize: "0.9rem",
-              textDecoration: "none",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              boxShadow: "0 4px 10px rgba(212, 175, 55, 0.3)",
-              transition: "all 0.2s ease",
-              border: "none",
-              cursor: "pointer"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-2px)";
-              e.currentTarget.style.boxShadow = "0 6px 15px rgba(212, 175, 55, 0.4)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.boxShadow = "0 4px 10px rgba(212, 175, 55, 0.3)";
-            }}
-          >
-            Draft
-          </Link> */}
+          {/* Draft Button - shown while a draft hasn't wrapped up yet */}
+          {(draftStatus === "not_started" || draftStatus === "in_progress" || draftStatus === "paused") && (
+            <Link
+              href={`/leagues/${leagueId}/draft`}
+              style={{
+                background: "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
+                color: "#ffffff",
+                padding: "0.5rem 1.5rem",
+                borderRadius: "20px",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                textDecoration: "none",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                boxShadow: "0 4px 10px rgba(212, 175, 55, 0.3)",
+                transition: "all 0.2s ease",
+                border: "none",
+                cursor: "pointer"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 6px 15px rgba(212, 175, 55, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "0 4px 10px rgba(212, 175, 55, 0.3)";
+              }}
+            >
+              Draft
+            </Link>
+          )}
 
-          {/* Current Week Pill - Only show after draft is complete */}
-          {isDraftComplete && (
+          {/* Current Week Pill - Only show after the draft has wrapped up */}
+          {draftStatus === "completed" && (
             <span className="card-pill" style={{ fontWeight: 700, fontSize: "0.85rem" }}>
               Week {currentWeek}
             </span>

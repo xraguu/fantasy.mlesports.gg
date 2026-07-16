@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { TEAMS } from "@/lib/teams";
+import { useAlert } from "@/components/AlertProvider";
 
 interface PendingWaiver {
   id: string;
@@ -47,6 +48,7 @@ interface TransactionHistory {
 }
 
 export default function AdminTransactionsPage() {
+  const showAlert = useAlert();
   const [selectedTab, setSelectedTab] = useState<"waivers" | "trades" | "history">("waivers");
   const [filterLeague, setFilterLeague] = useState("all");
   const [pendingWaivers, setPendingWaivers] = useState<PendingWaiver[]>([]);
@@ -74,7 +76,7 @@ export default function AdminTransactionsPage() {
         setLeagues(data.leagues || []);
       } catch (error) {
         console.error("Error fetching transactions:", error);
-        alert("Failed to fetch transactions");
+        showAlert("Failed to fetch transactions", "error");
       } finally {
         setLoading(false);
       }

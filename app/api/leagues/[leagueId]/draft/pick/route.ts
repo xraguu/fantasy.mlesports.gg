@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { generateRosterSlotId } from "@/lib/id-generator";
+import { executeDraftPick } from "@/lib/draftPick";
 
 /**
  * POST /api/leagues/[leagueId]/draft/pick
  * Submit a draft pick
- * Body: { mleTeamId: string, isAutoPick?: boolean }
+ * Body: { mleTeamId: string }
  */
 export async function POST(
   req: NextRequest,
@@ -20,7 +20,7 @@ export async function POST(
 
     const { leagueId } = await params;
     const body = await req.json();
-    const { mleTeamId, isAutoPick = false } = body;
+    const { mleTeamId } = body;
 
     if (!mleTeamId) {
       return NextResponse.json(
@@ -110,97 +110,18 @@ export async function POST(
       );
     }
 
-    // Execute the pick
-    const updatedPick = await prisma.draftPick.update({
-      where: { id: currentPick.id },
-      data: {
-        mleTeamId,
-        pickedAt: new Date(),
-      },
+    // Also flip autodraft back off — a manual pick means the manager is
+    // actively here, so the "autodraft kicked in" label no longer applies.
+    await prisma.fantasyTeam.update({
+      where: { id: userTeam.id },
+      data: { autodraftEnabled: false },
     });
 
-    // Add team to roster (week 1, first available bench slot)
-    // Get roster config from league
-    const rosterConfig = league.rosterConfig as any;
-    const benchSlots = rosterConfig?.be || 3;
-
-    // Find next available bench slot for week 1
-    const existingRosterSlots = await prisma.rosterSlot.findMany({
-      where: {
-        fantasyTeamId: userTeam.id,
-        week: 1,
-        position: "be",
-      },
-    });
-
-    const nextBenchIndex = existingRosterSlots.length;
-
-    if (nextBenchIndex >= benchSlots) {
-      // Roster is full, this shouldn't happen during draft
-      console.error("Roster is full but draft is still ongoing");
-    }
-
-    const rosterSlotId = generateRosterSlotId(
-      userTeam.id,
-      1,
-      "be",
-      nextBenchIndex
-    );
-    await prisma.rosterSlot.create({
-      data: {
-        id: rosterSlotId,
-        fantasyTeamId: userTeam.id,
-        mleTeamId,
-        week: 1,
-        position: "be",
-        slotIndex: nextBenchIndex,
-        isLocked: false,
-      },
-    });
-
-    // Calculate next pick deadline
-    const pickTimeSeconds = (league as any).draftPickTimeSeconds || 90;
-    const nextDeadline = new Date(Date.now() + pickTimeSeconds * 1000);
-
-    // Find next pick
-    const nextPick = league.draftPicks.find(
-      (pick) =>
-        !pick.pickedAt && pick.overallPick > currentPick.overallPick
-    );
-
-    if (nextPick) {
-      // Update league with next pick deadline
-      await prisma.fantasyLeague.update({
-        where: { id: leagueId },
-        data: {
-          // @ts-ignore - custom fields
-          draftPickDeadline: nextDeadline,
-        },
-      });
-    } else {
-      // Draft is complete
-      await prisma.fantasyLeague.update({
-        where: { id: leagueId },
-        data: {
-          // @ts-ignore - custom fields
-          draftStatus: "completed",
-          draftPickDeadline: null,
-        },
-      });
-    }
+    const { draftCompleted } = await executeDraftPick(leagueId, currentPick.id, mleTeamId);
 
     return NextResponse.json({
       success: true,
-      pick: {
-        id: updatedPick.id,
-        round: updatedPick.round,
-        pickNumber: updatedPick.pickNumber,
-        overallPick: updatedPick.overallPick,
-        mleTeamId: updatedPick.mleTeamId,
-        pickedAt: updatedPick.pickedAt,
-      },
-      nextPickDeadline: nextPick ? nextDeadline : null,
-      draftCompleted: !nextPick,
+      draftCompleted,
     });
   } catch (error) {
     console.error("Error making draft pick:", error);

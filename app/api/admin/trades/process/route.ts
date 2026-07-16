@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { generateRosterSlotId } from "@/lib/id-generator";
+import { logAdminActivity } from "@/lib/adminActivity";
+import { executeTrade, tradeVetoDeadline } from "@/lib/tradeExecution";
 
 /**
  * POST /api/admin/trades/process
- * Process (approve or veto) a trade (admin only)
- * Body: { tradeId: string, action: "approve" | "veto", reason?: string }
+ * Veto a trade that's in its 12-hour post-acceptance window (admin only).
+ * Trades auto-process once that window closes without a veto — see
+ * lib/tradeExecution.ts.
+ * Body: { tradeId: string, reason?: string }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -29,31 +32,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { tradeId, action, reason } = body;
+    const { tradeId, reason } = body;
 
-    if (!tradeId || !action) {
+    if (!tradeId) {
       return NextResponse.json(
-        { error: "Missing required fields: tradeId, action" },
+        { error: "Missing required field: tradeId" },
         { status: 400 }
       );
     }
 
-    if (action !== "approve" && action !== "veto") {
-      return NextResponse.json(
-        { error: "Invalid action. Must be 'approve' or 'veto'" },
-        { status: 400 }
-      );
-    }
-
-    // Fetch the trade
+    // Fetch the trade with manager display names for logging/messages
     const trade = await prisma.trade.findUnique({
       where: { id: tradeId },
       include: {
-        league: {
-          select: {
-            currentWeek: true,
-          },
-        },
+        proposer: { select: { displayName: true } },
+        receiver: { select: { displayName: true } },
       },
     });
 
@@ -64,178 +57,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (trade.status !== "pending") {
+    if (trade.status !== "awaiting_veto") {
       return NextResponse.json(
-        { error: "Trade has already been processed" },
+        { error: `Trade is not awaiting veto (status: ${trade.status})` },
         { status: 400 }
       );
     }
 
-    if (action === "veto") {
-      // Veto the trade
-      await prisma.$transaction(async (tx) => {
-        await tx.trade.update({
-          where: { id: tradeId },
-          data: {
-            status: "vetoed",
-            executedAt: new Date(),
-          },
-        });
-
-        // Create transaction records for both teams
-        await tx.transaction.create({
-          data: {
-            fantasyLeagueId: trade.fantasyLeagueId,
-            fantasyTeamId: trade.proposerTeamId,
-            userId: trade.proposerUserId,
-            type: "trade",
-            tradeId: trade.id,
-            tradePartnerTeamId: trade.receiverTeamId,
-            tradePartnerGave: trade.receiverGives,
-            addTeamId: null,
-            dropTeamId: null,
-            status: "vetoed",
-            reason: reason || "Vetoed by admin",
-            processedAt: new Date(),
-          },
-        });
-
-        await tx.transaction.create({
-          data: {
-            fantasyLeagueId: trade.fantasyLeagueId,
-            fantasyTeamId: trade.receiverTeamId,
-            userId: trade.receiverUserId,
-            type: "trade",
-            tradeId: trade.id,
-            tradePartnerTeamId: trade.proposerTeamId,
-            tradePartnerGave: trade.proposerGives,
-            addTeamId: null,
-            dropTeamId: null,
-            status: "vetoed",
-            reason: reason || "Vetoed by admin",
-            processedAt: new Date(),
-          },
-        });
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: "Trade vetoed successfully",
-      });
+    const deadline = trade.acceptedAt ? tradeVetoDeadline(trade.acceptedAt) : null;
+    if (!deadline || new Date() > deadline) {
+      // Window already closed — auto-process it now instead of allowing a
+      // late veto, same as the lazy sweep would do.
+      await executeTrade(tradeId);
+      return NextResponse.json(
+        {
+          error:
+            "The 12-hour veto window has already passed — this trade has now been processed instead of vetoed.",
+        },
+        { status: 400 }
+      );
     }
 
-    // Approve and execute the trade
     await prisma.$transaction(async (tx) => {
-      const currentWeek = trade.league.currentWeek;
-
-      // Remove proposer's teams and add receiver's teams to proposer
-      for (const teamId of trade.proposerGives) {
-        // Remove from proposer's roster
-        const slotToRemove = await tx.rosterSlot.findFirst({
-          where: {
-            fantasyTeamId: trade.proposerTeamId,
-            mleTeamId: teamId,
-            week: currentWeek,
-          },
-        });
-
-        if (slotToRemove) {
-          await tx.rosterSlot.delete({
-            where: { id: slotToRemove.id },
-          });
-        }
-      }
-
-      for (const teamId of trade.receiverGives) {
-        // Add to proposer's roster
-        const existingSlots = await tx.rosterSlot.findMany({
-          where: {
-            fantasyTeamId: trade.proposerTeamId,
-            week: currentWeek,
-          },
-        });
-
-        const position = "starter";
-        const slotIndex = existingSlots.filter(s => s.position === position).length;
-        const rosterSlotId = generateRosterSlotId(
-          trade.proposerTeamId,
-          currentWeek,
-          position,
-          slotIndex
-        );
-
-        await tx.rosterSlot.create({
-          data: {
-            id: rosterSlotId,
-            fantasyTeamId: trade.proposerTeamId,
-            mleTeamId: teamId,
-            week: currentWeek,
-            position,
-            slotIndex,
-            isLocked: false,
-          },
-        });
-      }
-
-      // Remove receiver's teams and add proposer's teams to receiver
-      for (const teamId of trade.receiverGives) {
-        // Remove from receiver's roster
-        const slotToRemove = await tx.rosterSlot.findFirst({
-          where: {
-            fantasyTeamId: trade.receiverTeamId,
-            mleTeamId: teamId,
-            week: currentWeek,
-          },
-        });
-
-        if (slotToRemove) {
-          await tx.rosterSlot.delete({
-            where: { id: slotToRemove.id },
-          });
-        }
-      }
-
-      for (const teamId of trade.proposerGives) {
-        // Add to receiver's roster
-        const existingSlots = await tx.rosterSlot.findMany({
-          where: {
-            fantasyTeamId: trade.receiverTeamId,
-            week: currentWeek,
-          },
-        });
-
-        const position = "starter";
-        const slotIndex = existingSlots.filter(s => s.position === position).length;
-        const rosterSlotId = generateRosterSlotId(
-          trade.receiverTeamId,
-          currentWeek,
-          position,
-          slotIndex
-        );
-
-        await tx.rosterSlot.create({
-          data: {
-            id: rosterSlotId,
-            fantasyTeamId: trade.receiverTeamId,
-            mleTeamId: teamId,
-            week: currentWeek,
-            position,
-            slotIndex,
-            isLocked: false,
-          },
-        });
-      }
-
-      // Update trade status
       await tx.trade.update({
         where: { id: tradeId },
         data: {
-          status: "accepted",
+          status: "vetoed",
           executedAt: new Date(),
         },
       });
 
-      // Create transaction records for both teams
       await tx.transaction.create({
         data: {
           fantasyLeagueId: trade.fantasyLeagueId,
@@ -245,9 +96,8 @@ export async function POST(req: NextRequest) {
           tradeId: trade.id,
           tradePartnerTeamId: trade.receiverTeamId,
           tradePartnerGave: trade.receiverGives,
-          addTeamId: null,
-          dropTeamId: null,
-          status: "approved",
+          status: "vetoed",
+          reason: reason || "Vetoed by admin",
           processedAt: new Date(),
         },
       });
@@ -261,17 +111,24 @@ export async function POST(req: NextRequest) {
           tradeId: trade.id,
           tradePartnerTeamId: trade.proposerTeamId,
           tradePartnerGave: trade.proposerGives,
-          addTeamId: null,
-          dropTeamId: null,
-          status: "approved",
+          status: "vetoed",
+          reason: reason || "Vetoed by admin",
           processedAt: new Date(),
         },
       });
     });
 
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "trade.veto",
+      description: `Vetoed a trade between ${trade.proposer.displayName} and ${trade.receiver.displayName}`,
+      targetType: "Trade",
+      targetId: tradeId,
+    });
+
     return NextResponse.json({
       success: true,
-      message: "Trade processed successfully",
+      message: "Trade vetoed successfully",
     });
   } catch (error) {
     console.error("Error processing trade:", error);

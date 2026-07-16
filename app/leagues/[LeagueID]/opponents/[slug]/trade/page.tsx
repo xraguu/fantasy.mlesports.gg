@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { useAlert } from "@/components/AlertProvider";
 
 interface RosterTeam {
   id: string;
@@ -34,6 +35,7 @@ interface RosterData {
 }
 
 export default function TradePage() {
+  const showAlert = useAlert();
   const params = useParams();
   const router = useRouter();
   const leagueId = params.LeagueID as string;
@@ -166,10 +168,10 @@ export default function TradePage() {
       }
 
       // Success! Redirect to My Roster page
-      alert(counterTradeId ? "Counter offer proposed and original trade rejected!" : "Trade proposed successfully!");
+      showAlert(counterTradeId ? "Counter offer proposed and original trade rejected!" : "Trade proposed successfully!", "success");
       router.push(`/leagues/${leagueId}/my-roster/${myRoster.fantasyTeam.id}`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to propose trade");
+      showAlert(err instanceof Error ? err.message : "Failed to propose trade", "error");
     } finally {
       setSubmitting(false);
     }
@@ -377,7 +379,7 @@ export default function TradePage() {
                   setShowDropModal(false);
                   handleProposeTrade();
                 } else {
-                  alert("Please select a team to drop");
+                  showAlert("Please select a team to drop", "warning");
                 }
               }}
               disabled={submitting}

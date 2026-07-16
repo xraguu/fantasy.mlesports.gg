@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAlert } from "@/components/AlertProvider";
 
 interface User {
   id: string;
@@ -14,6 +15,7 @@ interface User {
 }
 
 export default function ManageUsersPage() {
+  const showAlert = useAlert();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -34,7 +36,7 @@ export default function ManageUsersPage() {
       setUsers(data);
     } catch (error) {
       console.error("Error fetching users:", error);
-      alert("Failed to load users");
+      showAlert("Failed to load users", "error");
     } finally {
       setLoading(false);
     }
@@ -62,10 +64,10 @@ export default function ManageUsersPage() {
       setUsers((prev) =>
         prev.map((user) => (user.id === userId ? { ...user, status } : user))
       );
-      alert(`User ${status === "suspended" ? "suspended" : "activated"} successfully!`);
+      showAlert(`User ${status === "suspended" ? "suspended" : "activated"} successfully!`, "success");
     } catch (error) {
       console.error("Error updating user status:", error);
-      alert("Failed to update user status");
+      showAlert("Failed to update user status", "error");
     }
   };
 
@@ -89,10 +91,10 @@ export default function ManageUsersPage() {
         setSelectedUser({ ...selectedUser, role });
       }
 
-      alert(`User role updated to ${role} successfully!`);
+      showAlert(`User role updated to ${role} successfully!`, "success");
     } catch (error) {
       console.error("Error updating user role:", error);
-      alert("Failed to update user role");
+      showAlert("Failed to update user role", "error");
     }
   };
 

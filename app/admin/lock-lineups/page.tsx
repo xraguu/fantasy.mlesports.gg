@@ -2,9 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { useAlert } from "@/components/AlertProvider";
 
 export default function LockLineupsPage() {
-  const [currentWeek, setCurrentWeek] = useState(3);
+  const showAlert = useAlert();
+  // null until we know the real current week — never guess/hardcode one,
+  // since that's exactly what caused this page to silently show the wrong
+  // week's (and therefore wrong lock state / wrong roster) data before.
+  const [currentWeek, setCurrentWeek] = useState<number | null>(null);
   const [lineups, setLineups] = useState<any[]>([]);
   const [filterLeague, setFilterLeague] = useState("all");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -16,6 +21,8 @@ export default function LockLineupsPage() {
 
   // Fetch lineups when week or league filter changes
   useEffect(() => {
+    if (currentWeek === null) return;
+
     const fetchLineups = async () => {
       try {
         setLoading(true);
@@ -35,7 +42,7 @@ export default function LockLineupsPage() {
         setLineups(data.lineups || []);
       } catch (error) {
         console.error("Error fetching lineups:", error);
-        alert("Failed to fetch lineups");
+        showAlert("Failed to fetch lineups", "error");
       } finally {
         setLoading(false);
       }
@@ -44,11 +51,13 @@ export default function LockLineupsPage() {
     fetchLineups();
   }, [currentWeek, filterLeague]);
 
-  // Fetch available leagues
+  // Fetch all leagues (admin-scoped — NOT /api/leagues, which only returns
+  // leagues the calling admin personally manages a team in, and would
+  // silently hide leagues from this filter otherwise)
   useEffect(() => {
     const fetchLeagues = async () => {
       try {
-        const response = await fetch("/api/leagues");
+        const response = await fetch("/api/admin/leagues");
         if (!response.ok) throw new Error("Failed to fetch leagues");
 
         const data = await response.json();
@@ -61,7 +70,19 @@ export default function LockLineupsPage() {
     fetchLeagues();
   }, []);
 
+  // Default the week selector to the real current week, once, the first
+  // time leagues load — every league's currentWeek is kept calendar-synced
+  // by the auto-lock sweep, so any of them is a valid source (the selected
+  // filter's league is preferred once one is picked).
+  useEffect(() => {
+    if (currentWeek !== null || leagues.length === 0) return;
+    const reference =
+      (filterLeague !== "all" && leagues.find((l) => l.id === filterLeague)) || leagues[0];
+    setCurrentWeek(reference?.currentWeek ?? 1);
+  }, [leagues, filterLeague, currentWeek]);
+
   const lockAll = async () => {
+    if (currentWeek === null) return;
     try {
       const response = await fetch("/api/admin/weeks/lock-lineups", {
         method: "POST",
@@ -76,7 +97,7 @@ export default function LockLineupsPage() {
       if (!response.ok) throw new Error("Failed to lock all lineups");
 
       setShowConfirmModal(false);
-      alert("All lineups have been locked!");
+      showAlert("All lineups have been locked!", "success");
 
       // Refresh data
       const params = new URLSearchParams({ week: currentWeek.toString() });
@@ -88,7 +109,7 @@ export default function LockLineupsPage() {
       setLineups(data.lineups || []);
     } catch (error) {
       console.error("Error locking lineups:", error);
-      alert("Failed to lock lineups");
+      showAlert("Failed to lock lineups", "error");
     }
   };
 
@@ -106,31 +127,68 @@ export default function LockLineupsPage() {
     );
   };
 
-  const lockWholeRoster = () => {
+  // Whole-roster lock state is judged only on the lockable (non-bench)
+  // slots, same rule the admin API uses to decide a team's "locked" status.
+  const lockableRosterSlots = managerRoster.filter((slot) => slot.position !== "be");
+  const isWholeRosterLocked =
+    lockableRosterSlots.length > 0 && lockableRosterSlots.every((slot) => slot.isLocked);
+
+  const toggleWholeRoster = () => {
+    const nextLocked = !isWholeRosterLocked;
     setManagerRoster((prev) =>
-      prev.map((slot) => ({ ...slot, isLocked: true }))
+      prev.map((slot) =>
+        slot.position === "be" ? slot : { ...slot, isLocked: nextLocked }
+      )
     );
   };
 
   const saveRosterLocks = async () => {
+    if (currentWeek === null) return;
     try {
-      const slotIds = managerRoster.map((slot) => slot.id);
-      const allLocked = managerRoster.every((slot) => slot.isLocked);
+      const originalSlots: any[] = selectedManager?.slots || [];
+      const toLock = managerRoster
+        .filter((slot) => {
+          const original = originalSlots.find((s) => s.id === slot.id);
+          return slot.isLocked && !(original?.isLocked ?? false);
+        })
+        .map((slot) => slot.id);
+      const toUnlock = managerRoster
+        .filter((slot) => {
+          const original = originalSlots.find((s) => s.id === slot.id);
+          return !slot.isLocked && (original?.isLocked ?? false);
+        })
+        .map((slot) => slot.id);
 
-      const response = await fetch("/api/admin/weeks/lock-lineups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          week: currentWeek,
-          action: allLocked ? "lock" : "unlock",
-          fantasyTeamId: selectedManager?.fantasyTeamId,
-        }),
-      });
+      if (toLock.length === 0 && toUnlock.length === 0) {
+        setShowRosterModal(false);
+        return;
+      }
 
-      if (!response.ok) throw new Error("Failed to save roster locks");
+      const requests: Promise<Response>[] = [];
+      if (toLock.length > 0) {
+        requests.push(
+          fetch("/api/admin/weeks/lock-lineups", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ week: currentWeek, action: "lock", slotIds: toLock }),
+          })
+        );
+      }
+      if (toUnlock.length > 0) {
+        requests.push(
+          fetch("/api/admin/weeks/lock-lineups", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ week: currentWeek, action: "unlock", slotIds: toUnlock }),
+          })
+        );
+      }
+
+      const responses = await Promise.all(requests);
+      if (responses.some((r) => !r.ok)) throw new Error("Failed to save roster locks");
 
       setShowRosterModal(false);
-      alert("Roster locks updated!");
+      showAlert("Roster locks updated!", "success");
 
       // Refresh data
       const params = new URLSearchParams({ week: currentWeek.toString() });
@@ -142,17 +200,30 @@ export default function LockLineupsPage() {
       setLineups(data.lineups || []);
     } catch (error) {
       console.error("Error saving roster locks:", error);
-      alert("Failed to save roster locks");
+      showAlert("Failed to save roster locks", "error");
     }
   };
 
-  const filteredLineups =
-    filterLeague === "all"
-      ? lineups
-      : lineups.filter((lineup) => lineup.league === filterLeague);
+  const formatSlotLabel = (position: string): string =>
+    position === "be" || position === "flx" ? position.toUpperCase() : position;
+
+  // The API already filters server-side by leagueId when one is selected
+  // (see the fetchLineups effect above) — no redundant client-side filter
+  // needed. (A prior version filtered on `lineup.league === filterLeague`,
+  // comparing a league *name* against a league *id* — always false, which
+  // silently zeroed out the table any time a specific league was selected.)
+  const filteredLineups = lineups;
 
   const lockedCount = filteredLineups.filter((l) => l.locked).length;
   const unlockedCount = filteredLineups.length - lockedCount;
+
+  if (currentWeek === null) {
+    return (
+      <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-muted)" }}>
+        Loading current week...
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -188,9 +259,9 @@ export default function LockLineupsPage() {
                 </div>
                 <button
                   className="btn btn-warning"
-                  onClick={lockWholeRoster}
+                  onClick={toggleWholeRoster}
                 >
-                  Lock Whole Roster
+                  {isWholeRosterLocked ? "Unlock Whole Roster" : "Lock Whole Roster"}
                 </button>
               </div>
 
@@ -215,7 +286,7 @@ export default function LockLineupsPage() {
                   {managerRoster.map((item, index) => (
                     <tr key={index} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                       <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.9rem", color: "var(--accent)", fontWeight: 600 }}>
-                        {item.position}
+                        {formatSlotLabel(item.position)}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem" }}>
                         {item.mleTeam ? (
@@ -238,34 +309,42 @@ export default function LockLineupsPage() {
                         )}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
-                        <div style={{ width: "100%", maxWidth: "120px", margin: "0 auto" }}>
-                          <div style={{
-                            width: "100%",
-                            height: "6px",
-                            background: "rgba(255,255,255,0.1)",
-                            borderRadius: "3px",
-                            overflow: "hidden"
-                          }}>
+                        {item.position === "be" ? (
+                          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", fontStyle: "italic" }}>
+                            Always unlocked
+                          </div>
+                        ) : (
+                          <div style={{ width: "100%", maxWidth: "120px", margin: "0 auto" }}>
                             <div style={{
-                              width: item.isLocked ? "100%" : "0%",
-                              height: "100%",
-                              background: "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)",
-                              transition: "width 0.3s ease"
-                            }} />
+                              width: "100%",
+                              height: "6px",
+                              background: "rgba(255,255,255,0.1)",
+                              borderRadius: "3px",
+                              overflow: "hidden"
+                            }}>
+                              <div style={{
+                                width: item.isLocked ? "100%" : "0%",
+                                height: "100%",
+                                background: "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)",
+                                transition: "width 0.3s ease"
+                              }} />
+                            </div>
+                            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                              {item.isLocked ? "Locked" : "Unlocked"}
+                            </div>
                           </div>
-                          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-                            {item.isLocked ? "Locked" : "Unlocked"}
-                          </div>
-                        </div>
+                        )}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>
-                        <button
-                          className={item.isLocked ? "btn btn-ghost" : "btn btn-warning"}
-                          style={{ padding: "0.4rem 1rem", fontSize: "0.85rem" }}
-                          onClick={() => toggleTeamLock(index)}
-                        >
-                          {item.isLocked ? "Unlock" : "Lock"}
-                        </button>
+                        {item.position !== "be" && (
+                          <button
+                            className={item.isLocked ? "btn btn-ghost" : "btn btn-warning"}
+                            style={{ padding: "0.4rem 1rem", fontSize: "0.85rem" }}
+                            onClick={() => toggleTeamLock(index)}
+                          >
+                            {item.isLocked ? "Unlock" : "Lock"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -636,7 +715,7 @@ export default function LockLineupsPage() {
             ) : (
               filteredLineups.map((lineup) => (
               <tr
-                key={lineup.id}
+                key={lineup.fantasyTeamId}
                 style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
               >
                 <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>

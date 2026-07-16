@@ -4,8 +4,22 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
+import { useAlert } from "@/components/AlertProvider";
 
 // Types
+interface StatBundle {
+  record: string;
+  goals: number;
+  shots: number;
+  saves: number;
+  assists: number;
+  demos: number;
+  fpts: number;
+  avg: number;
+  last: number;
+  score: number;
+}
+
 interface MLETeam {
   id: string;
   name: string;
@@ -15,6 +29,24 @@ interface MLETeam {
   primaryColor: string;
   secondaryColor: string;
   weeklyStats: any | null;
+  stats: { "2s": StatBundle; "3s": StatBundle };
+}
+
+interface WithinLeagueStanding {
+  rank: number;
+  totalTeams: number;
+}
+
+interface OpponentInfo {
+  id: string;
+  name: string;
+  leagueId: string;
+  slug: string;
+  logoPath: string;
+  primaryColor: string;
+  secondaryColor: string;
+  record: { "2s": string; "3s": string };
+  standing: { "2s": WithinLeagueStanding | null; "3s": WithinLeagueStanding | null };
 }
 
 interface RosterSlot {
@@ -23,7 +55,31 @@ interface RosterSlot {
   slotIndex: number;
   isLocked: boolean;
   fantasyPoints: number | null;
+  defaultMode: "2s" | "3s";
   mleTeam: MLETeam | null;
+  opponent: OpponentInfo | null;
+  oprk: { "2s": number | null; "3s": number | null };
+  fprk: { "2s": number | null; "3s": number | null };
+}
+
+// Color tier for a standings position — mirrors lib/teamSeasonStats.ts's
+// getStandingsColor (duplicated here since that file imports Prisma and
+// can't be used from a client component).
+function getStandingsColor(rank: number, totalTeams: number): string {
+  const percentile = rank / totalTeams;
+  if (percentile <= 1 / 3) return "#22c55e";
+  if (percentile <= 2 / 3) return "#9ca3af";
+  return "#ef4444";
+}
+
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
 }
 
 interface RosterData {
@@ -34,6 +90,7 @@ interface RosterData {
     ownerDisplayName: string;
     faabRemaining: number | null;
     waiverPriority: number | null;
+    isOwner: boolean;
   };
   league: {
     id: string;
@@ -54,6 +111,24 @@ interface RosterData {
   };
   rank?: number;
   totalTeams?: number;
+  totalPoints?: number;
+  avgPoints?: number;
+  lastMatchup?: {
+    id: string;
+    week: number;
+    myTeam: string;
+    myScore: number;
+    opponent: string;
+    opponentScore: number;
+  };
+  currentMatchup?: {
+    id: string;
+    week: number;
+    myTeam: string;
+    myScore: number;
+    opponent: string;
+    opponentScore: number;
+  };
 }
 
 // Helper function to get fantasy rank color (matching main page)
@@ -65,6 +140,7 @@ const getFantasyRankColor = (rank: number): string => {
 };
 
 export default function MyRosterPage() {
+  const showAlert = useAlert();
   const router = useRouter();
   const params = useParams();
   const leagueId = params.LeagueID as string;
@@ -90,8 +166,18 @@ export default function MyRosterPage() {
   const [trades, setTrades] = useState<any[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
 
+  // Waiver claims state (pending claims are private to the manager who
+  // submitted them — the API scopes ?mine=true to the current session)
+  const [waiverClaims, setWaiverClaims] = useState<any[]>([]);
+  const [waiverClaimsLoading, setWaiverClaimsLoading] = useState(false);
+  const [waiverPriorityData, setWaiverPriorityData] = useState<{
+    waiverSystem: string;
+    teams: Array<{ id: string; teamName: string; managerName: string; waiverPriority: number | null; faabRemaining: number | null }>;
+  } | null>(null);
+  const [waiverPriorityLoading, setWaiverPriorityLoading] = useState(false);
+
   // Track game modes for each slot
-  const [slotModes, setSlotModes] = useState<string[]>([]);
+  const [slotModes, setSlotModes] = useState<("2s" | "3s")[]>([]);
 
   // Stats tab sorting state
   const [statsSortColumn, setStatsSortColumn] = useState<
@@ -115,9 +201,63 @@ export default function MyRosterPage() {
     null
   );
 
+  // Team rename state
+  const [editingTeamName, setEditingTeamName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [shortCodeDraft, setShortCodeDraft] = useState("");
+  const [savingTeamName, setSavingTeamName] = useState(false);
+
   // Team modal state
   const [showModal, setShowModal] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<MLETeam | null>(null);
+  const [selectedTeamRosteredBy, setSelectedTeamRosteredBy] = useState<
+    { rosterName: string; managerName: string } | undefined
+  >(undefined);
+
+  const startEditingTeamName = () => {
+    if (!rosterData) return;
+    setNameDraft(rosterData.fantasyTeam.displayName);
+    setShortCodeDraft(rosterData.fantasyTeam.shortCode);
+    setEditingTeamName(true);
+  };
+
+  const handleSaveTeamName = async () => {
+    if (!rosterData) return;
+    setSavingTeamName(true);
+    try {
+      const response = await fetch(
+        `/api/leagues/${leagueId}/teams/${rosterData.fantasyTeam.id}/rename`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            displayName: nameDraft,
+            shortCode: shortCodeDraft,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to update team");
+      }
+
+      const data = await response.json();
+      setRosterData({
+        ...rosterData,
+        fantasyTeam: {
+          ...rosterData.fantasyTeam,
+          displayName: data.displayName,
+          shortCode: data.shortCode,
+        },
+      });
+      setEditingTeamName(false);
+    } catch (err: any) {
+      showAlert(err.message || "Failed to update team", "error");
+    } finally {
+      setSavingTeamName(false);
+    }
+  };
 
   // Generate full roster with empty slots
   const fullRoster = useMemo(() => {
@@ -136,7 +276,11 @@ export default function MyRosterPage() {
       slotIndex,
       isLocked: false,
       fantasyPoints: null,
+      defaultMode: position === "3s" ? "3s" : "2s",
       mleTeam: null,
+      opponent: null,
+      oprk: { "2s": null, "3s": null },
+      fprk: { "2s": null, "3s": null },
     });
 
     for (let i = 0; i < config["2s"]; i++) {
@@ -170,14 +314,24 @@ export default function MyRosterPage() {
     return slots;
   }, [rosterData]);
 
-  // Initialize slot modes and editable roster
+  // "Whole lineup locked" = every slot that actually has a team assigned is
+  // locked (empty placeholder slots have no real DB row / lock state, so
+  // they don't count against this).
+  const filledSlots = fullRoster.filter((s) => s.mleTeam);
+  const isWholeLineupLocked = filledSlots.length > 0 && filledSlots.every((s) => s.isLocked);
+
+  // Re-sync editable roster whenever fresh roster data loads (e.g. switching
+  // weeks) — previously only re-synced when the slot COUNT changed, so
+  // navigating between weeks with the same roster shape left this frozen on
+  // whichever week loaded first. Also reset per-row mode overrides so each
+  // row falls back to its own defaultMode instead of being pinned to "2s".
   useEffect(() => {
     if (fullRoster.length > 0) {
-      setSlotModes(new Array(fullRoster.length).fill("2s"));
+      setSlotModes([]);
       setEditableRoster([...fullRoster]);
       setHasUnsavedChanges(false);
     }
-  }, [fullRoster.length]);
+  }, [fullRoster]);
 
   // Fetch roster data
   useEffect(() => {
@@ -239,6 +393,47 @@ export default function MyRosterPage() {
     fetchTrades();
   }, [activeTab, teamId, leagueId]);
 
+  // Fetch this manager's own pending waiver claims when the waivers tab is active
+  useEffect(() => {
+    const fetchWaiverClaims = async () => {
+      if (activeTab !== "waivers" || !leagueId || !rosterData?.fantasyTeam.isOwner) return;
+
+      try {
+        setWaiverClaimsLoading(true);
+        const response = await fetch(`/api/leagues/${leagueId}/waivers?mine=true`);
+        if (!response.ok) throw new Error("Failed to fetch waiver claims");
+        const data = await response.json();
+        setWaiverClaims(data.waiverClaims || []);
+      } catch (error) {
+        console.error("Error fetching waiver claims:", error);
+      } finally {
+        setWaiverClaimsLoading(false);
+      }
+    };
+
+    fetchWaiverClaims();
+  }, [activeTab, leagueId, rosterData?.fantasyTeam.isOwner]);
+
+  // Fetch the league-wide waiver priority order (or FAAB budgets) when the waivers tab is active
+  useEffect(() => {
+    const fetchWaiverPriority = async () => {
+      if (activeTab !== "waivers" || !leagueId) return;
+
+      try {
+        setWaiverPriorityLoading(true);
+        const response = await fetch(`/api/leagues/${leagueId}/waiver-priority`);
+        if (!response.ok) throw new Error("Failed to fetch waiver priority");
+        setWaiverPriorityData(await response.json());
+      } catch (error) {
+        console.error("Error fetching waiver priority:", error);
+      } finally {
+        setWaiverPriorityLoading(false);
+      }
+    };
+
+    fetchWaiverPriority();
+  }, [activeTab, leagueId]);
+
   const handleScheduleClick = () => {
     router.push(`/leagues/${leagueId}/my-roster/${teamId}/schedule`);
   };
@@ -285,7 +480,7 @@ export default function MyRosterPage() {
       }
     } catch (error) {
       console.error("Error saving roster:", error);
-      alert(error instanceof Error ? error.message : "Failed to save lineup");
+      showAlert(error instanceof Error ? error.message : "Failed to save lineup", "error");
     } finally {
       setIsSaving(false);
     }
@@ -305,6 +500,7 @@ export default function MyRosterPage() {
 
     const slot = editableRoster[index];
     if (!slot.mleTeam) return; // Can't select empty slots
+    if (slot.isLocked) return; // Can't select locked slots
 
     if (selectedTeamIndex === null) {
       setSelectedTeamIndex(index);
@@ -355,17 +551,19 @@ export default function MyRosterPage() {
   const sortedRosterTeams = useMemo(() => {
     return fullRoster
       .filter((slot) => slot.mleTeam)
-      .map((slot, index) => {
-        const stats = slot.mleTeam!.weeklyStats || {};
+      .map((slot) => {
+        const mleTeam = slot.mleTeam!;
+        const stats = mleTeam.stats[gameMode];
 
         return {
-          ...slot.mleTeam!,
+          ...mleTeam,
+          opponent: slot.opponent,
           displayStats: {
-            score: slot.fantasyPoints || 0,
-            fprk: index + 1,
-            fpts: stats.fantasyPoints || 0,
-            avg: stats.avgFantasyPoints || 0,
-            last: stats.lastWeekPoints || 0,
+            score: stats.score || 0,
+            fprk: slot.fprk[gameMode] ?? 0,
+            fpts: stats.fpts || 0,
+            avg: stats.avg || 0,
+            last: stats.last || 0,
             goals: stats.goals || 0,
             shots: stats.shots || 0,
             saves: stats.saves || 0,
@@ -386,7 +584,7 @@ export default function MyRosterPage() {
           return aValue < bValue ? 1 : -1;
         }
       });
-  }, [fullRoster, statsSortColumn, statsSortDirection]);
+  }, [fullRoster, statsSortColumn, statsSortDirection, gameMode]);
 
   if (loading) {
     return (
@@ -492,16 +690,103 @@ export default function MyRosterPage() {
         >
           {/* Team Info */}
           <div>
-            <h2
-              style={{
-                fontSize: "1.5rem",
-                fontWeight: 700,
-                color: "var(--text-main)",
-                marginBottom: "0.5rem",
-                marginTop: 0,
-              }}
-            >
-              {rosterData.fantasyTeam.displayName}{" "}
+            {editingTeamName ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                <input
+                  type="text"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  maxLength={40}
+                  style={{
+                    fontSize: "1.5rem",
+                    fontWeight: 700,
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "6px",
+                    color: "var(--text-main)",
+                    padding: "0.25rem 0.5rem",
+                    width: "260px",
+                  }}
+                />
+                <input
+                  type="text"
+                  value={shortCodeDraft}
+                  onChange={(e) =>
+                    setShortCodeDraft(e.target.value.toUpperCase().slice(0, 3))
+                  }
+                  maxLength={3}
+                  style={{
+                    fontSize: "1rem",
+                    fontWeight: 700,
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "6px",
+                    color: "var(--text-main)",
+                    padding: "0.25rem 0.5rem",
+                    width: "60px",
+                    textTransform: "uppercase",
+                  }}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSaveTeamName}
+                  disabled={savingTeamName}
+                  style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+                >
+                  {savingTeamName ? "Saving..." : "Save"}
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setEditingTeamName(false)}
+                  disabled={savingTeamName}
+                  style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <h2
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: 700,
+                  color: "var(--text-main)",
+                  marginBottom: "0.5rem",
+                  marginTop: 0,
+                }}
+              >
+                {rosterData.fantasyTeam.displayName}{" "}
+                <span
+                  style={{
+                    fontSize: "0.95rem",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  ({rosterData.fantasyTeam.shortCode})
+                </span>{" "}
+              {rosterData.fantasyTeam.isOwner && (
+                <button
+                  onClick={startEditingTeamName}
+                  title="Rename team"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    fontSize: "0.9rem",
+                    marginLeft: "0.25rem",
+                  }}
+                >
+                  ✏️
+                </button>
+              )}{" "}
               {rosterData.record && (
                 <>
                   <span
@@ -529,18 +814,19 @@ export default function MyRosterPage() {
                   )}
                 </>
               )}
-            </h2>
+              </h2>
+            )}
             <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
               {rosterData.fantasyTeam.ownerDisplayName}
             </div>
             <div style={{ marginTop: "0.5rem", fontSize: "1rem" }}>
               <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
-                0 Fantasy Points
+                {rosterData.totalPoints ?? 0} Fantasy Points
               </span>
               <span
                 style={{ color: "var(--text-muted)", marginLeft: "1.5rem" }}
               >
-                0 Avg Fantasy Points
+                {rosterData.avgPoints ?? 0} Avg Fantasy Points
               </span>
             </div>
             <div
@@ -571,116 +857,138 @@ export default function MyRosterPage() {
           {/* Matchup Info */}
           <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
             {/* Last Matchup */}
-            <div
-              style={{
-                textAlign: "center",
-                cursor: "pointer",
-                padding: "0.75rem 1rem",
-                borderRadius: "8px",
-                transition: "all 0.2s",
-                backgroundColor: "transparent",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor =
-                  "rgba(242, 182, 50, 0.1)";
-                e.currentTarget.style.transform = "translateY(-2px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
+            {rosterData.lastMatchup && (
               <div
+                onClick={() =>
+                  router.push(
+                    `/leagues/${leagueId}/scoreboard?week=${rosterData.lastMatchup!.week}&matchup=${rosterData.lastMatchup!.id}`
+                  )
+                }
                 style={{
-                  color: "var(--text-muted)",
-                  fontSize: "0.85rem",
-                  fontStyle: "italic",
-                  marginBottom: "0.5rem",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "8px",
+                  transition: "all 0.2s",
+                  backgroundColor: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor =
+                    "rgba(242, 182, 50, 0.1)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                  e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                Last Matchup
-              </div>
-              <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
-                <span style={{ color: "var(--text-main)" }}>-</span>{" "}
-                <span
+                <div
                   style={{
-                    color: "var(--accent)",
-                    fontWeight: 700,
-                    marginLeft: "0.5rem",
+                    color: "var(--text-muted)",
+                    fontSize: "0.85rem",
+                    fontStyle: "italic",
+                    marginBottom: "0.5rem",
                   }}
                 >
-                  -
-                </span>
+                  Last Matchup
+                </div>
+                <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
+                  <span style={{ color: "var(--text-main)" }}>{rosterData.lastMatchup.myTeam}</span>{" "}
+                  <span
+                    style={{
+                      color: "var(--accent)",
+                      fontWeight: 700,
+                      marginLeft: "0.5rem",
+                    }}
+                  >
+                    {rosterData.lastMatchup.myScore}
+                  </span>
+                </div>
+                <div style={{ fontSize: "0.95rem" }}>
+                  <span style={{ color: "var(--text-muted)" }}>{rosterData.lastMatchup.opponent}</span>{" "}
+                  <span
+                    style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
+                  >
+                    {rosterData.lastMatchup.opponentScore}
+                  </span>
+                </div>
               </div>
-              <div style={{ fontSize: "0.95rem" }}>
-                <span style={{ color: "var(--text-muted)" }}>-</span>{" "}
-                <span
-                  style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
-                >
-                  -
-                </span>
-              </div>
-            </div>
+            )}
 
-            <div
-              style={{
-                width: "1px",
-                height: "60px",
-                backgroundColor: "rgba(255,255,255,0.1)",
-              }}
-            ></div>
+            {rosterData.lastMatchup && rosterData.currentMatchup && (
+              <div
+                style={{
+                  width: "1px",
+                  height: "60px",
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                }}
+              ></div>
+            )}
 
             {/* Current Matchup */}
-            <div
-              style={{
-                textAlign: "center",
-                cursor: "pointer",
-                padding: "0.75rem 1rem",
-                borderRadius: "8px",
-                transition: "all 0.2s",
-                backgroundColor: "transparent",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor =
-                  "rgba(242, 182, 50, 0.1)";
-                e.currentTarget.style.transform = "translateY(-2px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "transparent";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
+            {rosterData.currentMatchup && (
               <div
+                onClick={() =>
+                  router.push(
+                    `/leagues/${leagueId}/scoreboard?week=${rosterData.currentMatchup!.week}&matchup=${rosterData.currentMatchup!.id}`
+                  )
+                }
                 style={{
-                  color: "var(--text-muted)",
-                  fontSize: "0.85rem",
-                  fontStyle: "italic",
-                  marginBottom: "0.5rem",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "8px",
+                  transition: "all 0.2s",
+                  backgroundColor: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor =
+                    "rgba(242, 182, 50, 0.1)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                  e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                Current Matchup
-              </div>
-              <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
-                <span style={{ color: "var(--text-main)" }}>-</span>{" "}
-                <span
+                <div
                   style={{
-                    color: "var(--accent)",
-                    fontWeight: 700,
-                    marginLeft: "0.5rem",
+                    color: "var(--text-muted)",
+                    fontSize: "0.85rem",
+                    fontStyle: "italic",
+                    marginBottom: "0.5rem",
                   }}
                 >
-                  -
-                </span>
+                  Current Matchup
+                </div>
+                <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
+                  <span style={{ color: "var(--text-main)" }}>{rosterData.currentMatchup.myTeam}</span>{" "}
+                  <span
+                    style={{
+                      color: "var(--accent)",
+                      fontWeight: 700,
+                      marginLeft: "0.5rem",
+                    }}
+                  >
+                    {rosterData.currentMatchup.myScore}
+                  </span>
+                </div>
+                <div style={{ fontSize: "0.95rem" }}>
+                  <span style={{ color: "var(--text-muted)" }}>{rosterData.currentMatchup.opponent}</span>{" "}
+                  <span
+                    style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
+                  >
+                    {rosterData.currentMatchup.opponentScore}
+                  </span>
+                </div>
               </div>
-              <div style={{ fontSize: "0.95rem" }}>
-                <span style={{ color: "var(--text-muted)" }}>-</span>{" "}
-                <span
-                  style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
-                >
-                  -
-                </span>
+            )}
+
+            {!rosterData.lastMatchup && !rosterData.currentMatchup && (
+              <div style={{ color: "var(--text-muted)", fontSize: "0.9rem", fontStyle: "italic" }}>
+                No matchup data available
               </div>
-            </div>
+            )}
           </div>
         </div>
       </section>
@@ -800,21 +1108,29 @@ export default function MyRosterPage() {
                 - Drop
               </button>
               <button
-                onClick={handleMoveToggle}
-                disabled={isSaving}
+                onClick={isWholeLineupLocked ? undefined : handleMoveToggle}
+                disabled={isSaving || isWholeLineupLocked}
                 className={moveMode ? "btn btn-primary" : "btn btn-ghost"}
                 style={{
                   fontSize: "0.9rem",
-                  border: "2px solid var(--accent)",
-                  boxShadow: moveMode
+                  border: isWholeLineupLocked
+                    ? "2px solid #ef4444"
+                    : "2px solid var(--accent)",
+                  background: isWholeLineupLocked ? "rgba(239, 68, 68, 0.15)" : undefined,
+                  color: isWholeLineupLocked ? "#ef4444" : undefined,
+                  boxShadow: isWholeLineupLocked
+                    ? "none"
+                    : moveMode
                     ? "0 0 12px rgba(242, 182, 50, 0.4)"
                     : "0 0 8px rgba(242, 182, 50, 0.3)",
                   opacity: isSaving ? 0.6 : 1,
-                  cursor: isSaving ? "not-allowed" : "pointer",
+                  cursor: isSaving || isWholeLineupLocked ? "not-allowed" : "pointer",
                 }}
               >
                 {isSaving
                   ? "Saving..."
+                  : isWholeLineupLocked
+                  ? "🔒 Lineup Locked"
                   : moveMode
                   ? "✓ Done Editing"
                   : "Edit Lineup"}
@@ -950,7 +1266,7 @@ export default function MyRosterPage() {
               </thead>
               <tbody>
                 {(editableRoster.length > 0 ? editableRoster : fullRoster).map((slot, index) => {
-                  const currentMode = slotModes[index] || "2s";
+                  const currentMode = slotModes[index] || slot.defaultMode;
                   const isEmpty = !slot.mleTeam;
                   const isBench = slot.position === "be";
 
@@ -963,6 +1279,8 @@ export default function MyRosterPage() {
                         backgroundColor:
                           selectedTeamIndex === index
                             ? "rgba(242, 182, 50, 0.2)"
+                            : !isEmpty && slot.isLocked
+                            ? "rgba(239, 68, 68, 0.08)"
                             : isBench
                             ? "rgba(255,255,255,0.02)"
                             : "transparent",
@@ -972,18 +1290,21 @@ export default function MyRosterPage() {
                             (editableRoster.length > 0 ? editableRoster : fullRoster).findIndex((s) => s.position === "be")
                             ? "2px solid rgba(255,255,255,0.15)"
                             : "none",
-                        cursor: moveMode && !isEmpty ? "pointer" : "default",
+                        cursor: moveMode && !isEmpty && !slot.isLocked ? "pointer" : "default",
                         transition: "background-color 0.2s",
                         borderLeft:
                           selectedTeamIndex === index
                             ? "3px solid var(--accent)"
+                            : !isEmpty && slot.isLocked
+                            ? "3px solid rgba(239, 68, 68, 0.4)"
                             : "3px solid transparent",
                       }}
                       onMouseEnter={(e) => {
                         if (
                           moveMode &&
                           selectedTeamIndex !== index &&
-                          !isEmpty
+                          !isEmpty &&
+                          !slot.isLocked
                         ) {
                           e.currentTarget.style.backgroundColor =
                             "rgba(242, 182, 50, 0.1)";
@@ -991,9 +1312,12 @@ export default function MyRosterPage() {
                       }}
                       onMouseLeave={(e) => {
                         if (moveMode && selectedTeamIndex !== index) {
-                          e.currentTarget.style.backgroundColor = isBench
-                            ? "rgba(255,255,255,0.02)"
-                            : "transparent";
+                          e.currentTarget.style.backgroundColor =
+                            !isEmpty && slot.isLocked
+                              ? "rgba(239, 68, 68, 0.08)"
+                              : isBench
+                              ? "rgba(255,255,255,0.02)"
+                              : "transparent";
                         }
                       }}
                     >
@@ -1017,8 +1341,7 @@ export default function MyRosterPage() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const newModes = [...slotModes];
-                                  newModes[index] =
-                                    slotModes[index] === "2s" ? "3s" : "2s";
+                                  newModes[index] = currentMode === "2s" ? "3s" : "2s";
                                   setSlotModes(newModes);
                                 }}
                                 style={{
@@ -1066,7 +1389,14 @@ export default function MyRosterPage() {
                             : "var(--accent)",
                         }}
                       >
-                        {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                          {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position}
+                          {!isEmpty && slot.isLocked && (
+                            <span title="Locked — cannot be edited" style={{ fontSize: "0.8rem" }}>
+                              🔒
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td style={{ padding: "0.75rem 1rem" }}>
                         {isEmpty ? (
@@ -1100,6 +1430,14 @@ export default function MyRosterPage() {
                                   if (!moveMode) {
                                     e.stopPropagation();
                                     setSelectedTeam(slot.mleTeam!);
+                                    setSelectedTeamRosteredBy(
+                                      rosterData
+                                        ? {
+                                            rosterName: rosterData.fantasyTeam.displayName,
+                                            managerName: rosterData.fantasyTeam.ownerDisplayName,
+                                          }
+                                        : undefined
+                                    );
                                     setShowModal(true);
                                   }
                                 }}
@@ -1123,15 +1461,6 @@ export default function MyRosterPage() {
                               >
                                 {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
                               </div>
-                              <div
-                                style={{
-                                  fontSize: "0.75rem",
-                                  color: "var(--text-muted)",
-                                  marginTop: "0.15rem",
-                                }}
-                              >
-                                vs. - -
-                              </div>
                             </div>
                           </div>
                         )}
@@ -1142,13 +1471,13 @@ export default function MyRosterPage() {
                           textAlign: "center",
                           fontWeight: 700,
                           fontSize: "1rem",
-                          color: slot.fantasyPoints
+                          color: slot.mleTeam
                             ? "var(--accent)"
                             : "var(--text-muted)",
                         }}
                       >
-                        {slot.fantasyPoints
-                          ? slot.fantasyPoints.toFixed(1)
+                        {slot.mleTeam
+                          ? slot.mleTeam.stats[currentMode].score.toFixed(1)
                           : "-"}
                       </td>
                       <td
@@ -1158,7 +1487,54 @@ export default function MyRosterPage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        -
+                        {slot.opponent ? (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // TeamModal fetches its own player/weekly-breakdown data
+                              // by id/leagueId — the stat fields here are unused filler.
+                              setSelectedTeam({
+                                id: slot.opponent!.id,
+                                name: slot.opponent!.name,
+                                leagueId: slot.opponent!.leagueId,
+                                slug: slot.opponent!.slug,
+                                logoPath: slot.opponent!.logoPath,
+                                primaryColor: slot.opponent!.primaryColor,
+                                secondaryColor: slot.opponent!.secondaryColor,
+                                weeklyStats: null,
+                                stats: {
+                                  "2s": { record: "0-0", goals: 0, shots: 0, saves: 0, assists: 0, demos: 0, fpts: 0, avg: 0, last: 0, score: 0 },
+                                  "3s": { record: "0-0", goals: 0, shots: 0, saves: 0, assists: 0, demos: 0, fpts: 0, avg: 0, last: 0, score: 0 },
+                                },
+                              });
+                              setSelectedTeamRosteredBy(undefined);
+                              setShowModal(true);
+                            }}
+                            style={{ cursor: "pointer" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                          >
+                            {slot.opponent.name} {slot.opponent.record[currentMode]}
+                            {slot.opponent.standing[currentMode] && (
+                              <>
+                                {" "}
+                                <span
+                                  style={{
+                                    color: getStandingsColor(
+                                      slot.opponent.standing[currentMode]!.rank,
+                                      slot.opponent.standing[currentMode]!.totalTeams
+                                    ),
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  ({ordinal(slot.opponent.standing[currentMode]!.rank)})
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td
                         style={{
@@ -1167,7 +1543,7 @@ export default function MyRosterPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        -
+                        {slot.oprk[currentMode] ?? "-"}
                       </td>
                       <td
                         style={{
@@ -1177,7 +1553,7 @@ export default function MyRosterPage() {
                           fontWeight: 600,
                         }}
                       >
-                        -
+                        {slot.fprk[currentMode] ?? "-"}
                       </td>
                       <td
                         style={{
@@ -1187,7 +1563,7 @@ export default function MyRosterPage() {
                           fontSize: "0.95rem",
                         }}
                       >
-                        -
+                        {slot.mleTeam ? slot.mleTeam.stats[currentMode].fpts.toFixed(1) : "-"}
                       </td>
                       <td
                         style={{
@@ -1197,7 +1573,7 @@ export default function MyRosterPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        -
+                        {slot.mleTeam ? slot.mleTeam.stats[currentMode].avg.toFixed(1) : "-"}
                       </td>
                       <td
                         style={{
@@ -1207,7 +1583,7 @@ export default function MyRosterPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        -
+                        {slot.mleTeam ? slot.mleTeam.stats[currentMode].last.toFixed(1) : "-"}
                       </td>
                     </tr>
                   );
@@ -1555,6 +1931,14 @@ export default function MyRosterPage() {
                           <div
                             onClick={() => {
                               setSelectedTeam(team);
+                              setSelectedTeamRosteredBy(
+                                rosterData
+                                  ? {
+                                      rosterName: rosterData.fantasyTeam.displayName,
+                                      managerName: rosterData.fantasyTeam.ownerDisplayName,
+                                    }
+                                  : undefined
+                              );
                               setShowModal(true);
                             }}
                             style={{
@@ -1580,7 +1964,7 @@ export default function MyRosterPage() {
                               marginTop: "0.15rem",
                             }}
                           >
-                            vs. - -
+                            vs. {team.opponent?.name ?? "-"}
                           </div>
                         </div>
                       </div>
@@ -1703,19 +2087,127 @@ export default function MyRosterPage() {
 
       {/* Waivers Tab */}
       {activeTab === "waivers" && (
-        <section className="card">
-          <div style={{ padding: "1.5rem", minHeight: "300px" }}>
-            <div
-              style={{
-                textAlign: "center",
-                color: "var(--text-muted)",
-                padding: "3rem",
-              }}
-            >
-              No pending waiver claims
+        <>
+          <section className="card" style={{ marginBottom: "1.5rem" }}>
+            <div style={{ padding: "1.5rem" }}>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent)", marginBottom: "1rem" }}>
+                {waiverPriorityData?.waiverSystem === "faab" ? "FAAB Budget" : "Waiver Priority Order"}
+              </h3>
+              {waiverPriorityLoading || !waiverPriorityData ? (
+                <div style={{ color: "var(--text-muted)" }}>Loading...</div>
+              ) : waiverPriorityData.waiverSystem === "faab" ? (
+                <div style={{ fontSize: "1.1rem", color: "var(--text-main)" }}>
+                  Your remaining budget:{" "}
+                  <span style={{ fontWeight: 700, color: "var(--accent)" }}>
+                    ${waiverPriorityData.teams.find((t) => t.id === rosterData?.fantasyTeam.id)?.faabRemaining ?? 0}
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {waiverPriorityData.teams.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        padding: "0.6rem 0.9rem",
+                        borderRadius: "6px",
+                        background: t.id === rosterData?.fantasyTeam.id ? "rgba(242, 182, 50, 0.12)" : "rgba(255,255,255,0.03)",
+                        border: t.id === rosterData?.fantasyTeam.id ? "1px solid rgba(242, 182, 50, 0.35)" : "1px solid transparent",
+                      }}
+                    >
+                      <span style={{ width: "2rem", fontWeight: 700, color: "var(--accent)" }}>#{t.waiverPriority ?? "-"}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-main)" }}>{t.teamName}</span>
+                      <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>{t.managerName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          </section>
+
+          <section className="card">
+          <div style={{ padding: "1.5rem", minHeight: "300px" }}>
+            {!rosterData?.fantasyTeam.isOwner ? (
+              <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "3rem" }}>
+                Pending waiver claims are only visible to the manager who submitted them.
+              </div>
+            ) : waiverClaimsLoading ? (
+              <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "3rem" }}>
+                Loading waiver claims...
+              </div>
+            ) : waiverClaims.length === 0 ? (
+              <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "3rem" }}>
+                No pending waiver claims
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {waiverClaims.map((claim) => (
+                  <div
+                    key={claim.id}
+                    style={{
+                      background: "rgba(15, 23, 42, 0.6)",
+                      border: "1px solid rgba(255, 255, 255, 0.1)",
+                      borderRadius: "8px",
+                      padding: "1.25rem 1.5rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1.5rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
+                      <span style={{ fontSize: "1.25rem", color: "#22c55e", fontWeight: 700 }}>+</span>
+                      {claim.addTeam ? (
+                        <>
+                          <Image
+                            src={claim.addTeam.logoPath}
+                            alt={claim.addTeam.name}
+                            width={32}
+                            height={32}
+                            style={{ borderRadius: "6px" }}
+                          />
+                          <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                            {claim.addTeam.leagueId} {claim.addTeam.name}
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)" }}>Unknown team</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
+                      {claim.dropTeam ? (
+                        <>
+                          <span style={{ fontSize: "1.25rem", color: "#ef4444", fontWeight: 700 }}>−</span>
+                          <Image
+                            src={claim.dropTeam.logoPath}
+                            alt={claim.dropTeam.name}
+                            width={32}
+                            height={32}
+                            style={{ borderRadius: "6px" }}
+                          />
+                          <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                            {claim.dropTeam.leagueId} {claim.dropTeam.name}
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                          No drop — filling an empty slot
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                      Submitted {new Date(claim.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </section>
+          </section>
+        </>
       )}
 
       {/* Trades Tab */}
@@ -1744,7 +2236,7 @@ export default function MyRosterPage() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {trades.filter(trade => trade.status === "pending").map((trade) => (
+                {trades.filter(trade => trade.status === "pending" || trade.status === "awaiting_veto").map((trade) => (
                   <div
                     key={trade.id}
                     style={{
@@ -1771,6 +2263,8 @@ export default function MyRosterPage() {
                             color:
                               trade.status === "pending"
                                 ? "#fbbf24"
+                                : trade.status === "awaiting_veto"
+                                ? "#f59e0b"
                                 : trade.status === "accepted"
                                 ? "#22c55e"
                                 : trade.status === "rejected"
@@ -1779,7 +2273,7 @@ export default function MyRosterPage() {
                             textTransform: "uppercase",
                           }}
                         >
-                          {trade.status}
+                          {trade.status === "awaiting_veto" ? "Awaiting Veto" : trade.status}
                         </span>
                         <span
                           style={{
@@ -1790,6 +2284,18 @@ export default function MyRosterPage() {
                         >
                           {new Date(trade.createdAt).toLocaleString()}
                         </span>
+                        {trade.status === "awaiting_veto" && trade.vetoDeadline && (
+                          <span
+                            style={{
+                              marginLeft: "1rem",
+                              fontSize: "0.85rem",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            Processes automatically at{" "}
+                            {new Date(trade.vetoDeadline).toLocaleString()}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1853,6 +2359,10 @@ export default function MyRosterPage() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedTeam(team);
+                                  setSelectedTeamRosteredBy({
+                                    rosterName: trade.proposer.teamName,
+                                    managerName: trade.proposer.managerName,
+                                  });
                                   setShowModal(true);
                                 }}
                                 onMouseEnter={(e) =>
@@ -1937,6 +2447,10 @@ export default function MyRosterPage() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedTeam(team);
+                                  setSelectedTeamRosteredBy({
+                                    rosterName: trade.receiver.teamName,
+                                    managerName: trade.receiver.managerName,
+                                  });
                                   setShowModal(true);
                                 }}
                                 onMouseEnter={(e) =>
@@ -2073,6 +2587,54 @@ export default function MyRosterPage() {
                         </button>
                       </div>
                     )}
+
+                    {/* Cancel button for trades you sent out */}
+                    {trade.status === "pending" && trade.isProposer && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "1rem",
+                          marginTop: "1.5rem",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        <button
+                          onClick={async () => {
+                            if (!confirm("Cancel this trade offer?")) return;
+                            try {
+                              const response = await fetch(
+                                `/api/leagues/${leagueId}/trades/${trade.id}`,
+                                { method: "DELETE" }
+                              );
+
+                              if (response.ok) {
+                                const tradesResponse = await fetch(
+                                  `/api/leagues/${leagueId}/trades?teamId=${teamId}`
+                                );
+                                if (tradesResponse.ok) {
+                                  const data = await tradesResponse.json();
+                                  setTrades(data.trades || []);
+                                }
+                              }
+                            } catch (error) {
+                              console.error("Error cancelling trade:", error);
+                            }
+                          }}
+                          style={{
+                            background: "rgba(239, 68, 68, 0.2)",
+                            border: "1px solid #ef4444",
+                            color: "#ef4444",
+                            padding: "0.5rem 1.5rem",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "0.9rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2196,23 +2758,28 @@ export default function MyRosterPage() {
                       <div
                         key={slot.id}
                         onClick={() =>
+                          !slot.isLocked &&
                           setSelectedDropSlot(
                             selectedDropSlot?.id === slot.id ? null : slot
                           )
                         }
                         style={{
                           padding: "1rem",
-                          background:
-                            selectedDropSlot?.id === slot.id
-                              ? "rgba(242, 182, 50, 0.1)"
-                              : "rgba(255, 255, 255, 0.05)",
+                          background: slot.isLocked
+                            ? "rgba(239, 68, 68, 0.06)"
+                            : selectedDropSlot?.id === slot.id
+                            ? "rgba(242, 182, 50, 0.1)"
+                            : "rgba(255, 255, 255, 0.05)",
                           border: `2px solid ${
-                            selectedDropSlot?.id === slot.id
+                            slot.isLocked
+                              ? "rgba(239, 68, 68, 0.3)"
+                              : selectedDropSlot?.id === slot.id
                               ? "var(--accent)"
                               : "rgba(255, 255, 255, 0.1)"
                           }`,
                           borderRadius: "8px",
-                          cursor: "pointer",
+                          cursor: slot.isLocked ? "not-allowed" : "pointer",
+                          opacity: slot.isLocked ? 0.6 : 1,
                           transition: "all 0.2s ease",
                           display: "flex",
                           alignItems: "center",
@@ -2245,6 +2812,11 @@ export default function MyRosterPage() {
                           >
                             {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position} ·{" "}
                             {slot.fantasyPoints?.toFixed(1) || 0} pts
+                            {slot.isLocked && (
+                              <span style={{ color: "#ef4444", marginLeft: "0.5rem" }}>
+                                🔒 Locked — cannot be dropped
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div
@@ -2299,7 +2871,7 @@ export default function MyRosterPage() {
               <button
                 onClick={async () => {
                   if (!selectedDropSlot || !rosterData) {
-                    alert("Please select a team to drop");
+                    showAlert("Please select a team to drop", "warning");
                     return;
                   }
 
@@ -2316,10 +2888,11 @@ export default function MyRosterPage() {
                     );
 
                     if (response.ok) {
-                      alert(
+                      showAlert(
                         `${
                           selectedDropSlot.mleTeam!.name
-                        } has been dropped from your roster`
+                        } has been dropped from your roster`,
+                        "success"
                       );
                       setShowDropModal(false);
                       setSelectedDropSlot(null);
@@ -2333,13 +2906,14 @@ export default function MyRosterPage() {
                       }
                     } else {
                       const error = await response.json();
-                      alert(
-                        `Failed to drop team: ${error.error || "Unknown error"}`
+                      showAlert(
+                        `Failed to drop team: ${error.error || "Unknown error"}`,
+                        "error"
                       );
                     }
                   } catch (error) {
                     console.error("Error dropping team:", error);
-                    alert("Failed to drop team. Please try again.");
+                    showAlert("Failed to drop team. Please try again.", "error");
                   }
                 }}
                 disabled={!selectedDropSlot}
@@ -2371,10 +2945,15 @@ export default function MyRosterPage() {
       {/* Team Modal */}
       {showModal && selectedTeam && (
         <TeamModal
-          team={selectedTeam}
+          team={{
+            ...selectedTeam,
+            status: "rostered",
+            rosteredBy: selectedTeamRosteredBy,
+          }}
           onClose={() => {
             setShowModal(false);
             setSelectedTeam(null);
+            setSelectedTeamRosteredBy(undefined);
           }}
           isDraftContext={false}
         />

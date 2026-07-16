@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getTradeCutoff } from "@/lib/tradeCutoff";
+import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 
 /**
  * POST /api/leagues/[leagueId]/trades/propose
@@ -17,7 +19,38 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { status: true },
+    });
+    if (user?.status === "suspended") {
+      return NextResponse.json(
+        { error: "Suspended users cannot propose trades" },
+        { status: 403 }
+      );
+    }
+
     const { leagueId } = await params;
+
+    const league = await prisma.fantasyLeague.findUnique({
+      where: { id: leagueId },
+      select: { draftStatus: true, currentWeek: true },
+    });
+    if (league?.draftStatus !== "completed") {
+      return NextResponse.json(
+        { error: "Trades are not allowed until the draft is complete" },
+        { status: 403 }
+      );
+    }
+
+    const tradeCutoff = await getTradeCutoff(leagueId);
+    if (tradeCutoff && new Date() > tradeCutoff) {
+      return NextResponse.json(
+        { error: "The trade deadline has passed for this league" },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const { proposerTeamId, receiverTeamId, proposerGives, receiverGives } = body;
 
@@ -82,6 +115,28 @@ export async function POST(
         { error: "Receiver team does not belong to this league" },
         { status: 400 }
       );
+    }
+
+    // Neither side can offer up a team that's currently locked in
+    const currentWeek = league?.currentWeek ?? 1;
+
+    for (const mleTeamId of proposerGives as string[]) {
+      const lockedSlot = await findLockedSlotForTeam(proposerTeamId, currentWeek, mleTeamId);
+      if (lockedSlot) {
+        return NextResponse.json(
+          { error: lockedTeamErrorMessage(lockedSlot.mleTeam) },
+          { status: 400 }
+        );
+      }
+    }
+    for (const mleTeamId of receiverGives as string[]) {
+      const lockedSlot = await findLockedSlotForTeam(receiverTeamId, currentWeek, mleTeamId);
+      if (lockedSlot) {
+        return NextResponse.json(
+          { error: lockedTeamErrorMessage(lockedSlot.mleTeam) },
+          { status: 400 }
+        );
+      }
     }
 
     // Create trade

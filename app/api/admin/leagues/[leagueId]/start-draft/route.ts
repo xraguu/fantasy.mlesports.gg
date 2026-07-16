@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminActivity } from "@/lib/adminActivity";
 
 // POST /api/admin/leagues/[leagueId]/start-draft - Start the draft
 export async function POST(
@@ -76,6 +77,14 @@ export async function POST(
         draftStatus: "in_progress",
         draftPickDeadline: firstPickDeadline,
       },
+    });
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "draft.start",
+      description: `Started draft for league "${updatedLeague.name}"`,
+      targetType: "FantasyLeague",
+      targetId: leagueId,
     });
 
     return NextResponse.json({

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useAlert } from "@/components/AlertProvider";
 
 interface User {
   id: string;
@@ -34,6 +35,7 @@ interface League {
   draftStatus: string | null;
   draftPickDeadline: string | null;
   draftPickTimeSeconds: number | null;
+  doubleWinEnabled: boolean;
   fantasyTeams: FantasyTeam[];
   draftPicks: any[];
   _count: {
@@ -45,18 +47,58 @@ interface League {
   };
 }
 
+interface BulkRow {
+  userId: string;
+  teamName: string;
+  shortCode: string;
+}
+
+interface RosterSlotView {
+  position: string;
+  slotIndex: number;
+  isLocked: boolean;
+  mleTeam: { id: string; name: string; leagueId: string; slug: string; logoPath: string } | null;
+}
+
+interface AvailableMleTeam {
+  id: string;
+  name: string;
+  leagueId: string;
+  slug: string;
+  logoPath: string;
+}
+
+interface EditRosterData {
+  team: { id: string; displayName: string; shortCode: string; ownerDisplayName: string };
+  week: number;
+  slots: RosterSlotView[];
+  availableMleTeams: AvailableMleTeam[];
+}
+
+function formatSlotPosition(position: string): string {
+  return position === "be" || position === "flx" ? position.toUpperCase() : position;
+}
+
 export default function AdminLeagueManagementPage() {
   const params = useParams();
   const router = useRouter();
+  const showAlert = useAlert();
   const leagueId = params?.leagueId as string;
 
   const [league, setLeague] = useState<League | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState("");
-  const [teamName, setTeamName] = useState("");
-  const [shortCode, setShortCode] = useState("");
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([
+    { userId: "", teamName: "", shortCode: "" },
+  ]);
+  const [savingDoubleWin, setSavingDoubleWin] = useState(false);
+
+  const [editRosterTeam, setEditRosterTeam] = useState<FantasyTeam | null>(null);
+  const [editRosterData, setEditRosterData] = useState<EditRosterData | null>(null);
+  const [editRosterLoading, setEditRosterLoading] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState<Record<string, string>>({});
+  const [rosterActionKey, setRosterActionKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLeague();
@@ -71,7 +113,7 @@ export default function AdminLeagueManagementPage() {
       setLeague(data.league);
     } catch (error) {
       console.error("Error fetching league:", error);
-      alert("Failed to load league");
+      showAlert("Failed to load league", "error");
     } finally {
       setLoading(false);
     }
@@ -88,33 +130,66 @@ export default function AdminLeagueManagementPage() {
     }
   };
 
-  const handleAddUser = async (e: React.FormEvent) => {
+  const handleAddUsers = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(`/api/admin/leagues/${leagueId}/teams`, {
+      const response = await fetch(`/api/admin/leagues/${leagueId}/teams/bulk`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: selectedUserId,
-          teamName,
-          shortCode,
-        }),
+        body: JSON.stringify({ teams: bulkRows }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to add user");
+        throw new Error(error.error || "Failed to add users");
       }
 
-      alert("User added to league successfully!");
+      showAlert(`${bulkRows.length} manager(s) added to league successfully!`, "success");
       setShowAddUserModal(false);
-      setSelectedUserId("");
-      setTeamName("");
-      setShortCode("");
+      setBulkRows([{ userId: "", teamName: "", shortCode: "" }]);
       fetchLeague();
     } catch (error: any) {
-      console.error("Error adding user:", error);
-      alert(error.message || "Failed to add user");
+      console.error("Error adding users:", error);
+      showAlert(error.message || "Failed to add users", "error");
+    }
+  };
+
+  const updateBulkRow = (index: number, field: keyof BulkRow, value: string) => {
+    setBulkRows((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const addBulkRow = () => {
+    setBulkRows((rows) => [...rows, { userId: "", teamName: "", shortCode: "" }]);
+  };
+
+  const removeBulkRow = (index: number) => {
+    setBulkRows((rows) => rows.filter((_, i) => i !== index));
+  };
+
+  const handleToggleDoubleWin = async () => {
+    if (!league) return;
+    const next = !league.doubleWinEnabled;
+    setSavingDoubleWin(true);
+    try {
+      const response = await fetch(`/api/admin/leagues/${leagueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doubleWinEnabled: next }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update double-win setting");
+      }
+
+      setLeague({ ...league, doubleWinEnabled: next });
+    } catch (error: any) {
+      console.error("Error toggling double-win:", error);
+      showAlert(error.message || "Failed to update double-win setting", "error");
+    } finally {
+      setSavingDoubleWin(false);
     }
   };
 
@@ -140,11 +215,11 @@ export default function AdminLeagueManagementPage() {
         throw new Error(error.error || "Failed to remove team");
       }
 
-      alert("Team removed successfully!");
+      showAlert("Team removed successfully!", "success");
       fetchLeague();
     } catch (error: any) {
       console.error("Error removing team:", error);
-      alert(error.message || "Failed to remove team");
+      showAlert(error.message || "Failed to remove team", "error");
     }
   };
 
@@ -206,7 +281,7 @@ export default function AdminLeagueManagementPage() {
       fetchLeague();
     } catch (error: any) {
       console.error("Error updating draft order:", error);
-      alert(error.message || "Failed to update draft order");
+      showAlert(error.message || "Failed to update draft order", "error");
       // Revert on error
       fetchLeague();
     }
@@ -235,11 +310,74 @@ export default function AdminLeagueManagementPage() {
       }
 
       const data = await response.json();
-      alert(data.message || "Draft started successfully!");
+      showAlert(data.message || "Draft started successfully!", "success");
       fetchLeague();
     } catch (error: any) {
       console.error("Error initializing draft:", error);
-      alert(error.message || "Failed to initialize draft");
+      showAlert(error.message || "Failed to initialize draft", "error");
+    }
+  };
+
+  const handleSkipDraft = async () => {
+    if (
+      !confirm(
+        "Skip the in-app draft for this league? Use this if the league drafted outside the website. You'll build out rosters afterward with the Edit Roster tool."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/leagues/${leagueId}/skip-draft`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to skip draft");
+      }
+
+      const data = await response.json();
+      showAlert(data.message || "Draft skipped.", "success");
+      fetchLeague();
+    } catch (error: any) {
+      console.error("Error skipping draft:", error);
+      showAlert(error.message || "Failed to skip draft", "error");
+    }
+  };
+
+  const handleRunWaivers = async () => {
+    if (
+      !confirm(
+        "Process all pending waiver claims for this league right now? This normally happens automatically on the league's scheduled waiver day — use this if that didn't run for some reason."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/waivers/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leagueId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to process waivers");
+      }
+
+      const data = await response.json();
+      showAlert(
+        data.processed === 0
+          ? "No pending waiver claims to process."
+          : `Processed ${data.processed} claim(s): ${data.approved} approved, ${data.denied} denied, ${data.cancelled} cancelled.`,
+        "success"
+      );
+      fetchLeague();
+    } catch (error: any) {
+      console.error("Error running waivers:", error);
+      showAlert(error.message || "Failed to process waivers", "error");
     }
   };
 
@@ -259,14 +397,101 @@ export default function AdminLeagueManagementPage() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to delete league");
+        throw new Error(
+          error.details ? `${error.error}: ${error.details}` : error.error || "Failed to delete league"
+        );
       }
 
-      alert("League deleted successfully!");
+      showAlert("League deleted successfully!", "success");
       router.push("/admin/leagues");
     } catch (error: any) {
       console.error("Error deleting league:", error);
-      alert(error.message || "Failed to delete league");
+      showAlert(error.message || "Failed to delete league", "error");
+    }
+  };
+
+  const openEditRoster = async (team: FantasyTeam) => {
+    setEditRosterTeam(team);
+    setEditRosterData(null);
+    setPendingAdd({});
+    setEditRosterLoading(true);
+    try {
+      const res = await fetch(`/api/admin/leagues/${leagueId}/teams/${team.id}/roster`);
+      if (!res.ok) throw new Error("Failed to load roster");
+      setEditRosterData(await res.json());
+    } catch (error: any) {
+      showAlert(error.message || "Failed to load roster", "error");
+      setEditRosterTeam(null);
+    } finally {
+      setEditRosterLoading(false);
+    }
+  };
+
+  const refreshEditRoster = async () => {
+    if (!editRosterTeam) return;
+    const res = await fetch(`/api/admin/leagues/${leagueId}/teams/${editRosterTeam.id}/roster`);
+    if (res.ok) setEditRosterData(await res.json());
+  };
+
+  const handleDropSlot = async (position: string, slotIndex: number) => {
+    if (!editRosterTeam || !editRosterData) return;
+    const key = `${position}-${slotIndex}`;
+    if (!confirm("Drop this team from the roster?")) return;
+
+    setRosterActionKey(key);
+    try {
+      const res = await fetch(
+        `/api/admin/leagues/${leagueId}/teams/${editRosterTeam.id}/roster`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ week: editRosterData.week, action: "drop", position, slotIndex }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to drop team");
+      await refreshEditRoster();
+    } catch (error: any) {
+      showAlert(error.message || "Failed to drop team", "error");
+    } finally {
+      setRosterActionKey(null);
+    }
+  };
+
+  const handleAddToSlot = async (position: string, slotIndex: number) => {
+    if (!editRosterTeam || !editRosterData) return;
+    const key = `${position}-${slotIndex}`;
+    const mleTeamId = pendingAdd[key];
+    if (!mleTeamId) return;
+
+    setRosterActionKey(key);
+    try {
+      const res = await fetch(
+        `/api/admin/leagues/${leagueId}/teams/${editRosterTeam.id}/roster`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            week: editRosterData.week,
+            action: "add",
+            position,
+            slotIndex,
+            mleTeamId,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add team");
+      setPendingAdd((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      await refreshEditRoster();
+    } catch (error: any) {
+      showAlert(error.message || "Failed to add team", "error");
+    } finally {
+      setRosterActionKey(null);
     }
   };
 
@@ -274,6 +499,10 @@ export default function AdminLeagueManagementPage() {
   const availableUsers = allUsers.filter(
     (user) => !league?.fantasyTeams.some((team) => team.owner.id === user.id)
   );
+
+  const remainingSlots = league
+    ? league.maxTeams - league._count.fantasyTeams
+    : 0;
 
   if (loading) {
     return (
@@ -333,8 +562,11 @@ export default function AdminLeagueManagementPage() {
               left: "50%",
               transform: "translate(-50%, -50%)",
               zIndex: 1000,
-              maxWidth: "500px",
-              width: "90%",
+              maxWidth: "960px",
+              width: "95%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              overflowX: "auto",
             }}
           >
             <div className="card" style={{ padding: "2rem" }}>
@@ -342,118 +574,147 @@ export default function AdminLeagueManagementPage() {
                 style={{
                   fontSize: "1.5rem",
                   fontWeight: 700,
-                  marginBottom: "1.5rem",
+                  marginBottom: "0.5rem",
                   color: "var(--accent)",
                 }}
               >
-                Add User to League
+                Add Managers to League
               </h2>
-              <form onSubmit={handleAddUser}>
-                <div style={{ marginBottom: "1rem" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Select User
-                  </label>
-                  <select
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      background: "rgba(255,255,255,0.1)",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      borderRadius: "6px",
-                      color: "var(--text-main)",
-                      fontSize: "0.95rem",
-                      cursor: "pointer",
-                    }}
-                    required
-                  >
-                    <option value="">-- Select a user --</option>
-                    {availableUsers.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.displayName} ({user.discordId})
-                      </option>
-                    ))}
-                  </select>
+              <div
+                style={{
+                  fontSize: "0.85rem",
+                  color: "var(--text-muted)",
+                  marginBottom: "1.5rem",
+                }}
+              >
+                {remainingSlots} slot{remainingSlots === 1 ? "" : "s"} remaining
+              </div>
+              <form onSubmit={handleAddUsers}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {bulkRows.map((row, index) => {
+                    const usedElsewhere = bulkRows
+                      .filter((_, i) => i !== index)
+                      .map((r) => r.userId);
+                    const rowAvailableUsers = availableUsers.filter(
+                      (u) => !usedElsewhere.includes(u.id)
+                    );
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(220px, 2fr) minmax(180px, 2fr) minmax(80px, 100px) 40px",
+                          gap: "0.75rem",
+                          alignItems: "center",
+                          padding: "0.75rem",
+                          background: "rgba(255,255,255,0.03)",
+                          borderRadius: "6px",
+                        }}
+                      >
+                        <select
+                          value={row.userId}
+                          onChange={(e) => updateBulkRow(index, "userId", e.target.value)}
+                          style={{
+                            padding: "0.6rem",
+                            background: "rgba(255,255,255,0.1)",
+                            border: "1px solid rgba(255,255,255,0.2)",
+                            borderRadius: "6px",
+                            color: "var(--text-main)",
+                            fontSize: "0.9rem",
+                            cursor: "pointer",
+                          }}
+                          required
+                        >
+                          <option value="">-- Select a user --</option>
+                          {rowAvailableUsers.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.displayName} ({user.discordId})
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Team Name"
+                          value={row.teamName}
+                          onChange={(e) => updateBulkRow(index, "teamName", e.target.value)}
+                          style={{
+                            padding: "0.6rem",
+                            background: "rgba(255,255,255,0.1)",
+                            border: "1px solid rgba(255,255,255,0.2)",
+                            borderRadius: "6px",
+                            color: "var(--text-main)",
+                            fontSize: "0.9rem",
+                          }}
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="ABC"
+                          value={row.shortCode}
+                          onChange={(e) =>
+                            updateBulkRow(
+                              index,
+                              "shortCode",
+                              e.target.value.toUpperCase().slice(0, 3)
+                            )
+                          }
+                          maxLength={3}
+                          style={{
+                            padding: "0.6rem",
+                            background: "rgba(255,255,255,0.1)",
+                            border: "1px solid rgba(255,255,255,0.2)",
+                            borderRadius: "6px",
+                            color: "var(--text-main)",
+                            fontSize: "0.9rem",
+                            textTransform: "uppercase",
+                          }}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeBulkRow(index)}
+                          disabled={bulkRows.length === 1}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: bulkRows.length === 1 ? "var(--text-muted)" : "#ef4444",
+                            cursor: bulkRows.length === 1 ? "not-allowed" : "pointer",
+                            fontSize: "1.1rem",
+                            padding: "0.25rem 0.5rem",
+                          }}
+                          title="Remove row"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div style={{ marginBottom: "1rem" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Team Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="My Fantasy Team"
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      background: "rgba(255,255,255,0.1)",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      borderRadius: "6px",
-                      color: "var(--text-main)",
-                      fontSize: "0.95rem",
-                    }}
-                    required
-                  />
-                </div>
-                <div style={{ marginBottom: "1rem" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      marginBottom: "0.5rem",
-                      fontSize: "0.9rem",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Short Code (3 characters)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="ABC"
-                    value={shortCode}
-                    onChange={(e) =>
-                      setShortCode(e.target.value.toUpperCase().slice(0, 3))
-                    }
-                    maxLength={3}
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      background: "rgba(255,255,255,0.1)",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      borderRadius: "6px",
-                      color: "var(--text-main)",
-                      fontSize: "0.95rem",
-                      textTransform: "uppercase",
-                    }}
-                    required
-                  />
-                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={addBulkRow}
+                  disabled={bulkRows.length >= remainingSlots}
+                  style={{ marginTop: "1rem" }}
+                >
+                  + Add Row
+                </button>
+
                 <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem" }}>
                   <button
                     type="button"
                     className="btn btn-ghost"
                     style={{ flex: 1 }}
-                    onClick={() => setShowAddUserModal(false)}
+                    onClick={() => {
+                      setShowAddUserModal(false);
+                      setBulkRows([{ userId: "", teamName: "", shortCode: "" }]);
+                    }}
                   >
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                    Add User
+                    Add {bulkRows.length > 1 ? `${bulkRows.length} Managers` : "Manager"}
                   </button>
                 </div>
               </form>
@@ -553,27 +814,6 @@ export default function AdminLeagueManagementPage() {
               marginBottom: "0.5rem",
             }}
           >
-            Draft Picks
-          </div>
-          <div
-            style={{
-              fontSize: "2rem",
-              fontWeight: 700,
-              color: "#22c55e",
-            }}
-          >
-            {league._count.draftPicks}
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: "1.5rem" }}>
-          <div
-            style={{
-              fontSize: "0.85rem",
-              color: "var(--text-muted)",
-              marginBottom: "0.5rem",
-            }}
-          >
             Current Week
           </div>
           <div
@@ -616,54 +856,87 @@ export default function AdminLeagueManagementPage() {
           gap: "1rem",
           marginBottom: "2rem",
           flexWrap: "wrap",
+          alignItems: "center",
         }}
       >
+        {league.draftStatus !== "completed" && (
+          <>
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowAddUserModal(true)}
+              disabled={league._count.fantasyTeams >= league.maxTeams}
+            >
+              + Add Managers to League
+            </button>
+            <button
+              className="btn"
+              onClick={handleInitializeDraft}
+              disabled={
+                league._count.draftPicks > 0 ||
+                league.draftStatus === "in_progress"
+              }
+              style={{
+                background:
+                  league.draftStatus === "in_progress" ||
+                  league._count.draftPicks > 0
+                    ? "#4b5563"
+                    : "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
+                cursor:
+                  league._count.draftPicks > 0 ||
+                  league.draftStatus === "in_progress"
+                    ? "not-allowed"
+                    : "pointer",
+                boxShadow:
+                  league._count.draftPicks === 0 && league.draftStatus !== "in_progress"
+                    ? "0 4px 12px rgba(242, 182, 50, 0.4)"
+                    : "none",
+              }}
+            >
+              {league.draftStatus === "in_progress"
+                ? "🟢 Draft In Progress"
+                : league._count.draftPicks > 0
+                ? "Draft Already Started"
+                : "🚀 Initialize & Start Draft"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={handleSkipDraft}
+              disabled={
+                league._count.draftPicks > 0 ||
+                league.draftStatus === "in_progress"
+              }
+              style={{
+                cursor:
+                  league._count.draftPicks > 0 ||
+                  league.draftStatus === "in_progress"
+                    ? "not-allowed"
+                    : "pointer",
+                opacity:
+                  league._count.draftPicks > 0 ||
+                  league.draftStatus === "in_progress"
+                    ? 0.5
+                    : 1,
+              }}
+              title="Use this if the league drafted outside the website"
+            >
+              Skip Draft
+            </button>
+          </>
+        )}
+        {league.draftStatus === "completed" && (
+          <button
+            className="btn btn-ghost"
+            onClick={handleRunWaivers}
+            style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}
+            title="Waivers normally process automatically on the league's scheduled waiver day — use this if that didn't run"
+          >
+            Run Waivers Now
+          </button>
+        )}
         <button
-          className="btn btn-primary"
-          onClick={() => setShowAddUserModal(true)}
-          disabled={league._count.fantasyTeams >= league.maxTeams}
-        >
-          + Add User to League
-        </button>
-        <button
-          className="btn"
-          onClick={handleInitializeDraft}
-          disabled={
-            league._count.draftPicks > 0 ||
-            league.draftStatus === "in_progress" ||
-            league.draftStatus === "completed"
-          }
-          style={{
-            background:
-              league.draftStatus === "in_progress" ||
-              league.draftStatus === "completed" ||
-              league._count.draftPicks > 0
-                ? "#4b5563"
-                : "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
-            cursor:
-              league._count.draftPicks > 0 ||
-              league.draftStatus === "in_progress" ||
-              league.draftStatus === "completed"
-                ? "not-allowed"
-                : "pointer",
-            boxShadow:
-              league._count.draftPicks === 0 && league.draftStatus !== "in_progress"
-                ? "0 4px 12px rgba(242, 182, 50, 0.4)"
-                : "none",
-          }}
-        >
-          {league.draftStatus === "in_progress"
-            ? "🟢 Draft In Progress"
-            : league.draftStatus === "completed"
-            ? "✅ Draft Completed"
-            : league._count.draftPicks > 0
-            ? "Draft Already Started"
-            : "🚀 Initialize & Start Draft"}
-        </button>
-        <button
-          className="btn"
+          className="btn btn-ghost"
           onClick={() => router.push(`/leagues/${leagueId}/draft`)}
-          style={{ background: "#3b82f6" }}
+          style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}
         >
           View Draft Page
         </button>
@@ -676,7 +949,120 @@ export default function AdminLeagueManagementPage() {
         </button>
       </div>
 
-      {/* Draft Order Section */}
+      {/* Double-Win Toggle */}
+      <div className="card" style={{ padding: "1.5rem", marginBottom: "2rem" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "1rem",
+                color: "var(--text-main)",
+                marginBottom: "0.25rem",
+              }}
+            >
+              Double-Win Scoring
+            </div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+              Each regular-season week, the top half of scoring managers get a bonus
+              win and the bottom half get a bonus loss, on top of normal matchup
+              results.{" "}
+              {league.draftStatus !== "not_started" && (
+                <span style={{ color: "#ef4444" }}>
+                  Locked — cannot be changed after the draft has started.
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            className="btn"
+            onClick={handleToggleDoubleWin}
+            disabled={league.draftStatus !== "not_started" || savingDoubleWin}
+            style={{
+              background: league.doubleWinEnabled
+                ? "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)"
+                : "rgba(255,255,255,0.1)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.2)",
+              cursor:
+                league.draftStatus !== "not_started" ? "not-allowed" : "pointer",
+              opacity: league.draftStatus !== "not_started" ? 0.6 : 1,
+              minWidth: "100px",
+            }}
+          >
+            {league.doubleWinEnabled ? "Enabled" : "Disabled"}
+          </button>
+        </div>
+      </div>
+
+      {/* Managers / Roster Management (post-draft) */}
+      {league.draftStatus === "completed" ? (
+        <div className="card" style={{ padding: "1.5rem" }}>
+          <h2
+            style={{
+              fontSize: "1.25rem",
+              fontWeight: 700,
+              color: "var(--text-main)",
+              margin: "0 0 1.5rem",
+            }}
+          >
+            Managers
+          </h2>
+
+          {league.fantasyTeams.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "var(--text-muted)" }}>
+              No teams in this league.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {league.fantasyTeams.map((team) => (
+                <div
+                  key={team.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "1rem",
+                    padding: "1rem",
+                    background: "rgba(255,255,255,0.05)",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                >
+                  {team.owner.avatarUrl && (
+                    <img
+                      src={team.owner.avatarUrl}
+                      alt={team.owner.displayName}
+                      style={{ width: "32px", height: "32px", borderRadius: "50%" }}
+                    />
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--text-main)" }}>
+                      {team.displayName} <span style={{ color: "var(--text-muted)" }}>({team.shortCode})</span>
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                      {team.owner.displayName}
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: "0.5rem 1.25rem", fontSize: "0.9rem" }}
+                    onClick={() => openEditRoster(team)}
+                  >
+                    Edit Roster
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="card" style={{ padding: "1.5rem" }}>
         <div
           style={{
@@ -709,7 +1095,7 @@ export default function AdminLeagueManagementPage() {
               color: "var(--text-muted)",
             }}
           >
-            No teams in this league yet. Click "Add User to League" to get started.
+            No teams in this league yet. Click "Add Managers to League" to get started.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -881,6 +1267,173 @@ export default function AdminLeagueManagementPage() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Edit Roster Modal */}
+      {editRosterTeam && (
+        <>
+          <div
+            className="modal-backdrop"
+            onClick={() => setEditRosterTeam(null)}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0,0,0,0.7)",
+              zIndex: 999,
+            }}
+          />
+          <div
+            className="modal"
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 1000,
+              maxWidth: "700px",
+              width: "95%",
+              maxHeight: "85vh",
+              overflowY: "auto",
+            }}
+          >
+            <div className="card" style={{ padding: "2rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  marginBottom: "1.5rem",
+                }}
+              >
+                <div>
+                  <h2 style={{ fontSize: "1.4rem", fontWeight: 700, color: "var(--accent)", marginBottom: "0.25rem" }}>
+                    Edit Roster — {editRosterTeam.displayName}
+                  </h2>
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    {editRosterTeam.owner.displayName}
+                    {editRosterData ? ` • Week ${editRosterData.week}` : ""}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-ghost"
+                  style={{ padding: "0.4rem 0.8rem" }}
+                  onClick={() => setEditRosterTeam(null)}
+                >
+                  Close
+                </button>
+              </div>
+
+              {editRosterLoading || !editRosterData ? (
+                <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+                  Loading roster...
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {editRosterData.slots.map((slot) => {
+                    const key = `${slot.position}-${slot.slotIndex}`;
+                    const isProcessing = rosterActionKey === key;
+
+                    return (
+                      <div
+                        key={key}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.75rem",
+                          padding: "0.75rem",
+                          background: "rgba(255,255,255,0.03)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: "6px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            minWidth: "36px",
+                            fontWeight: 700,
+                            fontSize: "0.85rem",
+                            color: "var(--accent)",
+                          }}
+                        >
+                          {formatSlotPosition(slot.position)}
+                        </div>
+
+                        {slot.mleTeam ? (
+                          <>
+                            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <img
+                                src={slot.mleTeam.logoPath}
+                                alt={slot.mleTeam.name}
+                                style={{ width: "24px", height: "24px", borderRadius: "4px" }}
+                              />
+                              <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                                {slot.mleTeam.leagueId} {slot.mleTeam.name}
+                              </span>
+                              {slot.isLocked && (
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }} title="Locked">
+                                  🔒
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              className="btn btn-ghost"
+                              disabled={isProcessing}
+                              style={{
+                                padding: "0.4rem 0.9rem",
+                                fontSize: "0.8rem",
+                                background: "rgba(239, 68, 68, 0.15)",
+                                color: "#ef4444",
+                              }}
+                              onClick={() => handleDropSlot(slot.position, slot.slotIndex)}
+                            >
+                              {isProcessing ? "..." : "Drop"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <select
+                              value={pendingAdd[key] || ""}
+                              onChange={(e) =>
+                                setPendingAdd((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              style={{
+                                flex: 1,
+                                padding: "0.5rem",
+                                background: "rgba(255,255,255,0.1)",
+                                border: "1px solid rgba(255,255,255,0.2)",
+                                borderRadius: "6px",
+                                color: "var(--text-main)",
+                                fontSize: "0.85rem",
+                              }}
+                            >
+                              <option value="">-- Empty: select a team to add --</option>
+                              {editRosterData.availableMleTeams.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.leagueId} {t.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              className="btn btn-primary"
+                              disabled={isProcessing || !pendingAdd[key]}
+                              style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}
+                              onClick={() => handleAddToSlot(slot.position, slot.slotIndex)}
+                            >
+                              {isProcessing ? "..." : "Add"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

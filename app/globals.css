@@ -28,6 +28,19 @@
   box-sizing: border-box;
 }
 
+/* Dropdowns are styled per-instance with a dark background + light text on
+   the closed <select>, but browsers render the expanded native popup with
+   OS/browser chrome unless told otherwise — this keeps the open list dark
+   too, everywhere in the app. */
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background: #1a1a2e;
+  color: #e5e7eb;
+}
+
 html,
 body {
   margin: 0;

@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
 
     const result = await calculateScoresForWeek(
       weekNum,
-      leagueId || undefined
+      leagueId || undefined,
+      session.user.id
     );
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

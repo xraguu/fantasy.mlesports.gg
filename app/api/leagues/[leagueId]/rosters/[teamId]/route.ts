@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateRosterSlotId } from "@/lib/id-generator";
+import { getTeamSeasonStats, TeamSeasonStatsRow, getWithinLeagueStandings } from "@/lib/teamSeasonStats";
+import { runAutoLockSweep } from "@/lib/autoLock";
+import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
+import { getFantasyStandings } from "@/lib/standings";
+import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
 
 /**
  * GET /api/leagues/[leagueId]/rosters/[teamId]
@@ -19,6 +24,9 @@ export async function GET(
     }
 
     const { leagueId, teamId } = await params;
+    await runAutoLockSweep(leagueId);
+    await runWaiverProcessingSweep(leagueId);
+
     const url = new URL(req.url);
     const week = parseInt(url.searchParams.get("week") || "1");
 
@@ -57,6 +65,56 @@ export async function GET(
       );
     }
 
+    // Real record/rank/points, from the shared standings calculator so this
+    // page can never diverge from Standings/Opponents/Scoreboard/Leaderboard
+    // (this route used to re-derive wins/losses locally with a falsy check
+    // — `!m.homeScore` — that silently dropped legitimate 0-point matchups,
+    // and didn't honor FantasyLeague.doubleWinEnabled bonus wins/losses at
+    // all, unlike every other page showing standings-derived numbers).
+    const standings = await getFantasyStandings(leagueId);
+    const myStanding = standings.find((s) => s.teamId === teamId);
+    const totalTeams = standings.length;
+    const rank = myStanding?.rank ?? 0;
+    const myWins = myStanding?.wins ?? 0;
+    const myLosses = myStanding?.losses ?? 0;
+    const totalPoints = myStanding?.pointsFor ?? 0;
+
+    // Last/Current Matchup boxes need the actual Matchup rows (opponent
+    // names, per-matchup scores) — standings only has aggregate totals.
+    const myMatchups = await prisma.matchup.findMany({
+      where: {
+        fantasyLeagueId: leagueId,
+        OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
+      },
+      include: {
+        homeTeam: { select: { id: true, displayName: true } },
+        awayTeam: { select: { id: true, displayName: true } },
+      },
+    });
+
+    const sortedMyMatchups = myMatchups
+      .filter((m) => m.homeScore !== null && m.awayScore !== null)
+      .sort((a, b) => a.week - b.week);
+
+    // Average is points-per-week-actually-played — deliberately NOT
+    // (wins + losses), since double-win bonus credit isn't a separate game.
+    const gamesPlayed = sortedMyMatchups.length;
+    const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
+    const lastMatchupRow = sortedMyMatchups[sortedMyMatchups.length - 2];
+    const currentMatchupRow = sortedMyMatchups[sortedMyMatchups.length - 1];
+
+    const toMatchupSummary = (m: typeof lastMatchupRow) =>
+      m
+        ? {
+            id: m.id,
+            week: m.week,
+            myTeam: fantasyTeam.displayName,
+            myScore: m.homeTeamId === teamId ? Math.round(m.homeScore || 0) : Math.round(m.awayScore || 0),
+            opponent: m.homeTeamId === teamId ? m.awayTeam.displayName : m.homeTeam.displayName,
+            opponentScore: m.homeTeamId === teamId ? Math.round(m.awayScore || 0) : Math.round(m.homeScore || 0),
+          }
+        : undefined;
+
     // Get roster slots for the specified week
     const rosterSlots = await prisma.rosterSlot.findMany({
       where: {
@@ -64,77 +122,102 @@ export async function GET(
         week,
       },
       include: {
-        mleTeam: {
-          include: {
-            weeklyStats: {
-              where: { week },
-              take: 1,
-            },
-          },
-        },
+        mleTeam: true,
       },
       orderBy: [{ position: "asc" }, { slotIndex: "asc" }],
     });
 
-    // For each MLE team, get roster status and calculate stats
-    const enrichedSlots = await Promise.all(
-      rosterSlots.map(async (slot) => {
-        // Get all weekly stats for this team to calculate averages
-        const allWeeklyStats = await prisma.teamWeeklyStats.findMany({
-          where: { teamId: slot.mleTeam.id },
-        });
+    let enrichedSlots: any[] = [];
 
-        // Calculate total stats and record
-        const totalWins = allWeeklyStats.reduce((sum, s) => sum + s.wins, 0);
-        const totalLosses = allWeeklyStats.reduce((sum, s) => sum + s.losses, 0);
-        const totalGoals = allWeeklyStats.reduce((sum, s) => sum + s.goals, 0);
-        const totalShots = allWeeklyStats.reduce((sum, s) => sum + s.shots, 0);
-        const totalSaves = allWeeklyStats.reduce((sum, s) => sum + s.saves, 0);
-        const totalAssists = allWeeklyStats.reduce((sum, s) => sum + s.assists, 0);
-        const totalDemos = allWeeklyStats.reduce((sum, s) => sum + s.demosInflicted, 0);
+    if (rosterSlots.length > 0) {
+      // Real MLE opponent this week, via the Match schedule + week date range
+      // (same join pattern as weekly-breakdown), batched for the whole roster.
+      const settings = await prisma.seasonSettings.findFirst({
+        orderBy: { season: "desc" },
+      });
+      const weekDates =
+        (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
+      const weekConfig = weekDates.find((w) => w.week === week);
 
-        // Calculate fantasy points (simplified scoring: goals*2 + shots*0.1 + saves*1 + assists*1.5 + demos*0.5)
-        const calculateFantasyPoints = (stats: any) => {
-          return (stats.goals * 2) + (stats.shots * 0.1) + (stats.saves * 1) + (stats.assists * 1.5) + (stats.demosInflicted * 0.5);
-        };
+      const mleTeamIds = rosterSlots.map((s) => s.mleTeamId);
+      const opponentByTeamId = new Map<string, { id: string; name: string; leagueId: string; slug: string; logoPath: string; primaryColor: string; secondaryColor: string }>();
 
-        const totalFantasyPoints = allWeeklyStats.reduce((sum, s) => sum + calculateFantasyPoints(s), 0);
-        const avgFantasyPoints = allWeeklyStats.length > 0 ? totalFantasyPoints / allWeeklyStats.length : 0;
-        const lastWeekStats = allWeeklyStats.find(s => s.week === week - 1);
-        const lastWeekPoints = lastWeekStats ? calculateFantasyPoints(lastWeekStats) : 0;
+      if (weekConfig?.startDate && weekConfig?.endDate) {
+        const start = new Date(weekConfig.startDate);
+        const end = new Date(weekConfig.endDate);
+        end.setHours(23, 59, 59, 999);
 
-        // Check if team is rostered in this league
-        const rosteredSlot = await prisma.rosterSlot.findFirst({
+        const matches = await prisma.match.findMany({
           where: {
-            mleTeamId: slot.mleTeam.id,
-            week,
-            fantasyTeam: {
-              fantasyLeagueId: leagueId,
-            },
+            scheduledDate: { gte: start, lte: end },
+            OR: [{ homeTeamId: { in: mleTeamIds } }, { awayTeamId: { in: mleTeamIds } }],
           },
-          include: {
-            fantasyTeam: {
-              include: {
-                owner: {
-                  select: {
-                    displayName: true,
-                  },
-                },
-              },
-            },
-          },
+          include: { homeTeam: true, awayTeam: true },
         });
 
-        // Check if team is on waivers
-        const onWaivers = await prisma.waiverClaim.findFirst({
-          where: {
-            addTeamId: slot.mleTeam.id,
-            fantasyLeagueId: leagueId,
-            status: "pending",
-          },
-        });
+        for (const match of matches) {
+          if (mleTeamIds.includes(match.homeTeamId) && !opponentByTeamId.has(match.homeTeamId)) {
+            opponentByTeamId.set(match.homeTeamId, match.awayTeam);
+          }
+          if (mleTeamIds.includes(match.awayTeamId) && !opponentByTeamId.has(match.awayTeamId)) {
+            opponentByTeamId.set(match.awayTeamId, match.homeTeam);
+          }
+        }
+      }
 
-        const currentWeekStats = slot.mleTeam.weeklyStats[0];
+      // Fprk/Oprk: rank every MLE team by cumulative fpts through this week,
+      // computed once for both 2s and 3s (every slot can be toggled between
+      // either mode in the UI, regardless of which slot type it sits in).
+      const allMleTeams = await prisma.mLETeam.findMany({ select: { id: true } });
+      const allMleTeamIds = allMleTeams.map((t) => t.id);
+
+      const statsByLens = new Map<"2s" | "3s", Awaited<ReturnType<typeof getTeamSeasonStats>>>();
+      const rankByLens = new Map<"2s" | "3s", Map<string, number>>();
+      const standingsByLens = new Map<"2s" | "3s", Awaited<ReturnType<typeof getWithinLeagueStandings>>>();
+      for (const lens of ["2s", "3s"] as const) {
+        const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: week, lens });
+        statsByLens.set(lens, stats);
+        const sorted = [...stats.entries()].sort((a, b) => b[1].fpts - a[1].fpts);
+        const rank = new Map<string, number>();
+        sorted.forEach(([id], idx) => rank.set(id, idx + 1));
+        rankByLens.set(lens, rank);
+        standingsByLens.set(lens, await getWithinLeagueStandings(week, lens));
+      }
+
+      const toStatBundle = (s: TeamSeasonStatsRow | undefined) => ({
+        record: s?.record ?? "0-0",
+        goals: s?.goals ?? 0,
+        shots: s?.shots ?? 0,
+        saves: s?.saves ?? 0,
+        assists: s?.assists ?? 0,
+        demos: s?.demosInflicted ?? 0,
+        fpts: s?.fpts ?? 0,
+        avg: s?.avg ?? 0,
+        last: s?.last ?? 0,
+        score: s?.score ?? 0,
+      });
+
+      enrichedSlots = rosterSlots.map((slot) => {
+        const stats2s = statsByLens.get("2s")!.get(slot.mleTeamId);
+        const stats3s = statsByLens.get("3s")!.get(slot.mleTeamId);
+        const fprk2s = rankByLens.get("2s")!.get(slot.mleTeamId) ?? null;
+        const fprk3s = rankByLens.get("3s")!.get(slot.mleTeamId) ?? null;
+
+        const opponentTeam = opponentByTeamId.get(slot.mleTeamId) ?? null;
+        const oprk2s = opponentTeam ? rankByLens.get("2s")!.get(opponentTeam.id) ?? null : null;
+        const oprk3s = opponentTeam ? rankByLens.get("3s")!.get(opponentTeam.id) ?? null : null;
+
+        // Default view: matches the slot's own type for 2s/3s slots; for
+        // flex/bench, defaults to whichever mode actually scored higher that
+        // week (matching the best-ball logic used to compute fantasyPoints).
+        const defaultMode: "2s" | "3s" =
+          slot.position === "2s"
+            ? "2s"
+            : slot.position === "3s"
+            ? "3s"
+            : (stats3s?.score ?? 0) > (stats2s?.score ?? 0)
+            ? "3s"
+            : "2s";
 
         return {
           id: slot.id,
@@ -142,6 +225,7 @@ export async function GET(
           slotIndex: slot.slotIndex,
           isLocked: slot.isLocked,
           fantasyPoints: slot.fantasyPoints,
+          defaultMode,
           mleTeam: {
             id: slot.mleTeam.id,
             name: slot.mleTeam.name,
@@ -150,26 +234,40 @@ export async function GET(
             logoPath: slot.mleTeam.logoPath,
             primaryColor: slot.mleTeam.primaryColor,
             secondaryColor: slot.mleTeam.secondaryColor,
-            weeklyStats: currentWeekStats,
-            // Additional stats for modal
-            record: `${totalWins}-${totalLosses}`,
-            goals: totalGoals,
-            shots: totalShots,
-            saves: totalSaves,
-            assists: totalAssists,
-            demos: totalDemos,
-            fpts: totalFantasyPoints,
-            avg: avgFantasyPoints,
-            last: lastWeekPoints,
-            status: onWaivers ? "waiver" : (rosteredSlot ? "rostered" : "free-agent"),
-            rosteredBy: rosteredSlot ? {
-              rosterName: rosteredSlot.fantasyTeam.displayName,
-              managerName: rosteredSlot.fantasyTeam.owner.displayName,
-            } : undefined,
+            status: "rostered" as const,
+            rosteredBy: {
+              rosterName: fantasyTeam.displayName,
+              managerName: fantasyTeam.owner.displayName,
+            },
+            stats: {
+              "2s": toStatBundle(stats2s),
+              "3s": toStatBundle(stats3s),
+            },
           },
+          opponent: opponentTeam
+            ? {
+                id: opponentTeam.id,
+                name: opponentTeam.name,
+                leagueId: opponentTeam.leagueId,
+                slug: opponentTeam.slug,
+                logoPath: opponentTeam.logoPath,
+                primaryColor: opponentTeam.primaryColor,
+                secondaryColor: opponentTeam.secondaryColor,
+                record: {
+                  "2s": statsByLens.get("2s")!.get(opponentTeam.id)?.record ?? "0-0",
+                  "3s": statsByLens.get("3s")!.get(opponentTeam.id)?.record ?? "0-0",
+                },
+                standing: {
+                  "2s": standingsByLens.get("2s")!.get(opponentTeam.id) ?? null,
+                  "3s": standingsByLens.get("3s")!.get(opponentTeam.id) ?? null,
+                },
+              }
+            : null,
+          oprk: { "2s": oprk2s, "3s": oprk3s },
+          fprk: { "2s": fprk2s, "3s": fprk3s },
         };
-      })
-    );
+      });
+    }
 
     return NextResponse.json({
       fantasyTeam: {
@@ -179,6 +277,7 @@ export async function GET(
         ownerDisplayName: fantasyTeam.owner.displayName,
         faabRemaining: fantasyTeam.faabRemaining,
         waiverPriority: fantasyTeam.waiverPriority,
+        isOwner: fantasyTeam.ownerUserId === session.user.id,
       },
       league: {
         id: fantasyTeam.league.id,
@@ -188,6 +287,13 @@ export async function GET(
       },
       week,
       rosterSlots: enrichedSlots,
+      record: { wins: myWins, losses: myLosses },
+      rank,
+      totalTeams,
+      totalPoints: Math.round(totalPoints),
+      avgPoints: Math.round(avgPoints * 10) / 10,
+      lastMatchup: toMatchupSummary(lastMatchupRow),
+      currentMatchup: toMatchupSummary(currentMatchupRow),
     });
   } catch (error) {
     console.error("Error fetching roster:", error);
@@ -233,6 +339,7 @@ export async function POST(
           select: {
             id: true,
             rosterConfig: true,
+            draftStatus: true,
           },
         },
       },
@@ -256,6 +363,15 @@ export async function POST(
       return NextResponse.json(
         { error: "Team does not belong to this league" },
         { status: 400 }
+      );
+    }
+
+    // Free agent pickups only open up once the draft has filled every
+    // roster — until then, teams are acquired exclusively via the draft.
+    if (fantasyTeam.league.draftStatus !== "completed") {
+      return NextResponse.json(
+        { error: "Free agent pickups are not allowed until the draft is complete" },
+        { status: 403 }
       );
     }
 
@@ -287,6 +403,15 @@ export async function POST(
       return NextResponse.json(
         { error: "MLE team not found" },
         { status: 404 }
+      );
+    }
+
+    // Teams in the post-drop waiver clearance window can't be instant-added —
+    // they must be acquired via a pending waiver claim instead.
+    if (await isTeamOnWaivers(leagueId, mleTeamId)) {
+      return NextResponse.json(
+        { error: "This team is on waivers and must be acquired via a waiver claim" },
+        { status: 400 }
       );
     }
 
@@ -345,6 +470,8 @@ export async function POST(
 
       return rosterSlot;
     });
+
+    await clearWaiverPeriod(leagueId, mleTeamId);
 
     return NextResponse.json({
       success: true,
@@ -595,6 +722,7 @@ export async function DELETE(
             league: {
               select: {
                 id: true,
+                draftStatus: true,
               },
             },
           },
@@ -621,6 +749,13 @@ export async function DELETE(
       return NextResponse.json(
         { error: "Team does not belong to this league" },
         { status: 400 }
+      );
+    }
+
+    if (rosterSlot.fantasyTeam.league.draftStatus !== "completed") {
+      return NextResponse.json(
+        { error: "Roster drops are not allowed until the draft is complete" },
+        { status: 403 }
       );
     }
 
@@ -652,6 +787,10 @@ export async function DELETE(
         },
       });
     });
+
+    // Manager-initiated drop: the team enters the waiver clearance window
+    // rather than going straight back to free agency.
+    await markTeamDroppedForWaivers(leagueId, rosterSlot.mleTeamId);
 
     return NextResponse.json({
       success: true,

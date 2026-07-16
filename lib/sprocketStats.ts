@@ -1,7 +1,7 @@
 import { parse } from "csv-parse/sync";
 import { prisma } from "./prisma";
 
-const SPROCKET_BASE_URL =
+export const SPROCKET_BASE_URL =
   "https://sprocket-public-datasets.nyc3.cdn.digitaloceanspaces.com/datasets";
 
 const LEAGUE_NAME_TO_ID: Record<string, string> = {
@@ -10,6 +10,17 @@ const LEAGUE_NAME_TO_ID: Record<string, string> = {
   "Champion League": "CL",
   "Master League": "ML",
   "Premier League": "PL",
+};
+
+// player_stats_sXX.csv and matches.csv use two different gamemode vocabularies
+// for the same two modes — map both onto the "2s"/"3s" keys used everywhere else.
+const PLAYER_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
+  RL_DOUBLES: "2s",
+  RL_STANDARD: "3s",
+};
+const MATCH_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
+  Doubles: "2s",
+  Standard: "3s",
 };
 
 interface SprocketMatch {
@@ -45,6 +56,7 @@ interface SprocketPlayerStat {
 interface TeamWeekAggregate {
   teamName: string;
   leagueCode: string;
+  gamemode: "2s" | "3s";
   goals: number;
   shots: number;
   saves: number;
@@ -72,7 +84,7 @@ export interface ImportResult {
   }>;
 }
 
-async function fetchCsvText(url: string): Promise<string> {
+export async function fetchCsvText(url: string): Promise<string> {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
@@ -150,18 +162,20 @@ export async function importSprocketStatsForWeek(
     weekMatchIds.has(p.match_id)
   );
 
-  // 4. Aggregate player-level stats up to team level
+  // 4. Aggregate player-level stats up to team level, split by gamemode
   const teamAggMap = new Map<string, TeamWeekAggregate>();
 
   for (const stat of weekPlayerStats) {
     const leagueCode = LEAGUE_NAME_TO_ID[stat.skill_group];
-    if (!leagueCode) continue;
+    const gamemode = PLAYER_GAMEMODE_TO_KEY[stat.gamemode];
+    if (!leagueCode || !gamemode) continue;
 
-    const key = `${leagueCode}:${stat.team_name}`;
+    const key = `${leagueCode}:${stat.team_name}:${gamemode}`;
     if (!teamAggMap.has(key)) {
       teamAggMap.set(key, {
         teamName: stat.team_name,
         leagueCode,
+        gamemode,
         goals: 0,
         shots: 0,
         saves: 0,
@@ -186,13 +200,14 @@ export async function importSprocketStatsForWeek(
     agg.roundCount += 1;
   }
 
-  // 5. Add wins/losses from matches (game-level, not series-level)
+  // 5. Add wins/losses from matches (game-level, not series-level), split by gamemode
   for (const match of weekMatches) {
     const leagueCode = LEAGUE_NAME_TO_ID[match.league];
-    if (!leagueCode) continue;
+    const gamemode = MATCH_GAMEMODE_TO_KEY[match.game_mode];
+    if (!leagueCode || !gamemode) continue;
 
-    const homeKey = `${leagueCode}:${match.home}`;
-    const awayKey = `${leagueCode}:${match.away}`;
+    const homeKey = `${leagueCode}:${match.home}:${gamemode}`;
+    const awayKey = `${leagueCode}:${match.away}:${gamemode}`;
     const homeWins = parseInt(match.home_wins) || 0;
     const awayWins = parseInt(match.away_wins) || 0;
 
@@ -225,7 +240,7 @@ export async function importSprocketStatsForWeek(
 
     // Check for manual override — it takes precedence
     const override = await prisma.manualStatsOverride.findUnique({
-      where: { teamId_week: { teamId: mleTeam.id, week } },
+      where: { teamId_week_gamemode: { teamId: mleTeam.id, week, gamemode: agg.gamemode } },
     });
 
     let statsToWrite: {
@@ -275,15 +290,15 @@ export async function importSprocketStatsForWeek(
     }
 
     await prisma.teamWeeklyStats.upsert({
-      where: { teamId_week: { teamId: mleTeam.id, week } },
+      where: { teamId_week_gamemode: { teamId: mleTeam.id, week, gamemode: agg.gamemode } },
       update: statsToWrite,
-      create: { teamId: mleTeam.id, week, ...statsToWrite },
+      create: { teamId: mleTeam.id, week, gamemode: agg.gamemode, ...statsToWrite },
     });
 
     imported++;
     importedTeams.push({
       teamId: mleTeam.id,
-      name: `${agg.leagueCode} ${agg.teamName}`,
+      name: `${agg.leagueCode} ${agg.teamName} (${agg.gamemode})`,
       goals: statsToWrite.goals,
       wins: statsToWrite.wins,
       isManualOverride,

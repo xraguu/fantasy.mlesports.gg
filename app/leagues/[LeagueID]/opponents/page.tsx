@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { TEAMS } from "@/lib/teams";
 import TeamModal from "@/components/TeamModal";
@@ -14,11 +14,28 @@ const getFantasyRankColor = (rank: number): string => {
   return "#9ca3af"; // default gray
 };
 
+interface WithinLeagueStanding {
+  rank: number;
+  totalTeams: number;
+}
+
+interface OpponentTeamInfo {
+  id: string;
+  name: string;
+  leagueId: string;
+  slug: string;
+  logoPath: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
 interface OpponentRoster {
   slot: string;
   name: string;
   score: number;
   opponent: string;
+  opponentTeam: OpponentTeamInfo | null;
+  opponentStanding: WithinLeagueStanding | null;
   oprk: number;
   fprk: number;
   fpts: number;
@@ -34,6 +51,26 @@ interface OpponentRoster {
   opponentFantasyRank: number;
 }
 
+// Color tier for a standings position — mirrors lib/teamSeasonStats.ts's
+// getStandingsColor (duplicated here since that file imports Prisma and
+// can't be used from a client component).
+function getStandingsColor(rank: number, totalTeams: number): string {
+  const percentile = rank / totalTeams;
+  if (percentile <= 1 / 3) return "#22c55e";
+  if (percentile <= 2 / 3) return "#9ca3af";
+  return "#ef4444";
+}
+
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
 interface OpponentData {
   id: string;
   name: string;
@@ -44,12 +81,16 @@ interface OpponentData {
   avgPoints: number;
   currentWeek: number;
   lastMatchup?: {
+    id: string;
+    week: number;
     myTeam: string;
     myScore: number;
     opponent: string;
     opponentScore: number;
   };
   currentMatchup?: {
+    id: string;
+    week: number;
     myTeam: string;
     myScore: number;
     opponent: string;
@@ -60,6 +101,7 @@ interface OpponentData {
 
 export default function OpponentsPage() {
   const params = useParams();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const leagueId = params.LeagueID as string;
   const teamIdParam = searchParams.get("teamId");
@@ -80,6 +122,7 @@ export default function OpponentsPage() {
     rank?: number;
     record?: string;
     status?: string;
+    rosteredBy?: { rosterName: string; managerName: string };
   }) | null>(null);
 
   // Track game mode for stats tab (2s or 3s)
@@ -101,6 +144,12 @@ export default function OpponentsPage() {
 
         const data = await response.json();
         setOpponents(data.opponents || []);
+
+        // Snap to the league's real current week on first load only — once
+        // the user has navigated weeks manually, leave their choice alone.
+        if (currentWeek === 1 && data.league?.currentWeek && data.league.currentWeek !== 1) {
+          setCurrentWeek(data.league.currentWeek);
+        }
 
         // Set selected manager based on URL parameters
         if (data.opponents && data.opponents.length > 0) {
@@ -172,10 +221,10 @@ export default function OpponentsPage() {
     }
   };
 
-  // Sorted roster teams for stats tab
+  // Sorted roster teams for stats tab (skip empty slots — only actual rostered teams)
   const sortedRosterTeams = useMemo(() => {
     if (!roster || !roster.teams) return [];
-    return [...roster.teams].sort((a, b) => {
+    return roster.teams.filter((team) => team.name).sort((a, b) => {
       const aValue = a[statsSortColumn];
       const bValue = b[statsSortColumn];
       if (statsSortDirection === "asc") {
@@ -193,16 +242,13 @@ export default function OpponentsPage() {
     const name = parts.slice(0, -1).join(" ");
     const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
     const team = TEAMS.find(t => t.id === teamId);
-    if (team) {
-      const nameHash = (team.name?.length ?? 5);
+    // This is only reachable from within the currently selected opponent's roster,
+    // so the clicked team is by definition rostered by that opponent.
+    if (team && roster) {
       setSelectedTeam({
         ...team,
-        fpts: 450 + (nameHash % 50),
-        avg: 55 + (nameHash % 15),
-        last: 50 + (nameHash % 20),
-        rank: (nameHash % 10) + 1,
-        record: `${7 + (nameHash % 3)}-${1 + (nameHash % 3)}`,
-        status: "free-agent"
+        status: "rostered",
+        rosteredBy: { rosterName: roster.teamName, managerName: roster.name },
       });
       setShowModal(true);
     }
@@ -247,10 +293,7 @@ export default function OpponentsPage() {
     <>
       {/* Team Modal */}
       <TeamModal
-        team={showModal && selectedTeam ? {
-          ...selectedTeam,
-          rosteredBy: (selectedTeam.rank ?? 0) % 2 === 0 ? { rosterName: "Pixies", managerName: "Crazy" } : undefined
-        } : null}
+        team={showModal && selectedTeam ? selectedTeam : null}
         onClose={() => setShowModal(false)}
       />
 
@@ -367,7 +410,10 @@ export default function OpponentsPage() {
           <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
             {/* Last Matchup */}
             {roster.lastMatchup && (
-              <div style={{ textAlign: "center" }}>
+              <div
+                onClick={() => router.push(`/leagues/${leagueId}/scoreboard?week=${roster.lastMatchup!.week}&matchup=${roster.lastMatchup!.id}`)}
+                style={{ textAlign: "center", cursor: "pointer" }}
+              >
                 <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
                   Last Matchup
                 </div>
@@ -392,7 +438,10 @@ export default function OpponentsPage() {
 
             {/* Current Matchup */}
             {roster.currentMatchup && (
-              <div style={{ textAlign: "center" }}>
+              <div
+                onClick={() => router.push(`/leagues/${leagueId}/scoreboard?week=${roster.currentMatchup!.week}&matchup=${roster.currentMatchup!.id}`)}
+                style={{ textAlign: "center", cursor: "pointer" }}
+              >
                 <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
                   Current Matchup
                 </div>
@@ -524,7 +573,7 @@ export default function OpponentsPage() {
               <tbody>
                 {roster.teams.map((team, index) => {
                   const isEmpty = !team.name;
-                  const isBench = team.slot === "BE";
+                  const isBench = team.slot === "be";
                   const currentMode = slotModes[index] || "2s";
 
                   return (
@@ -576,7 +625,7 @@ export default function OpponentsPage() {
                         fontSize: "0.9rem",
                         color: isBench ? "var(--text-muted)" : "var(--accent)"
                       }}>
-                        {team.slot}
+                        {team.slot === "flx" || team.slot === "be" ? team.slot.toUpperCase() : team.slot}
                       </td>
                       <td style={{ padding: "0.75rem 1rem" }}>
                         {isEmpty ? (
@@ -617,21 +666,6 @@ export default function OpponentsPage() {
                               >
                                 {team.name}
                               </div>
-                              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
-                                {team.opponent && team.opponentGameRecord && team.opponentFantasyRank ? (
-                                  <>
-                                    vs. {team.opponent} {team.opponentGameRecord}{" "}
-                                    <span style={{ color: getFantasyRankColor(team.opponentFantasyRank) }}>
-                                      ({team.opponentFantasyRank}
-                                      {team.opponentFantasyRank === 1 ? "st" :
-                                       team.opponentFantasyRank === 2 ? "nd" :
-                                       team.opponentFantasyRank === 3 ? "rd" : "th"})
-                                    </span>
-                                  </>
-                                ) : (
-                                  "vs. - -"
-                                )}
-                              </div>
                             </div>
                           </div>
                         )}
@@ -646,7 +680,38 @@ export default function OpponentsPage() {
                         {team.score > 0 ? team.score.toFixed(1) : "-"}
                       </td>
                       <td style={{ padding: "0.75rem 1rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
-                        {team.opponent || "-"}
+                        {team.opponentTeam ? (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTeam({
+                                ...team.opponentTeam!,
+                                status: undefined,
+                              } as any);
+                              setShowModal(true);
+                            }}
+                            style={{ cursor: "pointer" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                          >
+                            {team.opponent} {team.opponentGameRecord}
+                            {team.opponentStanding && (
+                              <>
+                                {" "}
+                                <span
+                                  style={{
+                                    color: getStandingsColor(team.opponentStanding.rank, team.opponentStanding.totalTeams),
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  ({ordinal(team.opponentStanding.rank)})
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.9rem" }}>
                         {team.oprk || "-"}

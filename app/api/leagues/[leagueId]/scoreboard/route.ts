@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getFantasyStandings, formatPlacement } from "@/lib/standings";
+import { runAutoLockSweep } from "@/lib/autoLock";
 
 /**
  * GET /api/leagues/[leagueId]/scoreboard?week=X
@@ -17,6 +19,8 @@ export async function GET(
     }
 
     const { leagueId } = await params;
+    await runAutoLockSweep(leagueId);
+
     const { searchParams } = new URL(req.url);
     const weekParam = searchParams.get("week");
     const week = weekParam ? parseInt(weekParam) : 1;
@@ -79,72 +83,15 @@ export async function GET(
       return NextResponse.json({ matchups: [], week, league });
     }
 
-    // Get all teams' records
-    const allMatchups = await prisma.matchup.findMany({
-      where: { fantasyLeagueId: leagueId },
-    });
-
-    const teamRecords = new Map<string, { wins: number; losses: number }>();
-    allMatchups.forEach((matchup) => {
-      if (!matchup.homeScore || !matchup.awayScore) return;
-
-      if (!teamRecords.has(matchup.homeTeamId)) {
-        teamRecords.set(matchup.homeTeamId, { wins: 0, losses: 0 });
-      }
-      if (!teamRecords.has(matchup.awayTeamId)) {
-        teamRecords.set(matchup.awayTeamId, { wins: 0, losses: 0 });
-      }
-
-      const homeRecord = teamRecords.get(matchup.homeTeamId)!;
-      const awayRecord = teamRecords.get(matchup.awayTeamId)!;
-
-      if (matchup.homeScore > matchup.awayScore) {
-        homeRecord.wins++;
-        awayRecord.losses++;
-      } else {
-        awayRecord.wins++;
-        homeRecord.losses++;
-      }
-    });
-
-    // Calculate standings
-    const allTeams = await prisma.fantasyTeam.findMany({
-      where: { fantasyLeagueId: leagueId },
-    });
-
-    const standings = allTeams.map((team) => {
-      const record = teamRecords.get(team.id) || { wins: 0, losses: 0 };
-      const teamMatchups = allMatchups.filter(
-        (m) => m.homeTeamId === team.id || m.awayTeamId === team.id
-      );
-
-      let totalPoints = 0;
-      teamMatchups.forEach((m) => {
-        if (!m.homeScore || !m.awayScore) return;
-        const isHome = m.homeTeamId === team.id;
-        totalPoints += isHome ? m.homeScore : m.awayScore;
-      });
-
-      return {
-        teamId: team.id,
-        wins: record.wins,
-        losses: record.losses,
-        totalPoints,
-      };
-    });
-
-    standings.sort((a, b) => {
-      if (a.wins !== b.wins) return b.wins - a.wins;
-      return b.totalPoints - a.totalPoints;
-    });
+    // Shared win/loss/points/rank source (honors double-win if enabled)
+    const fantasyStandings = await getFantasyStandings(leagueId);
+    const teamRecords = new Map(
+      fantasyStandings.map((s) => [s.teamId, { wins: s.wins, losses: s.losses }])
+    );
 
     const getPlacement = (teamId: string) => {
-      const index = standings.findIndex((s) => s.teamId === teamId);
-      if (index === -1) return "-";
-      const place = index + 1;
-      const suffix =
-        place === 1 ? "st" : place === 2 ? "nd" : place === 3 ? "rd" : "th";
-      return `${place}${suffix}`;
+      const standing = fantasyStandings.find((s) => s.teamId === teamId);
+      return standing ? formatPlacement(standing.rank) : "-";
     };
 
     // Get rosters for each team in the matchups

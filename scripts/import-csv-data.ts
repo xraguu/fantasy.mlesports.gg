@@ -15,6 +15,29 @@ const prisma = new PrismaClient();
 // CSV file paths (relative to project root)
 const CSV_DIR = path.join(process.cwd(), "data", "csv");
 
+// Real MLETeam ids are `{leagueCode}{Franchise}` (e.g. "plBulls"), one row per
+// (league, franchise) combination that actually competes in that league. Several
+// source CSVs only give the league's full name, so map it to the code used in the DB.
+const LEAGUE_NAME_TO_ID: Record<string, string> = {
+  "Foundation League": "FL",
+  "Academy League": "AL",
+  "Champion League": "CL",
+  "Master League": "ML",
+  "Premier League": "PL",
+};
+
+// Loads existing MLETeam rows once and looks them up by (league code, franchise name).
+// Never creates teams — league/team master data is seeded separately and is not
+// reliably derivable from these CSVs (teams.csv has no league column).
+async function loadTeamLookup(): Promise<Map<string, string>> {
+  const teams = await prisma.mLETeam.findMany({ select: { id: true, leagueId: true, name: true } });
+  const lookup = new Map<string, string>();
+  for (const t of teams) {
+    lookup.set(`${t.leagueId}:${t.name}`, t.id);
+  }
+  return lookup;
+}
+
 // CSV row interfaces - only including fields we actually use
 interface TeamRow {
   Conference: string;
@@ -68,6 +91,7 @@ interface RoundRow {
 
 interface MatchGroupRow {
   match_group_id: string;
+  start: string;
   match_group_title: string;
   parent_group_title: string;
 }
@@ -105,6 +129,9 @@ interface HistoricalStatsRow {
   name: string;
   member_id: string;
   gamemode: string;
+  skill_group: string;
+  team_name: string;
+  season: string;
   games_played: string;
   sprocket_rating: string;
   total_goals: string;
@@ -114,6 +141,22 @@ interface HistoricalStatsRow {
   total_demos_inflicted: string;
   total_demos_taken: string;
 }
+
+// historicalAggregatedPlayerStats.csv uses the same RL_DOUBLES/RL_STANDARD
+// vocabulary as player_stats_sXX.csv — map both onto the "2s"/"3s" keys used
+// everywhere else (see lib/sprocketStats.ts for the live-import equivalent).
+const PLAYER_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
+  RL_DOUBLES: "2s",
+  RL_STANDARD: "3s",
+};
+
+// matches.csv/match_groups.csv use a third vocabulary ("Doubles"/"Standard")
+// for the same two modes — same mapping as lib/sprocketStats.ts's
+// MATCH_GAMEMODE_TO_KEY, duplicated locally per this file's existing pattern.
+const MATCH_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
+  Doubles: "2s",
+  Standard: "3s",
+};
 
 function readCSV<T>(filename: string): T[] {
   const filepath = path.join(CSV_DIR, filename);
@@ -134,7 +177,7 @@ function readCSV<T>(filename: string): T[] {
 }
 
 async function importLeaguesAndTeams() {
-  console.log("\n📊 Importing Leagues and Teams...");
+  console.log("\n📊 Checking Leagues and Teams...");
 
   const teams = readCSV<TeamRow>("teams.csv");
 
@@ -143,64 +186,18 @@ async function importLeaguesAndTeams() {
     return;
   }
 
-  // Extract unique leagues (conferences)
-  const leaguesMap = new Map<string, { name: string; colorHex: string; colorHexTwo?: string }>();
-
-  teams.forEach((team) => {
-    const leagueId = team.Conference;
-    if (!leaguesMap.has(leagueId)) {
-      leaguesMap.set(leagueId, {
-        name: team.Conference,
-        colorHex: team["Primary Color"] || "#FFFFFF",
-        colorHexTwo: team["Secondary Color"] || undefined,
-      });
-    }
-  });
-
-  // Import leagues
-  for (const [leagueId, leagueData] of leaguesMap) {
-    await prisma.mLELeague.upsert({
-      where: { id: leagueId },
-      update: leagueData,
-      create: {
-        id: leagueId,
-        ...leagueData,
-      },
-    });
-  }
-
-  console.log(`✅ Imported ${leaguesMap.size} leagues`);
-
-  // Import teams
-  let teamCount = 0;
-  for (const team of teams) {
-    const teamId = team.Code; // Use Code as team ID
-    const slug = team.Franchise.toLowerCase().replace(/\s+/g, "-");
-
-    await prisma.mLETeam.upsert({
-      where: { id: teamId },
-      update: {
-        name: team.Franchise,
-        leagueId: team.Conference,
-        slug,
-        logoPath: team["Photo URL"] || "",
-        primaryColor: team["Primary Color"] || "#FFFFFF",
-        secondaryColor: team["Secondary Color"] || "#000000",
-      },
-      create: {
-        id: teamId,
-        name: team.Franchise,
-        leagueId: team.Conference,
-        slug,
-        logoPath: team["Photo URL"] || "",
-        primaryColor: team["Primary Color"] || "#FFFFFF",
-        secondaryColor: team["Secondary Color"] || "#000000",
-      },
-    });
-    teamCount++;
-  }
-
-  console.log(`✅ Imported ${teamCount} teams`);
+  // teams.csv's "Conference" column (e.g. "Blue"/"Orange") is an internal
+  // organizational grouping, NOT the real league (AL/PL/ML/CL/FL) — this file
+  // has no column that identifies a team's actual league. Real MLELeague/MLETeam
+  // master data is seeded separately (id scheme: MLETeam.id = `{leagueCode}{Franchise}`,
+  // one row per league a franchise competes in). Writing from this file's
+  // Conference/Code columns previously created bogus League/Team rows and
+  // corrupted MLEPlayer.teamId links — see git history around 2026-07-13.
+  // This step is intentionally read-only now; it just reports what's in the CSV.
+  const franchises = new Set(teams.map((t) => t.Franchise));
+  console.log(
+    `ℹ️  teams.csv lists ${franchises.size} franchises across ${teams.length} rows — skipping league/team writes (no league column in this file; see comment above). Existing MLELeague/MLETeam data is left untouched.`
+  );
 }
 
 async function importPlayers() {
@@ -213,26 +210,41 @@ async function importPlayers() {
     return;
   }
 
+  // Resolve each player's real MLETeam.id via (league, franchise name) — "FA"/"FP"/"Pend"
+  // and any other unmatched franchise values (free agents, unsigned players) get null.
+  const teamLookup = await loadTeamLookup();
+
   let count = 0;
+  let unmatched = 0;
   for (const player of players) {
     const playerId = player.member_id; // Use member_id as player ID
+    const leagueCode = LEAGUE_NAME_TO_ID[player.skill_group];
+    const teamId = leagueCode ? teamLookup.get(`${leagueCode}:${player.franchise}`) || null : null;
+    if (!teamId && player.franchise) unmatched++;
+
+    // franchise always mirrors teamId's resolved team name — never trust the raw
+    // CSV value on its own, since values like "FP"/"Pend" or a stale team name
+    // would otherwise drift out of sync with teamId (see franchise data audit).
+    const franchise = teamId ? player.franchise : null;
 
     await prisma.mLEPlayer.upsert({
       where: { id: playerId },
       update: {
         name: player.name,
-        teamId: player.franchise || null,
+        teamId,
+        franchise,
       },
       create: {
         id: playerId,
         name: player.name,
-        teamId: player.franchise || null,
+        teamId,
+        franchise,
       },
     });
     count++;
   }
 
-  console.log(`✅ Imported ${count} players`);
+  console.log(`✅ Imported ${count} players (${unmatched} without a matching team, e.g. free agents)`);
 }
 
 async function importFixtures() {
@@ -245,24 +257,30 @@ async function importFixtures() {
     return;
   }
 
+  const matchGroups = readCSV<MatchGroupRow>("match_groups.csv");
+  const groupStart = new Map<string, Date>();
+  for (const g of matchGroups) {
+    groupStart.set(g.match_group_id, new Date(g.start));
+  }
+
   let count = 0;
+  let skipped = 0;
   for (const fixture of fixtures) {
-    // Fixture date would need to come from match_groups or matches
-    // For now, use a placeholder date
+    const date = groupStart.get(fixture.match_group_id);
+    if (!date) {
+      skipped++;
+      continue; // no match_groups.csv row to source a real date from
+    }
+
     await prisma.fixture.upsert({
       where: { id: fixture.fixture_id },
-      update: {
-        date: new Date(), // TODO: Get actual date from match_groups
-      },
-      create: {
-        id: fixture.fixture_id,
-        date: new Date(), // TODO: Get actual date from match_groups
-      },
+      update: { date },
+      create: { id: fixture.fixture_id, date },
     });
     count++;
   }
 
-  console.log(`✅ Imported ${count} fixtures`);
+  console.log(`✅ Imported ${count} fixtures (${skipped} skipped — no match_groups.csv date found)`);
 }
 
 async function importMatches() {
@@ -284,8 +302,22 @@ async function importMatches() {
     return Math.min(Math.max(week, 1), 10);
   };
 
+  // matches.csv gives the league's full name (e.g. "Master League") plus home/away
+  // franchise names — resolve both to the real MLETeam.id via the same lookup as players.
+  const teamLookup = await loadTeamLookup();
+
   let count = 0;
+  let skipped = 0;
   for (const match of matches) {
+    const leagueCode = LEAGUE_NAME_TO_ID[match.league];
+    const homeTeamId = leagueCode ? teamLookup.get(`${leagueCode}:${match.home}`) : undefined;
+    const awayTeamId = leagueCode ? teamLookup.get(`${leagueCode}:${match.away}`) : undefined;
+
+    if (!homeTeamId || !awayTeamId) {
+      skipped++;
+      continue; // can't resolve one or both teams (e.g. league name changed, bye week)
+    }
+
     const scheduledDate = new Date(match.scheduling_start_time);
     const week = calculateWeek(scheduledDate);
 
@@ -295,8 +327,8 @@ async function importMatches() {
         fixtureId: match.fixture_id,
         roundId: "round_placeholder", // Rounds will be imported separately
         matchGroupId: match.match_group_id,
-        homeTeamId: match.home,
-        awayTeamId: match.away,
+        homeTeamId,
+        awayTeamId,
         scheduledDate,
         week,
         completed: match.winning_team !== "",
@@ -306,8 +338,8 @@ async function importMatches() {
         fixtureId: match.fixture_id,
         roundId: "round_placeholder",
         matchGroupId: match.match_group_id,
-        homeTeamId: match.home,
-        awayTeamId: match.away,
+        homeTeamId,
+        awayTeamId,
         scheduledDate,
         week,
         completed: match.winning_team !== "",
@@ -316,7 +348,7 @@ async function importMatches() {
     count++;
   }
 
-  console.log(`✅ Imported ${count} matches`);
+  console.log(`✅ Imported ${count} matches (${skipped} skipped — couldn't resolve league/team)`);
 }
 
 async function importRoleUsages() {
@@ -347,7 +379,7 @@ async function importRoleUsages() {
 async function importPlayerStats() {
   console.log("\n📈 Importing Player Match Stats...");
 
-  const playerStats = readCSV<PlayerStatsRow>("player_stats_s18.csv");
+  const playerStats = readCSV<PlayerStatsRow>("player_stats_s19.csv");
 
   if (playerStats.length === 0) {
     console.warn("⚠️  No player stats data found");
@@ -424,7 +456,7 @@ async function importHistoricalStats() {
         where: {
           playerId_season_gamemode: {
             playerId: stat.member_id,
-            season: "S18",
+            season: stat.season,
             gamemode: stat.gamemode || "3s",
           }
         },
@@ -443,9 +475,12 @@ async function importHistoricalStats() {
           shotsPerGame: gamesPlayed > 0 ? totalShots / gamesPlayed : 0,
         },
         create: {
-          id: stat.member_id,
+          // id omitted — schema defaults to @default(cuid()). The old code
+          // hardcoded id: stat.member_id, which collided across every season
+          // a player has a row for (only the first insert per player ever
+          // succeeded; every later season silently failed and was skipped).
           playerId: stat.member_id,
-          season: "S18",
+          season: stat.season,
           gamemode: stat.gamemode || "3s",
           skillGroup: "ML",
           totalGoals,
@@ -481,6 +516,197 @@ async function importHistoricalStats() {
   console.log(`✅ Imported ${count} historical player stats (${skipped} skipped)`);
 }
 
+// matches.csv is the full cumulative match archive (Season 12 onward, not
+// just the current season — unlike player_stats_sXX.csv/rounds_sXX.csv,
+// which are re-fetched per season and don't stick around). Cross-referenced
+// with match_groups.csv (match_group_id -> season label, e.g. "Season 18")
+// to build real series win/loss records per team/season/gamemode — one row
+// in matches.csv is one series (best-of-5-ish), decided by home_wins vs
+// away_wins, which is exactly the "series" the draft room's average-per-
+// series stat needs to divide by.
+async function computeSeriesRecords(
+  teamLookup: Map<string, string>
+): Promise<Map<string, { wins: number; losses: number }>> {
+  const matches = readCSV<MatchRow>("matches.csv");
+  const matchGroups = readCSV<MatchGroupRow>("match_groups.csv");
+
+  const seasonByGroup = new Map<string, string>();
+  for (const g of matchGroups) {
+    seasonByGroup.set(g.match_group_id, g.parent_group_title);
+  }
+
+  const records = new Map<string, { wins: number; losses: number }>();
+  const bump = (key: string, field: "wins" | "losses") => {
+    if (!records.has(key)) records.set(key, { wins: 0, losses: 0 });
+    records.get(key)![field]++;
+  };
+
+  for (const match of matches) {
+    const leagueCode = LEAGUE_NAME_TO_ID[match.league];
+    const gamemode = MATCH_GAMEMODE_TO_KEY[match.game_mode];
+    const season = seasonByGroup.get(match.match_group_id);
+    if (!leagueCode || !gamemode || !season) continue;
+
+    const homeWins = parseInt(match.home_wins) || 0;
+    const awayWins = parseInt(match.away_wins) || 0;
+    if (homeWins === awayWins) continue; // not played / no decisive result
+
+    const homeTeamId = teamLookup.get(`${leagueCode}:${match.home}`);
+    const awayTeamId = teamLookup.get(`${leagueCode}:${match.away}`);
+
+    if (homeTeamId) {
+      bump(`${homeTeamId}:${season}:${gamemode}`, homeWins > awayWins ? "wins" : "losses");
+    }
+    if (awayTeamId) {
+      bump(`${awayTeamId}:${season}:${gamemode}`, awayWins > homeWins ? "wins" : "losses");
+    }
+  }
+
+  return records;
+}
+
+// Rolls historicalAggregatedPlayerStats.csv up from per-player rows to
+// per-team, per-season, per-gamemode totals. This is the source for "last
+// season" team stats (e.g. the draft room's Available Teams tab) — separate
+// from PlayerHistoricalStats (player-level) and TeamWeeklyStats (current
+// in-progress season only, gets wiped on season transition).
+async function importTeamHistoricalStats() {
+  console.log("\n📊 Importing Team Historical Stats...");
+
+  const rows = readCSV<HistoricalStatsRow>("historicalAggregatedPlayerStats.csv");
+  if (rows.length === 0) {
+    console.warn("⚠️  No historical stats data found");
+    return;
+  }
+
+  const teamLookup = await loadTeamLookup();
+
+  interface TeamSeasonAgg {
+    teamId: string;
+    season: string;
+    gamemode: "2s" | "3s";
+    gamesPlayed: number;
+    goals: number;
+    shots: number;
+    saves: number;
+    assists: number;
+    demosInflicted: number;
+    demosTaken: number;
+    sprocketRatingWeighted: number; // sum(rating * gamesPlayed), divided at the end
+  }
+
+  const seriesRecords = await computeSeriesRecords(teamLookup);
+
+  const aggMap = new Map<string, TeamSeasonAgg>();
+  let unmatchedTeams = 0;
+
+  for (const row of rows) {
+    const leagueCode = LEAGUE_NAME_TO_ID[row.skill_group];
+    const gamemode = PLAYER_GAMEMODE_TO_KEY[row.gamemode];
+    if (!leagueCode || !gamemode) continue;
+
+    const teamId = teamLookup.get(`${leagueCode}:${row.team_name}`);
+    if (!teamId) {
+      unmatchedTeams++;
+      continue;
+    }
+
+    const gamesPlayed = parseInt(row.games_played) || 0;
+    const key = `${teamId}:${row.season}:${gamemode}`;
+    if (!aggMap.has(key)) {
+      aggMap.set(key, {
+        teamId,
+        season: row.season,
+        gamemode,
+        gamesPlayed: 0,
+        goals: 0,
+        shots: 0,
+        saves: 0,
+        assists: 0,
+        demosInflicted: 0,
+        demosTaken: 0,
+        sprocketRatingWeighted: 0,
+      });
+    }
+
+    const agg = aggMap.get(key)!;
+    agg.gamesPlayed += gamesPlayed;
+    agg.goals += parseInt(row.total_goals) || 0;
+    agg.shots += parseInt(row.total_shots) || 0;
+    agg.saves += parseInt(row.total_saves) || 0;
+    agg.assists += parseInt(row.total_assists) || 0;
+    agg.demosInflicted += parseInt(row.total_demos_inflicted) || 0;
+    agg.demosTaken += parseInt(row.total_demos_taken) || 0;
+    agg.sprocketRatingWeighted += (parseFloat(row.sprocket_rating) || 0) * gamesPlayed;
+  }
+
+  // A team could have match/series results without matching player-stat
+  // rows for that exact key (edge case) — make sure those still get a row.
+  for (const key of seriesRecords.keys()) {
+    if (aggMap.has(key)) continue;
+    const [teamId, season, gamemode] = key.split(":") as [string, string, "2s" | "3s"];
+    aggMap.set(key, {
+      teamId,
+      season,
+      gamemode,
+      gamesPlayed: 0,
+      goals: 0,
+      shots: 0,
+      saves: 0,
+      assists: 0,
+      demosInflicted: 0,
+      demosTaken: 0,
+      sprocketRatingWeighted: 0,
+    });
+  }
+
+  let count = 0;
+  for (const [key, agg] of aggMap.entries()) {
+    const sprocketRating = agg.gamesPlayed > 0 ? agg.sprocketRatingWeighted / agg.gamesPlayed : 0;
+    const { wins, losses } = seriesRecords.get(key) ?? { wins: 0, losses: 0 };
+
+    await prisma.teamHistoricalStats.upsert({
+      where: {
+        teamId_season_gamemode: {
+          teamId: agg.teamId,
+          season: agg.season,
+          gamemode: agg.gamemode,
+        },
+      },
+      update: {
+        gamesPlayed: agg.gamesPlayed,
+        goals: agg.goals,
+        shots: agg.shots,
+        saves: agg.saves,
+        assists: agg.assists,
+        demosInflicted: agg.demosInflicted,
+        demosTaken: agg.demosTaken,
+        sprocketRating,
+        wins,
+        losses,
+      },
+      create: {
+        teamId: agg.teamId,
+        season: agg.season,
+        gamemode: agg.gamemode,
+        gamesPlayed: agg.gamesPlayed,
+        goals: agg.goals,
+        shots: agg.shots,
+        saves: agg.saves,
+        assists: agg.assists,
+        demosInflicted: agg.demosInflicted,
+        demosTaken: agg.demosTaken,
+        sprocketRating,
+        wins,
+        losses,
+      },
+    });
+    count++;
+  }
+
+  console.log(`✅ Imported ${count} team historical stat rows (${unmatchedTeams} player rows skipped — team not found)`);
+}
+
 async function main() {
   console.log("🚀 Starting CSV Import...");
   console.log(`📁 Looking for CSV files in: ${CSV_DIR}\n`);
@@ -494,6 +720,7 @@ async function main() {
     await importRoleUsages();
     await importPlayerStats();
     await importHistoricalStats();
+    await importTeamHistoricalStats();
 
     console.log("\n✅ CSV Import completed successfully!");
   } catch (error) {

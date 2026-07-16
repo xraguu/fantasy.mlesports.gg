@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import PlayerModal from "./PlayerModal";
-import MatchupDetailsModal from "./MatchupDetailsModal";
+import MLEMatchDetailsModal, { MLEMatchDetailsData } from "./MLEMatchDetailsModal";
 
 interface PlayerWithStats {
   id: string;
@@ -72,53 +72,25 @@ export default function TeamModal({
     captain: null,
   });
   const [loadingStaff, setLoadingStaff] = useState(true);
-  const [weeklyStats] = useState([
-    {
-      week: 1,
-      opponent: "AL Comets",
-      fpts: 52,
-      sprocketRating: 1250,
-      goals: 8,
-      saves: 89,
-      shots: 142,
-      assists: 12,
-      goalsAgainst: 6,
-      shotsAgainst: 135,
-      demosInflicted: 18,
-      demosTaken: 12,
-      matchResult: "3-2",
-    },
-    {
-      week: 2,
-      opponent: "AL Dodgers",
-      fpts: 48,
-      sprocketRating: 1230,
-      goals: 6,
-      saves: 95,
-      shots: 128,
-      assists: 10,
-      goalsAgainst: 7,
-      shotsAgainst: 148,
-      demosInflicted: 15,
-      demosTaken: 14,
-      matchResult: "2-3",
-    },
-    {
-      week: 3,
-      opponent: "AL Ducks",
-      fpts: 55,
-      sprocketRating: 1275,
-      goals: 9,
-      saves: 82,
-      shots: 155,
-      assists: 14,
-      goalsAgainst: 5,
-      shotsAgainst: 128,
-      demosInflicted: 20,
-      demosTaken: 10,
-      matchResult: "3-1",
-    },
-  ]);
+  const [weeklyStats, setWeeklyStats] = useState<
+    Array<{
+      week: number;
+      gamemode: "2s" | "3s";
+      opponent: string;
+      fpts: number;
+      sprocketRating: number;
+      goals: number;
+      saves: number;
+      shots: number;
+      assists: number;
+      goalsAgainst: number | null;
+      shotsAgainst: number | null;
+      demosInflicted: number;
+      demosTaken: number;
+      matchResult: string;
+    }>
+  >([]);
+  const [loadingWeeklyStats, setLoadingWeeklyStats] = useState(true);
   const [weeklySortColumn, setWeeklySortColumn] = useState<string>("week");
   const [weeklySortDirection, setWeeklySortDirection] = useState<
     "asc" | "desc"
@@ -130,7 +102,9 @@ export default function TeamModal({
   const [players, setPlayers] = useState<PlayerWithStats[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
-  const [matchupData, setMatchupData] = useState<any>(null);
+  const [matchData, setMatchData] = useState<
+    MLEMatchDetailsData | { match: null; message?: string } | null
+  >(null);
   const [loadingMatchup, setLoadingMatchup] = useState(false);
 
   // Fetch players when team changes
@@ -193,32 +167,60 @@ export default function TeamModal({
     fetchStaff();
   }, [team?.id]);
 
-  // Fetch matchup data when a week is selected
+  // Fetch weekly breakdown when team changes
   useEffect(() => {
-    if (!selectedWeek || !team) return;
+    const fetchWeeklyStats = async () => {
+      if (!team) return;
 
-    const fetchMatchupData = async () => {
       try {
-        setLoadingMatchup(true);
+        setLoadingWeeklyStats(true);
         const response = await fetch(
-          `/api/leagues/${team.leagueId}/mle-teams/${team.id}/weekly-matchup?week=${selectedWeek}`
+          `/api/leagues/${team.leagueId}/mle-teams/${team.id}/weekly-breakdown`
         );
 
         if (!response.ok) {
-          throw new Error("Failed to fetch matchup data");
+          throw new Error("Failed to fetch weekly breakdown");
         }
 
         const data = await response.json();
-        setMatchupData(data);
+        setWeeklyStats(data.weeks || []);
       } catch (error) {
-        console.error("Error fetching matchup data:", error);
-        setMatchupData(null);
+        console.error("Error fetching weekly breakdown:", error);
+        setWeeklyStats([]);
+      } finally {
+        setLoadingWeeklyStats(false);
+      }
+    };
+
+    fetchWeeklyStats();
+  }, [team?.id, team?.leagueId]);
+
+  // Fetch the real MLE-vs-MLE match details when a week is selected
+  useEffect(() => {
+    if (!selectedWeek || !team) return;
+
+    const fetchMatchData = async () => {
+      try {
+        setLoadingMatchup(true);
+        const response = await fetch(
+          `/api/leagues/${team.leagueId}/mle-teams/${team.id}/match-details?week=${selectedWeek}`
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch match details");
+        }
+
+        const data = await response.json();
+        setMatchData(data);
+      } catch (error) {
+        console.error("Error fetching match details:", error);
+        setMatchData(null);
       } finally {
         setLoadingMatchup(false);
       }
     };
 
-    fetchMatchupData();
+    fetchMatchData();
   }, [selectedWeek, team?.id, team?.leagueId]);
 
   if (!team) return null;
@@ -247,7 +249,7 @@ export default function TeamModal({
 
   const handleCloseMatchupModal = () => {
     setSelectedWeek(null);
-    setMatchupData(null);
+    setMatchData(null);
   };
 
   const sortedPlayers = [...players].sort((a, b) => {
@@ -290,14 +292,16 @@ export default function TeamModal({
     return playerSortDirection === "asc" ? aVal - bVal : bVal - aVal;
   });
 
-  const sortedWeeklyStats = [...weeklyStats].sort((a, b) => {
-    const aVal = a[weeklySortColumn as keyof (typeof weeklyStats)[0]];
-    const bVal = b[weeklySortColumn as keyof (typeof weeklyStats)[0]];
-    if (typeof aVal === "number" && typeof bVal === "number") {
-      return weeklySortDirection === "asc" ? aVal - bVal : bVal - aVal;
-    }
-    return 0;
-  });
+  const sortedWeeklyStats = weeklyStats
+    .filter((w) => w.gamemode === gameMode)
+    .sort((a, b) => {
+      const aVal = a[weeklySortColumn as keyof (typeof weeklyStats)[0]];
+      const bVal = b[weeklySortColumn as keyof (typeof weeklyStats)[0]];
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        return weeklySortDirection === "asc" ? aVal - bVal : bVal - aVal;
+      }
+      return 0;
+    });
 
   const PlayerSortIcon = ({ column }: { column: string }) => {
     if (playerSortColumn !== column) return null;
@@ -1062,7 +1066,34 @@ export default function TeamModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedWeeklyStats.map((week) => (
+                  {loadingWeeklyStats ? (
+                    <tr>
+                      <td
+                        colSpan={12}
+                        style={{
+                          padding: "2rem",
+                          textAlign: "center",
+                          color: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        Loading weekly breakdown...
+                      </td>
+                    </tr>
+                  ) : sortedWeeklyStats.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={12}
+                        style={{
+                          padding: "2rem",
+                          textAlign: "center",
+                          color: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        No weekly stats available yet
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedWeeklyStats.map((week) => (
                     <tr
                       key={week.week}
                       onClick={() => handleWeekClick(week.week)}
@@ -1166,7 +1197,7 @@ export default function TeamModal({
                           color: "rgba(255,255,255,0.95)",
                         }}
                       >
-                        {week.goalsAgainst}
+                        {week.goalsAgainst ?? "—"}
                       </td>
                       <td
                         style={{
@@ -1176,7 +1207,7 @@ export default function TeamModal({
                           color: "rgba(255,255,255,0.95)",
                         }}
                       >
-                        {week.shotsAgainst}
+                        {week.shotsAgainst ?? "—"}
                       </td>
                       <td
                         style={{
@@ -1210,7 +1241,8 @@ export default function TeamModal({
                         {week.matchResult}
                       </td>
                     </tr>
-                  ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1226,10 +1258,10 @@ export default function TeamModal({
           />
         )}
 
-        {/* Matchup Details Modal */}
+        {/* MLE Match Details Modal */}
         {selectedWeek && (
-          <MatchupDetailsModal
-            matchupData={matchupData}
+          <MLEMatchDetailsModal
+            matchData={matchData}
             onClose={handleCloseMatchupModal}
             isLoading={loadingMatchup}
           />

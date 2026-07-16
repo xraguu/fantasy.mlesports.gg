@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminActivity } from "@/lib/adminActivity";
 
 // DELETE /api/admin/leagues/[leagueId]/teams/[teamId] - Remove a team from the league (admin only)
 export async function DELETE(
@@ -71,6 +72,14 @@ export async function DELETE(
         where: { id: teamId },
       }),
     ]);
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "team.remove",
+      description: `Removed team "${team.displayName}" (${team.shortCode}) from a league`,
+      targetType: "FantasyTeam",
+      targetId: teamId,
+    });
 
     return NextResponse.json({ success: true, message: "Team removed successfully" });
   } catch (error) {

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getWaiverTeamIdsForLeague } from "@/lib/waiverPeriods";
+import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
 
 /**
  * GET /api/leagues/[leagueId]/waivers
- * Get all pending waiver claims for a league
+ * Get pending waiver claims for a league.
+ * Query params: ?mine=true restricts results to the current session's own
+ * claims (used by the My Roster "Waivers" tab — pending claims are private
+ * to the manager who submitted them). Without it, returns every pending
+ * claim in the league (used to compute "on waivers" team status elsewhere).
  */
 export async function GET(
   req: NextRequest,
@@ -17,19 +23,50 @@ export async function GET(
     }
 
     const { leagueId } = await params;
+    await runWaiverProcessingSweep(leagueId);
 
-    // Fetch all pending waiver claims for this league
+    const url = new URL(req.url);
+    const mineOnly = url.searchParams.get("mine") === "true";
+
     const waiverClaims = await prisma.waiverClaim.findMany({
       where: {
         fantasyLeagueId: leagueId,
         status: "pending",
+        ...(mineOnly ? { userId: session.user.id } : {}),
       },
       orderBy: {
         priority: "asc",
       },
     });
 
-    return NextResponse.json({ waiverClaims });
+    if (!mineOnly) {
+      // Teams still sitting in the post-drop waiver clearance window (see
+      // TeamWaiverPeriod) also show as "on waivers" even without a pending
+      // claim against them yet — merged in for the team-portal status column.
+      const waiverPeriodTeamIds = [...(await getWaiverTeamIdsForLeague(leagueId))];
+      return NextResponse.json({ waiverClaims, waiverPeriodTeamIds });
+    }
+
+    // "Mine" mode is used by the My Roster Waivers tab, which needs
+    // display-ready team info rather than bare IDs.
+    const mleTeamIds = new Set<string>();
+    waiverClaims.forEach((c) => {
+      mleTeamIds.add(c.addTeamId);
+      if (c.dropTeamId) mleTeamIds.add(c.dropTeamId);
+    });
+    const mleTeams = await prisma.mLETeam.findMany({
+      where: { id: { in: [...mleTeamIds] } },
+      select: { id: true, name: true, leagueId: true, slug: true, logoPath: true },
+    });
+    const mleTeamMap = new Map(mleTeams.map((t) => [t.id, t]));
+
+    const enrichedClaims = waiverClaims.map((c) => ({
+      ...c,
+      addTeam: mleTeamMap.get(c.addTeamId) ?? null,
+      dropTeam: c.dropTeamId ? mleTeamMap.get(c.dropTeamId) ?? null : null,
+    }));
+
+    return NextResponse.json({ waiverClaims: enrichedClaims });
   } catch (error) {
     console.error("Error fetching waiver claims:", error);
     return NextResponse.json(
@@ -54,6 +91,17 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { status: true },
+    });
+    if (user?.status === "suspended") {
+      return NextResponse.json(
+        { error: "Suspended users cannot submit waiver claims" },
+        { status: 403 }
+      );
+    }
+
     const { leagueId } = await params;
     const body = await req.json();
     const { fantasyTeamId, addTeamId, dropTeamId, faabBid } = body;
@@ -74,6 +122,8 @@ export async function POST(
         fantasyLeagueId: true,
         ownerUserId: true,
         waiverPriority: true,
+        faabRemaining: true,
+        league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true } },
       },
     });
 
@@ -98,6 +148,34 @@ export async function POST(
       );
     }
 
+    if (fantasyTeam.league.draftStatus !== "completed") {
+      return NextResponse.json(
+        { error: "Waiver claims are not allowed until the draft is complete" },
+        { status: 403 }
+      );
+    }
+
+    if (fantasyTeam.league.waiverSystem === "faab") {
+      const bid = Number(faabBid);
+      if (!Number.isFinite(bid) || bid < 0 || !Number.isInteger(bid)) {
+        return NextResponse.json(
+          { error: "A whole-dollar FAAB bid is required for this league" },
+          { status: 400 }
+        );
+      }
+      if (bid > (fantasyTeam.faabRemaining ?? 0)) {
+        return NextResponse.json(
+          { error: `Bid exceeds your remaining FAAB budget ($${fantasyTeam.faabRemaining ?? 0})` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Note: unlike trades/direct drops, a waiver claim can be submitted even
+    // if dropTeamId is currently in a locked slot — managers can queue
+    // claims up over the weekend while games are locking in, ready to run
+    // the moment the new week starts. The lock is only enforced when the
+    // claim is actually processed (see app/api/admin/waivers/process).
     // Create waiver claim
     const waiverClaim = await prisma.waiverClaim.create({
       data: {
@@ -106,7 +184,7 @@ export async function POST(
         userId: session.user.id,
         addTeamId,
         dropTeamId: dropTeamId || null,
-        faabBid: faabBid || null,
+        faabBid: fantasyTeam.league.waiverSystem === "faab" ? Number(faabBid) : null,
         priority: fantasyTeam.waiverPriority || 999,
         status: "pending",
       },

@@ -23,7 +23,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             update: {
               displayName: user.name || "Unknown User",
               avatarUrl: user.image || null,
-              role,
+              // role is intentionally NOT overwritten here — admin-panel role
+              // changes must persist across sign-ins. ADMIN_DISCORD_IDS only
+              // seeds the role for brand-new users (see `create` below).
             },
             create: {
               id: randomUUID(),

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import { getFantasyStandings } from "@/lib/standings";
 
 /**
  * GET /api/leaderboard/global
@@ -10,7 +11,7 @@ export async function GET() {
   try {
     const session = await auth();
 
-    // Get all fantasy teams with their matchups
+    // Get all fantasy teams (with matchup counts, to know who's actually played)
     const fantasyTeams = await prisma.fantasyTeam.findMany({
       include: {
         owner: {
@@ -26,58 +27,34 @@ export async function GET() {
           },
         },
         homeMatchups: {
-          select: {
-            id: true,
-            week: true,
-            homeScore: true,
-            awayScore: true,
-          },
+          select: { homeScore: true, awayScore: true },
         },
         awayMatchups: {
-          select: {
-            id: true,
-            week: true,
-            homeScore: true,
-            awayScore: true,
-          },
+          select: { homeScore: true, awayScore: true },
         },
       },
     });
 
+    // Win/loss/points per team, computed per-league so double-win bonuses
+    // (which are league-scoped) are honored correctly for each league.
+    const leagueIds = [...new Set(fantasyTeams.map((t) => t.fantasyLeagueId))];
+    const standingsByLeague = await Promise.all(
+      leagueIds.map((id) => getFantasyStandings(id))
+    );
+    const standingByTeamId = new Map(
+      standingsByLeague.flat().map((s) => [s.teamId, s])
+    );
+
     // Calculate stats for each team
     const teamsWithStats = fantasyTeams.map((team) => {
-      let wins = 0;
-      let losses = 0;
-      let totalPoints = 0;
-      let gamesPlayed = 0;
+      const base = standingByTeamId.get(team.id);
+      const wins = base?.wins ?? 0;
+      const losses = base?.losses ?? 0;
+      const totalPoints = base?.pointsFor ?? 0;
 
-      // Process home matchups
-      team.homeMatchups.forEach((matchup) => {
-        if (matchup.homeScore !== null && matchup.awayScore !== null) {
-          totalPoints += matchup.homeScore;
-          gamesPlayed++;
-
-          if (matchup.homeScore > matchup.awayScore) {
-            wins++;
-          } else if (matchup.homeScore < matchup.awayScore) {
-            losses++;
-          }
-        }
-      });
-
-      // Process away matchups
-      team.awayMatchups.forEach((matchup) => {
-        if (matchup.homeScore !== null && matchup.awayScore !== null) {
-          totalPoints += matchup.awayScore;
-          gamesPlayed++;
-
-          if (matchup.awayScore > matchup.homeScore) {
-            wins++;
-          } else if (matchup.awayScore < matchup.homeScore) {
-            losses++;
-          }
-        }
-      });
+      const gamesPlayed = [...team.homeMatchups, ...team.awayMatchups].filter(
+        (m) => m.homeScore !== null && m.awayScore !== null
+      ).length;
 
       const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
       const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0;

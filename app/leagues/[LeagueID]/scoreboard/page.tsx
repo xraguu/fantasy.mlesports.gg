@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -59,6 +59,11 @@ export default function ScoreboardPage() {
   const leagueId = params.LeagueID as string;
   const { data: session } = useSession();
 
+  // Whether the initial week came from an explicit ?week= deep link — if so,
+  // that choice is respected and never overridden by the current-week sync
+  // below.
+  const hasWeekParam = useRef(searchParams.get("week") !== null);
+
   const [currentWeek, setCurrentWeek] = useState(() => {
     const weekParam = searchParams.get("week");
     if (weekParam) {
@@ -92,6 +97,9 @@ export default function ScoreboardPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<MLETeam | null>(null);
+  const [selectedTeamRosteredBy, setSelectedTeamRosteredBy] = useState<
+    { rosterName: string; managerName: string } | undefined
+  >(undefined);
   const [moveMode, setMoveMode] = useState(false);
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(
     null
@@ -116,6 +124,17 @@ export default function ScoreboardPage() {
         const data = await response.json();
         setMatchups(data.matchups);
         setError(null);
+
+        // Snap to the league's real current week on first load only, and
+        // only when the URL didn't explicitly request a week.
+        if (
+          !hasWeekParam.current &&
+          currentWeek === 1 &&
+          data.league?.currentWeek &&
+          data.league.currentWeek !== 1
+        ) {
+          setCurrentWeek(data.league.currentWeek);
+        }
       } catch (err) {
         console.error("Error fetching matchups:", err);
         setError("Failed to load matchups");
@@ -210,9 +229,13 @@ export default function ScoreboardPage() {
     }
   };
 
-  const openTeamModal = (team: MLETeam | null) => {
+  const openTeamModal = (
+    team: MLETeam | null,
+    rosteredBy?: { rosterName: string; managerName: string }
+  ) => {
     if (!team) return;
     setSelectedTeam(team);
+    setSelectedTeamRosteredBy(rosteredBy);
     setShowModal(true);
   };
 
@@ -313,7 +336,8 @@ export default function ScoreboardPage() {
             showModal && selectedTeam
               ? {
                   ...selectedTeam,
-                  rosteredBy: undefined,
+                  status: "rostered",
+                  rosteredBy: selectedTeamRosteredBy,
                 }
               : null
           }
@@ -771,7 +795,15 @@ export default function ScoreboardPage() {
                             onClick={(e) => {
                               if (!canEditTeam1) {
                                 e.stopPropagation();
-                                openTeamModal(slot1.mleTeam);
+                                openTeamModal(
+                                  slot1.mleTeam,
+                                  selectedMatch
+                                    ? {
+                                        rosterName: selectedMatch.team1.teamName,
+                                        managerName: selectedMatch.team1.managerName,
+                                      }
+                                    : undefined
+                                );
                               }
                             }}
                             style={{
@@ -882,7 +914,15 @@ export default function ScoreboardPage() {
                             onClick={(e) => {
                               if (!canEditTeam2) {
                                 e.stopPropagation();
-                                openTeamModal(slot2.mleTeam);
+                                openTeamModal(
+                                  slot2.mleTeam,
+                                  selectedMatch
+                                    ? {
+                                        rosterName: selectedMatch.team2.teamName,
+                                        managerName: selectedMatch.team2.managerName,
+                                      }
+                                    : undefined
+                                );
                               }
                             }}
                             style={{
@@ -942,7 +982,8 @@ export default function ScoreboardPage() {
           showModal && selectedTeam
             ? {
                 ...selectedTeam,
-                rosteredBy: undefined,
+                status: "rostered",
+                rosteredBy: selectedTeamRosteredBy,
               }
             : null
         }
@@ -1320,7 +1361,12 @@ export default function ScoreboardPage() {
                                   style={{ borderRadius: "4px" }}
                                 />
                                 <span
-                                  onClick={() => openTeamModal(slot.mleTeam)}
+                                  onClick={() =>
+                                    openTeamModal(slot.mleTeam, {
+                                      rosterName: matchup.team1.teamName,
+                                      managerName: matchup.team1.managerName,
+                                    })
+                                  }
                                   style={{
                                     color: "#ffffff",
                                     fontSize: "0.85rem",
@@ -1412,7 +1458,12 @@ export default function ScoreboardPage() {
                                   style={{ borderRadius: "4px" }}
                                 />
                                 <span
-                                  onClick={() => openTeamModal(slot.mleTeam)}
+                                  onClick={() =>
+                                    openTeamModal(slot.mleTeam, {
+                                      rosterName: matchup.team2.teamName,
+                                      managerName: matchup.team2.managerName,
+                                    })
+                                  }
                                   style={{
                                     color: "#ffffff",
                                     fontSize: "0.85rem",

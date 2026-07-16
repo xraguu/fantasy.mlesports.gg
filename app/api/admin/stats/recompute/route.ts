@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "week is required" }, { status: 400 });
     }
 
-    const result = await calculateScoresForWeek(parseInt(week), leagueId);
+    const result = await calculateScoresForWeek(parseInt(week), leagueId, session.user.id);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Recompute failed";

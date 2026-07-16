@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAdminActivity } from "@/lib/adminActivity";
+import { generateDraftPickOrder } from "@/lib/draftPickOrder";
 
 // POST /api/admin/leagues/[leagueId]/initialize-draft - Initialize draft picks for the league
 export async function POST(
@@ -68,30 +70,17 @@ export async function POST(
     const numRounds = totalRosterSlots;
 
     // Generate draft picks
-    const draftPicks = [];
-    let overallPick = 1;
-
-    for (let round = 1; round <= numRounds; round++) {
-      let pickOrder = [...league.fantasyTeams];
-
-      // For snake draft, reverse order on even rounds
-      if (league.draftType === "snake" && round % 2 === 0) {
-        pickOrder = pickOrder.reverse();
-      }
-
-      for (let i = 0; i < pickOrder.length; i++) {
-        draftPicks.push({
-          fantasyLeagueId: leagueId,
-          round,
-          pickNumber: i + 1,
-          overallPick,
-          fantasyTeamId: pickOrder[i].id,
-          mleTeamId: null,
-          pickedAt: null,
-        });
-        overallPick++;
-      }
-    }
+    const draftPicks = generateDraftPickOrder(league.fantasyTeams, league.draftType, numRounds).map(
+      (entry) => ({
+        fantasyLeagueId: leagueId,
+        round: entry.round,
+        pickNumber: entry.pickNumber,
+        overallPick: entry.overallPick,
+        fantasyTeamId: entry.fantasyTeamId,
+        mleTeamId: null,
+        pickedAt: null,
+      })
+    );
 
     // Create all draft picks and start the draft
     const pickTimeSeconds = league.draftPickTimeSeconds || 90;
@@ -109,6 +98,14 @@ export async function POST(
         },
       }),
     ]);
+
+    await logAdminActivity({
+      adminUserId: session.user.id!,
+      action: "draft.start",
+      description: `Started draft for league "${league.name}" (${numRounds} rounds x ${numTeams} teams)`,
+      targetType: "FantasyLeague",
+      targetId: leagueId,
+    });
 
     return NextResponse.json({
       success: true,

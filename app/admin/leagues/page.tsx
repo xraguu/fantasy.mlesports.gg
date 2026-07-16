@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAlert } from "@/components/AlertProvider";
 
 interface FantasyLeague {
   id: string;
@@ -24,6 +25,7 @@ interface FantasyLeague {
 }
 
 export default function ManageLeaguesPage() {
+  const showAlert = useAlert();
   const [searchTerm, setSearchTerm] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [leagues, setLeagues] = useState<FantasyLeague[]>([]);
@@ -51,7 +53,7 @@ export default function ManageLeaguesPage() {
       setLeagues(data.leagues || []);
     } catch (error) {
       console.error("Error fetching leagues:", error);
-      alert("Failed to load leagues");
+      showAlert("Failed to load leagues", "error");
     } finally {
       setLoading(false);
     }
@@ -72,7 +74,7 @@ export default function ManageLeaguesPage() {
       }
 
       const data = await response.json();
-      alert("League created successfully!");
+      showAlert("League created successfully!", "success");
       setShowCreateModal(false);
 
       // Reset form
@@ -90,7 +92,7 @@ export default function ManageLeaguesPage() {
       fetchLeagues();
     } catch (error: any) {
       console.error("Error creating league:", error);
-      alert(error.message || "Failed to create league");
+      showAlert(error.message || "Failed to create league", "error");
     }
   };
 
@@ -196,8 +198,7 @@ export default function ManageLeaguesPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, season: parseInt(e.target.value) })
                     }
-                    min={2020}
-                    max={2030}
+                    min={1}
                     style={{
                       width: "100%",
                       padding: "0.75rem",
