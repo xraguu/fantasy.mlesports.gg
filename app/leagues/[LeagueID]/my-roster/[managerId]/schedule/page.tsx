@@ -97,7 +97,7 @@ export default function SchedulePage() {
   if (error) {
     return (
       <div style={{ padding: "2rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "2.5rem", color: "var(--accent)", fontWeight: 700 }}>
+        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700 }}>
           Schedule
         </h1>
         <p style={{ color: "var(--text-muted)", marginTop: "1rem" }}>{error}</p>
@@ -111,12 +111,14 @@ export default function SchedulePage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: "1rem",
           marginBottom: "2rem",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
           <button
             onClick={() => router.push(`/leagues/${leagueId}/my-roster/${params.managerId}`)}
             style={{
@@ -142,7 +144,7 @@ export default function SchedulePage() {
           <h1
             className="page-heading"
             style={{
-              fontSize: "2.5rem",
+              fontSize: "clamp(1.5rem, 6vw, 2.5rem)",
               color: "var(--accent)",
               fontWeight: 700,
               margin: 0,

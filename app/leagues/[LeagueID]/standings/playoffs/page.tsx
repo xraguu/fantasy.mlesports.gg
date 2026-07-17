@@ -520,7 +520,7 @@ export default function PlayoffsPage() {
   }
 
   const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "2rem" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem", marginBottom: "2rem" }}>
       <button
         onClick={() => router.push(`/leagues/${leagueId}/standings`)}
         style={{
@@ -543,7 +543,7 @@ export default function PlayoffsPage() {
       >
         ← Back to Standings
       </button>
-      <h1 style={{ fontSize: "2.5rem", fontWeight: 700, color: GOLD, margin: 0, textShadow: "0 0 24px rgba(242,182,50,0.25)" }}>
+      <h1 style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", fontWeight: 700, color: GOLD, margin: 0, textShadow: "0 0 24px rgba(242,182,50,0.25)" }}>
         Playoffs
       </h1>
     </div>

@@ -27,7 +27,7 @@ export default function DatabaseToolsPage() {
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
         <h2
           style={{
-            fontSize: "1.5rem",
+            fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
             fontWeight: 700,
             marginBottom: "1.5rem",
             color: "var(--accent)",
@@ -160,7 +160,7 @@ export default function DatabaseToolsPage() {
                   </div>
                   <div
                     style={{
-                      fontSize: "1.5rem",
+                      fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                       fontWeight: 700,
                       color: "var(--accent)",
                     }}

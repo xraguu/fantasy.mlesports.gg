@@ -212,8 +212,10 @@ export default function SettingsPage() {
             marginBottom: "1.5rem",
             border: "2px solid var(--accent)",
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
           }}
         >
           <span
@@ -225,7 +227,7 @@ export default function SettingsPage() {
           >
             You have unsaved changes
           </span>
-          <div style={{ display: "flex", gap: "0.75rem" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
             <button
               className="btn btn-ghost"
               onClick={resetSettings}
@@ -248,7 +250,7 @@ export default function SettingsPage() {
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
         <h2
           style={{
-            fontSize: "1.5rem",
+            fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
             fontWeight: 700,
             marginBottom: "1.5rem",
             color: "var(--accent)",
@@ -322,10 +324,8 @@ export default function SettingsPage() {
             {settings.weekDates.map((weekData) => (
               <div
                 key={weekData.week}
+                className="admin-week-schedule-grid"
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "100px 1fr 1fr",
-                  gap: "1rem",
                   padding: "1rem",
                   background: "rgba(255,255,255,0.03)",
                   borderRadius: "6px",
@@ -384,7 +384,7 @@ export default function SettingsPage() {
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
         <h2
           style={{
-            fontSize: "1.5rem",
+            fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
             fontWeight: 700,
             marginBottom: "0.5rem",
             color: "var(--accent)",
@@ -722,7 +722,7 @@ export default function SettingsPage() {
 
         {/* Sprocket Rating Ranges Section */}
         <div style={{ marginTop: "2.5rem", paddingTop: "2rem", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
             <div>
               <h3 style={{ fontSize: "1.2rem", fontWeight: 600, color: "var(--text-main)", marginBottom: "0.25rem" }}>
                 Sprocket Rating (SR) Point Ranges
@@ -744,10 +744,8 @@ export default function SettingsPage() {
             {(settings.scoring.sprocketRatingRanges || []).map((range, index) => (
               <div
                 key={index}
+                className="admin-sprocket-range-grid"
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "150px 150px 150px auto",
-                  gap: "1rem",
                   padding: "1rem",
                   background: "rgba(255,255,255,0.03)",
                   borderRadius: "6px",
@@ -842,7 +840,7 @@ export default function SettingsPage() {
       <div className="card" style={{ padding: "2rem" }}>
         <h2
           style={{
-            fontSize: "1.5rem",
+            fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
             fontWeight: 700,
             marginBottom: "0.5rem",
             color: "var(--accent)",
@@ -854,7 +852,7 @@ export default function SettingsPage() {
           Default times when waivers are processed automatically
         </p>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
           <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--text-main)" }}>
             Processing Times
           </h3>
@@ -874,10 +872,8 @@ export default function SettingsPage() {
         {settings.waivers.processingSchedule.map((schedule, index) => (
           <div
             key={index}
+            className="admin-waiver-schedule-grid"
             style={{
-              display: "grid",
-              gridTemplateColumns: "200px 150px auto",
-              gap: "1rem",
               marginBottom: "1rem",
               alignItems: "end"
             }}
@@ -966,8 +962,10 @@ export default function SettingsPage() {
             borderRadius: "8px",
             border: "2px solid var(--accent)",
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
           }}
         >
           <span
@@ -979,7 +977,7 @@ export default function SettingsPage() {
           >
             Remember to save your changes!
           </span>
-          <div style={{ display: "flex", gap: "0.75rem" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
             <button
               className="btn btn-ghost"
               onClick={resetSettings}

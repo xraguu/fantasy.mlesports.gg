@@ -348,12 +348,100 @@ export default function HomePage() {
       )}
 
       <main>
+        {/* Utility row - Contact Mailbox (top-left) and Sign Out
+            (top-right), pinned above the main header so they never get
+            pushed around when the header wraps on narrow screens. */}
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "0.75rem",
+            marginBottom: "0.75rem",
+          }}
+        >
+          {/* Help Section */}
+          <a
+            href="https://discordapp.com/channels/@me/1419789164240699513"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              textAlign: "center",
+              padding: "0.5rem 1.25rem",
+              backgroundColor: "rgba(42, 75, 130, 0.85)",
+              borderRadius: "10px",
+              border: "1px solid rgba(242, 182, 50, 0.3)",
+              textDecoration: "none",
+              display: "block",
+              transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
+              e.currentTarget.style.borderColor = "var(--accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
+              e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.3)";
+            }}
+          >
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--text-muted)",
+                marginBottom: "0.15rem",
+              }}
+            >
+              Need Help?
+            </div>
+            <div
+              style={{
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                color: "var(--accent)",
+              }}
+            >
+              Contact MLE Mailbox
+            </div>
+          </a>
+
+          <button
+            onClick={() => signOut()}
+            style={{
+              padding: "0.45rem 1.1rem",
+              backgroundColor: "rgba(42, 75, 130, 0.85)",
+              color: "var(--text-main)",
+              border: "2px solid rgba(242, 182, 50, 0.5)",
+              borderRadius: "10px",
+              fontWeight: 700,
+              fontSize: "0.85rem",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor =
+                "rgba(42, 75, 130, 0.95)";
+              e.currentTarget.style.borderColor = "var(--accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor =
+                "rgba(42, 75, 130, 0.85)";
+              e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+
         {/* Header Section */}
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "flex-start",
+            gap: "1rem",
             marginBottom: "2rem",
             padding: "1.5rem 0",
             borderBottom: "2px solid rgba(242, 182, 50, 0.2)",
@@ -392,7 +480,7 @@ export default function HomePage() {
             <div>
               <h1
                 style={{
-                  fontSize: "2.5rem",
+                  fontSize: "clamp(1.5rem, 6vw, 2.5rem)",
                   fontWeight: 900,
                   marginBottom: "0.25rem",
                   background:
@@ -406,7 +494,7 @@ export default function HomePage() {
               </h1>
               <p
                 style={{
-                  fontSize: "2.0rem",
+                  fontSize: "clamp(1.2rem, 5vw, 2.0rem)",
                   fontFamily: "var(--font-zuume)",
                   color: "var(--text-muted)",
                   letterSpacing: "0.15em",
@@ -417,89 +505,6 @@ export default function HomePage() {
                 RL Fantasy
               </p>
             </div>
-          </div>
-
-          {/* Right: User Section */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-              alignItems: "flex-end",
-            }}
-          >
-            {/* Sign Out Button */}
-            <button
-              onClick={() => signOut()}
-              style={{
-                padding: "0.65rem 1.5rem",
-                backgroundColor: "rgba(42, 75, 130, 0.85)",
-                color: "var(--text-main)",
-                border: "2px solid rgba(242, 182, 50, 0.5)",
-                borderRadius: "12px",
-                fontWeight: 700,
-                fontSize: "0.95rem",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor =
-                  "rgba(42, 75, 130, 0.95)";
-                e.currentTarget.style.borderColor = "var(--accent)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor =
-                  "rgba(42, 75, 130, 0.85)";
-                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
-              }}
-            >
-              Sign Out
-            </button>
-
-            {/* Help Section */}
-            <a
-              href="https://discordapp.com/channels/@me/1419789164240699513"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                textAlign: "right",
-                padding: "0.75rem 1rem",
-                backgroundColor: "rgba(42, 75, 130, 0.85)",
-                borderRadius: "12px",
-                border: "1px solid rgba(242, 182, 50, 0.3)",
-                textDecoration: "none",
-                display: "block",
-                transition: "all 0.2s ease",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
-                e.currentTarget.style.borderColor = "var(--accent)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
-                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.3)";
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "0.85rem",
-                  color: "var(--text-muted)",
-                  marginBottom: "0.25rem",
-                }}
-              >
-                Need Help?
-              </div>
-              <div
-                style={{
-                  fontSize: "0.95rem",
-                  fontWeight: 600,
-                  color: "var(--accent)",
-                }}
-              >
-                Contact MLE Mailbox
-              </div>
-            </a>
           </div>
         </div>
 
@@ -543,11 +548,10 @@ export default function HomePage() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              flexWrap: "wrap",
               gap: "1rem",
             }}
           >
-            <div className="card-header" style={{ marginBottom: 0 }}>
+            <div className="card-header" style={{ marginBottom: 0, flexShrink: 0 }}>
               <h2 className="card-title">Your Leagues</h2>
             </div>
 
@@ -573,12 +577,14 @@ export default function HomePage() {
               </p>
             ) : (
               <div
+                className="scroll-x"
                 style={{
                   display: "flex",
                   gap: "0.75rem",
-                  flexWrap: "wrap",
+                  flexWrap: "nowrap",
                   flex: 1,
-                  justifyContent: "flex-end",
+                  minWidth: 0,
+                  paddingBottom: "0.25rem",
                 }}
               >
                 {userLeagues.map((league) => {
@@ -597,6 +603,8 @@ export default function HomePage() {
                         padding: "0.75rem 1.25rem",
                         fontSize: "0.95rem",
                         fontWeight: 600,
+                        flexShrink: 0,
+                        whiteSpace: "nowrap",
                       }}
                     >
                       {league.name}
@@ -1025,7 +1033,7 @@ export default function HomePage() {
 
         {/* Team Stats Section */}
         <section className="card" style={{ marginTop: "1.5rem" }}>
-          <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="card-header" style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <h2 className="card-title">Team Stats</h2>
               <span className="card-subtitle">Top 10 performing MLE teams</span>

@@ -86,11 +86,9 @@ export default function ManagerOverviewModal({ leagueId, fantasyTeamId, onClose 
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
           maxWidth: "560px",
-          width: "100%",
-          maxHeight: "85vh",
-          overflowY: "auto",
           borderRadius: "12px",
           padding: "2rem",
           background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
@@ -98,7 +96,7 @@ export default function ManagerOverviewModal({ leagueId, fantasyTeamId, onClose 
           boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.6)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.5rem" }}>
+        <div className="modal-box-header" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", marginBottom: "1.5rem" }}>
           <div>
             {loading ? (
               <div style={{ color: "var(--text-muted)" }}>Loading...</div>
@@ -106,7 +104,7 @@ export default function ManagerOverviewModal({ leagueId, fantasyTeamId, onClose 
               <div style={{ color: "#ef4444" }}>{error}</div>
             ) : (
               <>
-                <h2 style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--text-main)", margin: "0 0 0.25rem 0" }}>
+                <h2 style={{ fontSize: "clamp(1.2rem, 5vw, 1.6rem)", fontWeight: 700, color: "var(--text-main)", margin: "0 0 0.25rem 0" }}>
                   {data.manager}
                 </h2>
                 <div style={{ fontSize: "1rem", color: "var(--accent)", fontWeight: 600 }}>

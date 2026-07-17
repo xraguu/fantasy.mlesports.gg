@@ -139,10 +139,10 @@ export default function ManageLeaguesPage() {
               width: "90%",
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
               <h2
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                   fontWeight: 700,
                   marginBottom: "1.5rem",
                   color: "var(--accent)",
@@ -337,7 +337,7 @@ export default function ManageLeaguesPage() {
                     />
                   </div>
                 )}
-                <div style={{ display: "flex", gap: "0.75rem", marginTop: "1.5rem" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", marginTop: "1.5rem" }}>
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -364,8 +364,10 @@ export default function ManageLeaguesPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: "0.75rem",
           marginBottom: "1.5rem",
         }}
       >
@@ -382,6 +384,7 @@ export default function ManageLeaguesPage() {
             color: "var(--text-main)",
             fontSize: "0.95rem",
             width: "300px",
+            maxWidth: "100%",
           }}
         />
         <button
@@ -404,6 +407,7 @@ export default function ManageLeaguesPage() {
         >
           Fantasy Leagues
         </h2>
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
@@ -565,6 +569,7 @@ export default function ManageLeaguesPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

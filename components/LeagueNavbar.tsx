@@ -15,6 +15,8 @@ export default function LeagueNavbar() {
   const [draftStatus, setDraftStatus] = useState<string>("not_started");
   const [currentWeek, setCurrentWeek] = useState(1);
   const [seasonStarted, setSeasonStarted] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileOpenPathname, setMobileOpenPathname] = useState(pathname);
 
   // Fetch the user's fantasy team ID and league data. Client-side navigation
   // within this league (e.g. the draft room redirecting to My Roster the
@@ -69,6 +71,14 @@ export default function LeagueNavbar() {
 
   const isActive = (href: string) => pathname === href;
 
+  // Collapse the mobile drawer on every navigation so it doesn't stay open
+  // over the next page. Reset during render (not in an effect) to avoid an
+  // extra commit-then-rerender cascade.
+  if (pathname !== mobileOpenPathname) {
+    setMobileOpenPathname(pathname);
+    setMobileOpen(false);
+  }
+
   return (
     <header className="navbar">
       <div className="nav-inner flex items-center justify-between px-4 py-2">
@@ -83,8 +93,21 @@ export default function LeagueNavbar() {
           />
         </Link>
 
+        {/* Mobile hamburger toggle */}
+        <button
+          type="button"
+          className={`nav-toggle${mobileOpen ? " open" : ""}`}
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
+          onClick={() => setMobileOpen((open) => !open)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+
         {/* Right: links */}
-        <nav className="nav-links flex items-center gap-4">
+        <nav className={`nav-links flex items-center gap-4${mobileOpen ? " mobile-open" : ""}`}>
           {/* Draft Button - stays reachable even after the draft finishes,
               right up until the season itself actually starts (real
               calendar week 1) — a completed draft and a started season are

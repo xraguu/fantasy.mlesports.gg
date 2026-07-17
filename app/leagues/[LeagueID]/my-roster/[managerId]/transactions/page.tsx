@@ -148,7 +148,7 @@ export default function TransactionsPage() {
     <>
       {/* Page Header */}
       <div style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "2.5rem", color: "#f59e0b", fontWeight: 700, margin: 0 }}>
+        <h1 style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "#f59e0b", fontWeight: 700, margin: 0 }}>
           Transactions
         </h1>
       </div>
@@ -160,9 +160,9 @@ export default function TransactionsPage() {
         border: "1px solid rgba(255,255,255,0.1)"
       }}>
         {/* Filters */}
-        <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
           {/* Transaction Type Filter */}
-          <div style={{ position: "relative", width: "200px" }}>
+          <div style={{ position: "relative", width: "200px", maxWidth: "100%" }}>
             <button
               onClick={() => setFilterOpen(!filterOpen)}
               style={{
@@ -252,7 +252,7 @@ export default function TransactionsPage() {
           </div>
 
           {/* Manager Filter */}
-          <div style={{ position: "relative", width: "220px" }}>
+          <div style={{ position: "relative", width: "220px", maxWidth: "100%" }}>
             <button
               onClick={() => setManagerFilterOpen(!managerFilterOpen)}
               style={{
@@ -360,8 +360,9 @@ export default function TransactionsPage() {
                   borderRadius: "0",
                   padding: "1.25rem 1.5rem",
                   display: "flex",
+                  flexWrap: "wrap",
                   alignItems: "center",
-                  gap: "1.5rem",
+                  gap: "1rem",
                 }}
               >
                 {transaction.type === "trade" ? (
@@ -430,7 +431,7 @@ export default function TransactionsPage() {
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flex: 1 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", flex: 1 }}>
                       {transaction.addTeamId && (() => {
                         const teamAdded = getTeamByMLEId(transaction.addTeamId);
                         return teamAdded ? (

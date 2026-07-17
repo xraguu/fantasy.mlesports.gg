@@ -55,8 +55,8 @@ export default function OpponentDetailPage() {
   return (
     <>
       {/* Page Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "2.5rem", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Opponent Roster</h1>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Opponent Roster</h1>
       </div>
 
       {/* Team Overview Card */}
@@ -64,10 +64,10 @@ export default function OpponentDetailPage() {
         marginBottom: "1.5rem",
         padding: "1.5rem 2rem"
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "1.25rem", justifyContent: "space-between", alignItems: "center" }}>
           {/* Team Info */}
           <div>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-main)", marginBottom: "0.5rem", marginTop: 0 }}>
+            <h2 style={{ fontSize: "clamp(1.15rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)", marginBottom: "0.5rem", marginTop: 0 }}>
               {roster.teamName}{" "}
               <span style={{ color: "var(--accent)", marginLeft: "0.75rem" }}>
                 {roster.record.wins}-{roster.record.losses}
@@ -84,7 +84,7 @@ export default function OpponentDetailPage() {
           </div>
 
           {/* Matchup Info */}
-          <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "center" }}>
             {/* Last Matchup */}
             <div style={{ textAlign: "center" }}>
               <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
@@ -152,12 +152,14 @@ export default function OpponentDetailPage() {
           {/* Week Navigation */}
           <div style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
             padding: "1rem 1.5rem",
             borderBottom: "1px solid rgba(255,255,255,0.1)"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
               <button
                 onClick={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
                 className="btn btn-ghost"
@@ -291,12 +293,14 @@ export default function OpponentDetailPage() {
           {/* Week Navigation and Mode Toggle */}
           <div style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
             padding: "1rem 1.5rem",
             borderBottom: "1px solid rgba(255,255,255,0.1)"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
               <button
                 onClick={() => setCurrentWeek(prev => Math.max(1, prev - 1))}
                 className="btn btn-ghost"

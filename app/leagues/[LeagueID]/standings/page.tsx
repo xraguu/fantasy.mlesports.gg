@@ -97,8 +97,8 @@ export default function StandingsPage() {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "2.5rem", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Standings</h1>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Standings</h1>
         <button
           onClick={handlePlayoffsClick}
           style={{
@@ -197,7 +197,7 @@ export default function StandingsPage() {
                 {expandedRow === team.rank && (
                   <tr style={{ backgroundColor: team.isYou ? "rgba(242, 182, 50, 0.05)" : "rgba(255,255,255,0.02)" }}>
                     <td colSpan={6} style={{ padding: "1.5rem" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2rem" }}>
+                      <div className="standings-row-detail-grid" style={{ gap: "2rem" }}>
                         {/* Left Side - Top Performing Team */}
                         <div>
                           <h4 style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -249,7 +249,7 @@ export default function StandingsPage() {
                           <h4 style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "1rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                             Manager Stats
                           </h4>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                          <div className="standings-row-detail-grid" style={{ gap: "1rem" }}>
                             <div style={{
                               padding: "1rem",
                               background: "rgba(255,255,255,0.05)",

@@ -3,6 +3,7 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { useState } from "react";
 
 export default function AdminLayout({
   children,
@@ -12,9 +13,18 @@ export default function AdminLayout({
   const router = useRouter();
   const { data: session, status } = useSession();
   const pathname = usePathname();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarPathname, setSidebarPathname] = useState(pathname);
 
   const isLoading = status === "loading";
   const isAdmin = session?.user?.role === "admin";
+
+  // Collapse the mobile nav drawer on every navigation. Reset during render
+  // (not in an effect) to avoid an extra commit-then-rerender cascade.
+  if (pathname !== sidebarPathname) {
+    setSidebarPathname(pathname);
+    setSidebarCollapsed(true);
+  }
 
   // Show loading state while checking session
   if (isLoading) {
@@ -73,7 +83,7 @@ export default function AdminLayout({
         >
           <h1
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "var(--accent)",
               marginBottom: "1rem",
@@ -123,22 +133,11 @@ export default function AdminLayout({
   ];
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="admin-shell">
       {/* Sidebar Navigation */}
-      <nav
-        style={{
-          width: "260px",
-          background: "var(--bg-surface)",
-          borderRight: "1px solid rgba(255,255,255,0.08)",
-          padding: "2rem 0",
-          position: "sticky",
-          top: 0,
-          height: "100vh",
-          overflowY: "auto",
-        }}
-      >
+      <nav className={`admin-sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
         {/* Logo/Title */}
-        <div style={{ padding: "0 1.5rem", marginBottom: "2rem" }}>
+        <div style={{ padding: "0 1.5rem", marginBottom: "0.5rem" }}>
           <h2
             style={{
               fontSize: "1.25rem",
@@ -154,7 +153,22 @@ export default function AdminLayout({
           </p>
         </div>
 
+        {/* Mobile collapse toggle */}
+        <button
+          type="button"
+          className="admin-sidebar-toggle"
+          aria-expanded={!sidebarCollapsed}
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          <span>
+            {adminNavItems.find((item) => item.path === pathname)?.label ||
+              "Menu"}
+          </span>
+          <span>{sidebarCollapsed ? "▾" : "▴"}</span>
+        </button>
+
         {/* Navigation Links */}
+        <div className="admin-sidebar-links" style={{ marginTop: "1.5rem" }}>
         <div
           style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}
         >
@@ -220,15 +234,16 @@ export default function AdminLayout({
             ← Back to Home
           </Link>
         </div>
+        </div>
       </nav>
 
       {/* Main Content */}
-      <div style={{ flex: 1, padding: "2rem", overflowY: "auto" }}>
+      <div className="admin-main">
         {/* Page Header */}
         <div style={{ marginBottom: "2rem" }}>
           <h1
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "var(--text-main)",
               marginBottom: "0.25rem",

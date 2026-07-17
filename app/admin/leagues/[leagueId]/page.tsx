@@ -652,10 +652,10 @@ export default function AdminLeagueManagementPage() {
               overflowX: "auto",
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
               <h2
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                   fontWeight: 700,
                   marginBottom: "0.5rem",
                   color: "var(--accent)",
@@ -690,11 +690,8 @@ export default function AdminLeagueManagementPage() {
                     return (
                       <div
                         key={index}
+                        className="admin-bulk-add-row-grid"
                         style={{
-                          display: "grid",
-                          gridTemplateColumns:
-                            "minmax(220px, 2fr) minmax(180px, 2fr) minmax(80px, 100px) 40px",
-                          gap: "0.75rem",
                           alignItems: "center",
                           padding: "0.75rem",
                           background: "rgba(255,255,255,0.03)",
@@ -802,6 +799,7 @@ export default function AdminLeagueManagementPage() {
                 <div
                   style={{
                     display: "flex",
+                    flexWrap: "wrap",
                     gap: "0.75rem",
                     marginTop: "1.5rem",
                   }}
@@ -847,7 +845,7 @@ export default function AdminLeagueManagementPage() {
         </button>
         <h1
           style={{
-            fontSize: "2rem",
+            fontSize: "clamp(1.4rem, 6vw, 2rem)",
             fontWeight: 700,
             color: "var(--accent)",
             marginBottom: "0.5rem",
@@ -884,7 +882,7 @@ export default function AdminLeagueManagementPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "var(--accent)",
             }}
@@ -932,7 +930,7 @@ export default function AdminLeagueManagementPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#3b82f6",
             }}
@@ -953,7 +951,7 @@ export default function AdminLeagueManagementPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#ef4444",
             }}
@@ -1069,6 +1067,7 @@ export default function AdminLeagueManagementPage() {
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
             gap: "1rem",
@@ -1295,8 +1294,10 @@ export default function AdminLeagueManagementPage() {
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               justifyContent: "space-between",
               alignItems: "center",
+              gap: "0.5rem",
               marginBottom: "1.5rem",
             }}
           >
@@ -1548,19 +1549,21 @@ export default function AdminLeagueManagementPage() {
               overflowY: "auto",
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
               <div
                 style={{
                   display: "flex",
+                  flexWrap: "wrap",
                   justifyContent: "space-between",
                   alignItems: "flex-start",
+                  gap: "0.75rem",
                   marginBottom: "1.5rem",
                 }}
               >
                 <div>
                   <h2
                     style={{
-                      fontSize: "1.4rem",
+                      fontSize: "clamp(1.05rem, 4.2vw, 1.4rem)",
                       fontWeight: 700,
                       color: "var(--accent)",
                       marginBottom: "0.25rem",

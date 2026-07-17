@@ -239,10 +239,11 @@ export default function OpponentsPage() {
   }, [statsSortColumn, statsSortDirection, roster]);
 
   const handleTeamClick = (teamName: string) => {
-    // Parse team name like "Flames CL" to get "CL" and "Flames"
+    // Team names come from the API as "LEAGUEID Name", e.g. "CL Flames"
+    // (see app/api/leagues/[leagueId]/opponents/route.ts).
     const parts = teamName.split(" ");
-    const leagueId = parts[parts.length - 1];
-    const name = parts.slice(0, -1).join(" ");
+    const leagueId = parts[0];
+    const name = parts.slice(1).join(" ");
     const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
     const team = TEAMS.find(t => t.id === teamId);
     // This is only reachable from within the currently selected opponent's roster,
@@ -301,8 +302,8 @@ export default function OpponentsPage() {
       />
 
       {/* Page Header with Dropdown */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "2.5rem", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Opponents</h1>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Opponents</h1>
 
         {/* Manager Dropdown */}
         <div style={{ position: "relative" }}>
@@ -390,27 +391,29 @@ export default function OpponentsPage() {
         marginBottom: "1.5rem",
         padding: "1.5rem 2rem"
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "1.25rem", justifyContent: "space-between", alignItems: "center" }}>
           {/* Team Info */}
           <div>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-main)", marginBottom: "0.5rem", marginTop: 0 }}>
-              {roster.teamName}{" "}
-              <span style={{ color: "var(--accent)", marginLeft: "0.75rem" }}>
-                {roster.record}
-              </span>{" "}
-              <span style={{ color: "var(--text-muted)", fontSize: "1.2rem", marginLeft: "0.5rem" }}>
-                {roster.place}
+            <h2 style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", fontSize: "clamp(1.15rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)", marginBottom: "0.5rem", marginTop: 0 }}>
+              <span style={{ whiteSpace: "nowrap" }}>{roster.teamName}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", whiteSpace: "nowrap" }}>
+                <span style={{ color: "var(--accent)" }}>
+                  {roster.record}
+                </span>
+                <span style={{ color: "var(--text-muted)", fontSize: "1.2rem" }}>
+                  {roster.place}
+                </span>
               </span>
             </h2>
             <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>{roster.name}</div>
-            <div style={{ marginTop: "0.5rem", fontSize: "1rem" }}>
-              <span style={{ fontWeight: 600, color: "var(--text-main)" }}>{roster.totalPoints} Fantasy Points</span>
-              <span style={{ color: "var(--text-muted)", marginLeft: "1.5rem" }}>{roster.avgPoints} Avg Fantasy Points</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 1.5rem", marginTop: "0.5rem", fontSize: "1rem" }}>
+              <span style={{ whiteSpace: "nowrap", fontWeight: 600, color: "var(--text-main)" }}>{roster.totalPoints} Fantasy Points</span>
+              <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>{roster.avgPoints} Avg Fantasy Points</span>
             </div>
           </div>
 
           {/* Matchup Info */}
-          <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "center" }}>
             {/* Last Matchup */}
             {roster.lastMatchup && (
               <div
@@ -473,21 +476,30 @@ export default function OpponentsPage() {
       </section>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
-        <button
-          onClick={() => setActiveTab("lineup")}
-          className={activeTab === "lineup" ? "btn btn-primary" : "btn btn-ghost"}
-          style={{ fontSize: "1rem" }}
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            onClick={() => setActiveTab("lineup")}
+            className={activeTab === "lineup" ? "btn btn-primary" : "btn btn-ghost"}
+            style={{ fontSize: "1rem" }}
+          >
+            Lineup
+          </button>
+          <button
+            onClick={() => setActiveTab("stats")}
+            className={activeTab === "stats" ? "btn btn-primary" : "btn btn-ghost"}
+            style={{ fontSize: "1rem" }}
+          >
+            Stats
+          </button>
+        </div>
+        <a
+          href={`/leagues/${leagueId}/opponents/${selectedManagerId}/trade`}
+          className="btn btn-primary"
+          style={{ fontSize: "0.9rem" }}
         >
-          Lineup
-        </button>
-        <button
-          onClick={() => setActiveTab("stats")}
-          className={activeTab === "stats" ? "btn btn-primary" : "btn btn-ghost"}
-          style={{ fontSize: "1rem" }}
-        >
-          Stats
-        </button>
+          Propose Trade
+        </a>
       </div>
 
       {/* Lineup Tab */}
@@ -496,12 +508,14 @@ export default function OpponentsPage() {
           {/* Week Navigation */}
           <div style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
             padding: "1rem 1.5rem",
             borderBottom: "1px solid rgba(255,255,255,0.1)"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
               <button
                 onClick={() => setCurrentWeek(prev => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
@@ -547,13 +561,6 @@ export default function OpponentsPage() {
                 {currentWeek === 10 ? "►" : `Week ${getNextWeek(currentWeek)} ►`}
               </button>
             </div>
-            <a
-              href={`/leagues/${leagueId}/opponents/${selectedManagerId}/trade`}
-              className="btn btn-primary"
-              style={{ fontSize: "0.9rem" }}
-            >
-              Propose Trade
-            </a>
           </div>
 
           {/* Roster Table */}
@@ -640,8 +647,8 @@ export default function OpponentsPage() {
                             {/* Team Logo */}
                             {(() => {
                               const parts = team.name.split(" ");
-                              const leagueId = parts[parts.length - 1];
-                              const name = parts.slice(0, -1).join(" ");
+                              const leagueId = parts[0];
+                              const name = parts.slice(1).join(" ");
                               const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
                               const teamData = TEAMS.find(t => t.id === teamId);
                               return teamData ? (
@@ -746,12 +753,14 @@ export default function OpponentsPage() {
           {/* Week Navigation and 2s/3s Switch */}
           <div style={{
             display: "flex",
+            flexWrap: "wrap",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
             padding: "1rem 1.5rem",
             borderBottom: "1px solid rgba(255,255,255,0.1)"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
               <button
                 onClick={() => setCurrentWeek(prev => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
@@ -1011,8 +1020,8 @@ export default function OpponentsPage() {
                             {/* Team Logo (smaller for stats tab) */}
                             {(() => {
                               const parts = team.name.split(" ");
-                              const leagueId = parts[parts.length - 1];
-                              const name = parts.slice(0, -1).join(" ");
+                              const leagueId = parts[0];
+                              const name = parts.slice(1).join(" ");
                               const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
                               const teamData = TEAMS.find(t => t.id === teamId);
                               return teamData ? (

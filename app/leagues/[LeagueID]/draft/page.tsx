@@ -367,11 +367,11 @@ export default function DraftPage() {
         onClose={() => setShowModal(false)}
       />
 
-      <div style={{ minHeight: "100vh", padding: "2rem 1rem" }}>
+      <div style={{ minHeight: "100vh", padding: "clamp(1rem, 4vw, 2rem) clamp(0.5rem, 3vw, 1rem)" }}>
         {/* Header with Timer and Controls */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "2rem" }}>
           <div>
-            <h1 style={{ fontSize: "2.5rem", fontWeight: 700, color: "var(--accent)", margin: 0 }}>
+            <h1 style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", fontWeight: 700, color: "var(--accent)", margin: 0 }}>
               Draft Room
             </h1>
             <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
@@ -409,7 +409,7 @@ export default function DraftPage() {
             )}
           </div>
 
-          <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
             {/* Timer */}
             {draftState.status === "in_progress" && (
               <div
@@ -457,7 +457,7 @@ export default function DraftPage() {
         </div>
 
         {/* Main Content Area */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "1rem" }}>
+        <div className="draft-layout">
           {/* Left Side - Draft Picks */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             {/* Recent Picks */}
@@ -529,7 +529,8 @@ export default function DraftPage() {
                 border: "1px solid rgba(255,255,255,0.1)",
               }}
             >
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div className="draft-board-scroll">
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", minWidth: "fit-content" }}>
                 {/* Round Headers */}
                 <div style={{ display: "flex", gap: "0.25rem", paddingBottom: "0.5rem" }}>
                   <div style={{ width: "150px", flexShrink: 0 }}></div>
@@ -630,20 +631,18 @@ export default function DraftPage() {
                   </div>
                 ))}
               </div>
+              </div>
             </div>
           </div>
 
           {/* Right Side - Roster/Teams/Queue Panel */}
           <div
+            className="draft-side-panel"
             style={{
               background: "radial-gradient(circle at top left, #1d3258, #020617)",
               borderRadius: "12px",
               padding: "1rem",
               border: "1px solid rgba(255,255,255,0.1)",
-              position: "sticky",
-              top: "1rem",
-              maxHeight: "calc(100vh - 2rem)",
-              overflowY: "auto",
             }}
           >
             {/* Tabs */}

@@ -171,11 +171,8 @@ export default function DraftTeamModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
-          maxWidth: "900px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflow: "auto",
           position: "relative",
           borderRadius: "12px",
           padding: "2rem",
@@ -204,10 +201,10 @@ export default function DraftTeamModal({
 
         {/* Modal Header */}
         <div
+          className="modal-box-header"
           style={{
-            display: "flex",
             alignItems: "flex-start",
-            gap: "1.5rem",
+            gap: "1rem",
             marginBottom: "2rem",
             paddingBottom: "1.5rem",
             borderBottom: "2px solid rgba(255,255,255,0.2)",
@@ -225,7 +222,7 @@ export default function DraftTeamModal({
           <div style={{ flex: 1 }}>
             <h2
               style={{
-                fontSize: "1.8rem",
+                fontSize: "clamp(1.2rem, 5vw, 1.8rem)",
                 fontWeight: 700,
                 color: "#ffffff",
                 margin: "0 0 0.5rem 0",
@@ -317,6 +314,7 @@ export default function DraftTeamModal({
           <button
             onClick={onClose}
             style={{
+              flexShrink: 0,
               background: "rgba(255, 255, 255, 0.2)",
               border: "none",
               color: "#ffffff",

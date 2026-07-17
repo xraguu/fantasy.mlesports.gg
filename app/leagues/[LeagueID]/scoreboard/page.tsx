@@ -375,10 +375,8 @@ export default function ScoreboardPage() {
         >
           {/* Team Headers */}
           <div
+            className="matchup-hero-grid"
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr auto 1fr",
-              gap: "3rem",
               alignItems: "start",
               marginBottom: "2rem",
               paddingBottom: "2rem",
@@ -498,7 +496,7 @@ export default function ScoreboardPage() {
             >
               <span
                 style={{
-                  fontSize: "4rem",
+                  fontSize: "clamp(2.2rem, 10vw, 4rem)",
                   fontWeight: 700,
                   color: getTeamColor(
                     selectedMatch.team1.score,
@@ -521,7 +519,7 @@ export default function ScoreboardPage() {
               </span>
               <span
                 style={{
-                  fontSize: "4rem",
+                  fontSize: "clamp(2.2rem, 10vw, 4rem)",
                   fontWeight: 700,
                   color: getTeamColor(
                     selectedMatch.team1.score,
@@ -741,10 +739,8 @@ export default function ScoreboardPage() {
               return (
                 <div
                   key={idx}
+                  className="matchup-row-grid"
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "2fr 1fr auto 1fr 2fr",
-                    gap: "1rem",
                     alignItems: "center",
                     padding: "0.75rem 1rem",
                     background: baseBackground,
@@ -993,6 +989,8 @@ export default function ScoreboardPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
+          gap: "0.75rem",
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: "2rem",
@@ -1001,7 +999,7 @@ export default function ScoreboardPage() {
         <h1
           className="page-heading"
           style={{
-            fontSize: "2.5rem",
+            fontSize: "clamp(1.5rem, 6vw, 2.5rem)",
             color: "var(--accent)",
             fontWeight: 700,
             margin: 0,
@@ -1014,6 +1012,7 @@ export default function ScoreboardPage() {
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
             alignItems: "center",
             gap: "1rem",
           }}
@@ -1095,15 +1094,13 @@ export default function ScoreboardPage() {
             return (
               <section
                 key={matchup.id}
+                className="matchup-detail-grid"
                 style={{
                   background:
                     "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
                   borderRadius: "12px",
                   overflow: "hidden",
                   border: "1px solid rgba(255,255,255,0.1)",
-                  display: "grid",
-                  gridTemplateColumns: "auto 1px 1fr auto",
-                  gap: "1.5rem",
                   alignItems: "center",
                   padding: "1.5rem",
                 }}
@@ -1198,7 +1195,7 @@ export default function ScoreboardPage() {
                     </div>
                     <div
                       style={{
-                        fontSize: "2.5rem",
+                        fontSize: "clamp(1.6rem, 8vw, 2.5rem)",
                         fontWeight: 700,
                         color: getTeamColor(
                           matchup.team1.score,
@@ -1211,122 +1208,6 @@ export default function ScoreboardPage() {
                       {matchup.team1.score.toFixed(1)}
                     </div>
                   </div>
-
-                  {/* Team 2 */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <h2
-                        style={{
-                          fontSize: "1.2rem",
-                          fontWeight: 700,
-                          color: getTeamColor(
-                            matchup.team1.score,
-                            matchup.team2.score,
-                            false
-                          ),
-                          marginBottom: "0.25rem",
-                          cursor: isUserTeam2 ? "default" : "pointer",
-                          transition: "color 0.2s",
-                        }}
-                        onClick={!isUserTeam2 ? () =>
-                          handleManagerClick(matchup.team2.id) : undefined
-                        }
-                        onMouseEnter={!isUserTeam2 ? (e) =>
-                          (e.currentTarget.style.color = "var(--accent)") : undefined
-                        }
-                        onMouseLeave={!isUserTeam2 ? (e) =>
-                          (e.currentTarget.style.color = getTeamColor(
-                            matchup.team1.score,
-                            matchup.team2.score,
-                            false
-                          )) : undefined
-                        }
-                      >
-                        {matchup.team2.teamName}
-                        {isUserTeam2 && (
-                          <span
-                            style={{
-                              fontSize: "0.7rem",
-                              color: "var(--accent)",
-                              marginLeft: "0.5rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            (You)
-                          </span>
-                        )}
-                      </h2>
-                      <p
-                        style={{
-                          color: "rgba(255,255,255,0.6)",
-                          fontSize: "0.8rem",
-                          margin: 0,
-                        }}
-                      >
-                        <span
-                          onClick={!isUserTeam2 ? () =>
-                            handleManagerClick(matchup.team2.id) : undefined
-                          }
-                          onMouseEnter={!isUserTeam2 ? (e) =>
-                            (e.currentTarget.style.color = "var(--accent)") : undefined
-                          }
-                          onMouseLeave={!isUserTeam2 ? (e) =>
-                            (e.currentTarget.style.color =
-                              "rgba(255,255,255,0.6)") : undefined
-                          }
-                          style={{
-                            cursor: isUserTeam2 ? "default" : "pointer",
-                            color: "rgba(255,255,255,0.6)",
-                            transition: "color 0.2s",
-                          }}
-                        >
-                          {matchup.team2.managerName}
-                        </span>{" "}
-                        {matchup.team2.record} {matchup.team2.standing}
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "2.5rem",
-                        fontWeight: 700,
-                        color: getTeamColor(
-                          matchup.team1.score,
-                          matchup.team2.score,
-                          false
-                        ),
-                        marginLeft: "2rem",
-                      }}
-                    >
-                      {matchup.team2.score.toFixed(1)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <div
-                  style={{
-                    width: "1px",
-                    background: "rgba(255,255,255,0.2)",
-                    height: "100%",
-                    minHeight: "120px",
-                  }}
-                />
-
-                {/* Right Side - Top Performers */}
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "1rem",
-                    flex: 1,
-                  }}
-                >
                   {/* Team 1 Top Performers */}
                   <div>
                     <div
@@ -1339,7 +1220,7 @@ export default function ScoreboardPage() {
                     >
                       Top performers
                     </div>
-                    <div style={{ display: "flex", gap: "1.5rem" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
                       {team1TopPerformers.length > 0 ? (
                         team1TopPerformers.map((slot, idx) => (
                           <div
@@ -1423,7 +1304,100 @@ export default function ScoreboardPage() {
                       )}
                     </div>
                   </div>
-
+                  {/* Team 2 */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <h2
+                        style={{
+                          fontSize: "1.2rem",
+                          fontWeight: 700,
+                          color: getTeamColor(
+                            matchup.team1.score,
+                            matchup.team2.score,
+                            false
+                          ),
+                          marginBottom: "0.25rem",
+                          cursor: isUserTeam2 ? "default" : "pointer",
+                          transition: "color 0.2s",
+                        }}
+                        onClick={!isUserTeam2 ? () =>
+                          handleManagerClick(matchup.team2.id) : undefined
+                        }
+                        onMouseEnter={!isUserTeam2 ? (e) =>
+                          (e.currentTarget.style.color = "var(--accent)") : undefined
+                        }
+                        onMouseLeave={!isUserTeam2 ? (e) =>
+                          (e.currentTarget.style.color = getTeamColor(
+                            matchup.team1.score,
+                            matchup.team2.score,
+                            false
+                          )) : undefined
+                        }
+                      >
+                        {matchup.team2.teamName}
+                        {isUserTeam2 && (
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              color: "var(--accent)",
+                              marginLeft: "0.5rem",
+                              fontWeight: 500,
+                            }}
+                          >
+                            (You)
+                          </span>
+                        )}
+                      </h2>
+                      <p
+                        style={{
+                          color: "rgba(255,255,255,0.6)",
+                          fontSize: "0.8rem",
+                          margin: 0,
+                        }}
+                      >
+                        <span
+                          onClick={!isUserTeam2 ? () =>
+                            handleManagerClick(matchup.team2.id) : undefined
+                          }
+                          onMouseEnter={!isUserTeam2 ? (e) =>
+                            (e.currentTarget.style.color = "var(--accent)") : undefined
+                          }
+                          onMouseLeave={!isUserTeam2 ? (e) =>
+                            (e.currentTarget.style.color =
+                              "rgba(255,255,255,0.6)") : undefined
+                          }
+                          style={{
+                            cursor: isUserTeam2 ? "default" : "pointer",
+                            color: "rgba(255,255,255,0.6)",
+                            transition: "color 0.2s",
+                          }}
+                        >
+                          {matchup.team2.managerName}
+                        </span>{" "}
+                        {matchup.team2.record} {matchup.team2.standing}
+                      </p>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "clamp(1.6rem, 8vw, 2.5rem)",
+                        fontWeight: 700,
+                        color: getTeamColor(
+                          matchup.team1.score,
+                          matchup.team2.score,
+                          false
+                        ),
+                        marginLeft: "2rem",
+                      }}
+                    >
+                      {matchup.team2.score.toFixed(1)}
+                    </div>
+                  </div>
                   {/* Team 2 Top Performers */}
                   <div>
                     <div
@@ -1436,7 +1410,7 @@ export default function ScoreboardPage() {
                     >
                       Top performers
                     </div>
-                    <div style={{ display: "flex", gap: "1.5rem" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
                       {team2TopPerformers.length > 0 ? (
                         team2TopPerformers.map((slot, idx) => (
                           <div

@@ -143,11 +143,9 @@ export default function MLEMatchDetailsModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
           maxWidth: "1000px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflow: "auto",
           position: "relative",
           borderRadius: "12px",
           padding: "2rem",
@@ -157,21 +155,23 @@ export default function MLEMatchDetailsModal({
       >
         {/* Header */}
         <div
+          className="modal-box-header"
           style={{
-            display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: "1rem",
             marginBottom: "1.5rem",
             paddingBottom: "1rem",
             borderBottom: "2px solid rgba(255,255,255,0.2)",
           }}
         >
-          <h2 style={{ fontSize: "1.8rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
+          <h2 style={{ fontSize: "clamp(1.2rem, 5vw, 1.8rem)", fontWeight: 700, color: "#ffffff", margin: 0 }}>
             {isLoading ? "Loading Match..." : data ? `Week ${data.week} Match` : "Match Details"}
           </h2>
           <button
             onClick={onClose}
             style={{
+              flexShrink: 0,
               background: "rgba(255, 255, 255, 0.2)",
               border: "none",
               color: "#ffffff",
@@ -202,9 +202,8 @@ export default function MLEMatchDetailsModal({
           <>
             {/* Team headers + player lists */}
             <div
+              className="match-modal-3col-grid"
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto 1fr",
                 gap: "1.5rem",
                 alignItems: "start",
                 marginBottom: "2rem",
@@ -244,9 +243,8 @@ export default function MLEMatchDetailsModal({
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {/* Column headers */}
                 <div
+                  className="match-modal-3col-grid"
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto 1fr",
                     gap: "1rem",
                     alignItems: "center",
                     padding: "0 1rem",
@@ -260,9 +258,8 @@ export default function MLEMatchDetailsModal({
                 {data.rounds.map((round) => (
                   <div
                     key={round.roundNumber}
+                    className="match-modal-3col-grid"
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto 1fr",
                       gap: "1rem",
                       alignItems: "center",
                       padding: "1rem",

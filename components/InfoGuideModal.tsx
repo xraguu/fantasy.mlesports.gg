@@ -102,11 +102,9 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
           maxWidth: "480px",
-          width: "100%",
-          maxHeight: "80vh",
-          overflowY: "auto",
           background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
           borderRadius: "12px",
           padding: "1.75rem",
@@ -115,16 +113,17 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
         }}
       >
         <div
+          className="modal-box-header"
           style={{
-            display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: "0.75rem",
             marginBottom: "1.25rem",
           }}
         >
           <h2
             style={{
-              fontSize: "1.3rem",
+              fontSize: "clamp(1.05rem, 4.5vw, 1.3rem)",
               fontWeight: 700,
               color: "var(--text-main)",
               margin: 0,
@@ -135,6 +134,7 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
           <button
             onClick={onClose}
             style={{
+              flexShrink: 0,
               background: "rgba(255, 255, 255, 0.1)",
               border: "none",
               color: "#ffffff",
@@ -300,11 +300,9 @@ function WaiverSystemsModal({ onClose }: { onClose: () => void }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
           maxWidth: "560px",
-          width: "100%",
-          maxHeight: "80vh",
-          overflowY: "auto",
           background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
           borderRadius: "12px",
           padding: "1.75rem",
@@ -312,13 +310,14 @@ function WaiverSystemsModal({ onClose }: { onClose: () => void }) {
           boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.6)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-          <h2 style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--text-main)", margin: 0 }}>
+        <div className="modal-box-header" style={{ justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+          <h2 style={{ fontSize: "clamp(1.05rem, 4.5vw, 1.3rem)", fontWeight: 700, color: "var(--text-main)", margin: 0 }}>
             Waiver Systems
           </h2>
           <button
             onClick={onClose}
             style={{
+              flexShrink: 0,
               background: "rgba(255, 255, 255, 0.1)",
               border: "none",
               color: "#ffffff",
@@ -411,11 +410,9 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
 
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
           maxWidth: "720px",
-          width: "100%",
-          maxHeight: "85vh",
-          overflowY: "auto",
           background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
           borderRadius: "12px",
           padding: "2rem",
@@ -424,16 +421,17 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
         }}
       >
         <div
+          className="modal-box-header"
           style={{
-            display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
+            gap: "1rem",
             marginBottom: "1.5rem",
           }}
         >
           <h2
             style={{
-              fontSize: "1.6rem",
+              fontSize: "clamp(1.2rem, 5vw, 1.6rem)",
               fontWeight: 700,
               color: "var(--text-main)",
               margin: 0,
@@ -444,6 +442,7 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
           <button
             onClick={onClose}
             style={{
+              flexShrink: 0,
               background: "rgba(255, 255, 255, 0.1)",
               border: "none",
               color: "#ffffff",

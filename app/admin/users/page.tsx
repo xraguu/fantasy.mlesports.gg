@@ -156,10 +156,10 @@ export default function ManageUsersPage() {
               width: "90%",
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
               <h2
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                   fontWeight: 700,
                   marginBottom: "1.5rem",
                   color: "var(--accent)",
@@ -234,7 +234,7 @@ export default function ManageUsersPage() {
                   </select>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: "0.75rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
                 <button
                   className="btn btn-ghost"
                   style={{ flex: 1 }}
@@ -292,7 +292,7 @@ export default function ManageUsersPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "var(--accent)",
             }}
@@ -313,7 +313,7 @@ export default function ManageUsersPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#ef4444",
             }}
@@ -334,7 +334,7 @@ export default function ManageUsersPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#22c55e",
             }}
@@ -355,7 +355,7 @@ export default function ManageUsersPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#9ca3af",
             }}
@@ -369,6 +369,7 @@ export default function ManageUsersPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: "1.5rem",
@@ -382,6 +383,7 @@ export default function ManageUsersPage() {
           onChange={(e) => setSearchTerm(e.target.value)}
           style={{
             flex: 1,
+            minWidth: "200px",
             padding: "0.75rem 1rem",
             background: "rgba(255,255,255,0.1)",
             border: "1px solid rgba(255,255,255,0.2)",
@@ -422,6 +424,7 @@ export default function ManageUsersPage() {
             No users found
           </div>
         ) : (
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
@@ -588,6 +591,7 @@ export default function ManageUsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

@@ -250,10 +250,10 @@ export default function TransactionsPage() {
               width: "90%",
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
               <h2
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                   fontWeight: 700,
                   marginBottom: "1rem",
                   color: "var(--accent)",
@@ -273,7 +273,7 @@ export default function TransactionsPage() {
                 pending waiver claims for the selected leagues? This action
                 cannot be undone.
               </p>
-              <div style={{ display: "flex", gap: "0.75rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
                 <button
                   className="btn btn-ghost"
                   style={{ flex: 1 }}
@@ -298,7 +298,7 @@ export default function TransactionsPage() {
       <div style={{ marginBottom: "2rem" }}>
         <h1
           style={{
-            fontSize: "2.5rem",
+            fontSize: "clamp(1.6rem, 6.5vw, 2.5rem)",
             color: "var(--accent)",
             fontWeight: 700,
             marginBottom: "0.5rem",
@@ -315,6 +315,7 @@ export default function TransactionsPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           gap: "1rem",
           alignItems: "center",
           marginBottom: "1.5rem",
@@ -324,7 +325,7 @@ export default function TransactionsPage() {
           border: "1px solid rgba(255,255,255,0.1)",
         }}
       >
-        <div style={{ flex: 1, position: "relative" }}>
+        <div style={{ flex: 1, minWidth: "200px", position: "relative" }}>
           <button
             className="btn btn-ghost"
             onClick={() => setShowFilterDropdown(!showFilterDropdown)}
@@ -442,6 +443,7 @@ export default function TransactionsPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           gap: "0.5rem",
           marginBottom: "1.5rem",
           borderBottom: "2px solid rgba(255,255,255,0.1)",
@@ -525,6 +527,7 @@ export default function TransactionsPage() {
               </p>
             </div>
           ) : (
+            <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
@@ -764,6 +767,7 @@ export default function TransactionsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -800,8 +804,10 @@ export default function TransactionsPage() {
                   <div
                     style={{
                       display: "flex",
+                      flexWrap: "wrap",
                       justifyContent: "space-between",
                       alignItems: "flex-start",
+                      gap: "0.75rem",
                       marginBottom: "1rem",
                     }}
                   >
@@ -892,9 +898,8 @@ export default function TransactionsPage() {
                   </div>
 
                   <div
+                    className="matchup-hero-grid"
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto 1fr",
                       gap: "1.5rem",
                       alignItems: "center",
                     }}
@@ -1015,11 +1020,13 @@ export default function TransactionsPage() {
                   <div
                     style={{
                       display: "flex",
+                      flexWrap: "wrap",
                       justifyContent: "space-between",
                       alignItems: "center",
+                      gap: "0.5rem",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem" }}>
                       <span
                         style={{
                           fontSize: "0.75rem",
@@ -1073,8 +1080,8 @@ export default function TransactionsPage() {
                   </div>
 
                   {transaction.type === "trade" ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
-                      <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1.5rem" }}>
+                      <div style={{ flex: 1, minWidth: "140px" }}>
                         <div
                           style={{
                             fontSize: "0.75rem",

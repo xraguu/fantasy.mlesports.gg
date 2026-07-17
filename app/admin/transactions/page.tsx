@@ -111,11 +111,9 @@ export default function AdminTransactionsPage() {
               border: "1px solid rgba(255, 255, 255, 0.15)",
               borderRadius: "8px",
               padding: "1.25rem 1.5rem",
-              display: "grid",
-              gridTemplateColumns: "60px 1fr 2fr 150px 100px",
               alignItems: "center",
-              gap: "1.5rem",
             }}
+            className="admin-waiver-row-grid"
           >
             {/* Priority */}
             <div style={{ textAlign: "center" }}>
@@ -130,7 +128,7 @@ export default function AdminTransactionsPage() {
               </div>
               <div
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                   fontWeight: 700,
                   color: "var(--accent)",
                 }}
@@ -269,8 +267,10 @@ export default function AdminTransactionsPage() {
             <div
               style={{
                 display: "flex",
+                flexWrap: "wrap",
                 alignItems: "center",
                 justifyContent: "space-between",
+                gap: "0.5rem",
                 marginBottom: "1rem",
               }}
             >
@@ -283,9 +283,8 @@ export default function AdminTransactionsPage() {
             </div>
 
             <div
+              className="matchup-hero-grid"
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto 1fr",
                 gap: "2rem",
                 alignItems: "center",
               }}
@@ -402,11 +401,9 @@ export default function AdminTransactionsPage() {
               border: "1px solid rgba(255, 255, 255, 0.15)",
               borderRadius: "8px",
               padding: "1.25rem 1.5rem",
-              display: "grid",
-              gridTemplateColumns: "120px 1fr 2fr 150px",
               alignItems: "center",
-              gap: "1.5rem",
             }}
+            className="admin-transaction-row-grid"
           >
             {/* Type */}
             <div>
@@ -535,14 +532,16 @@ export default function AdminTransactionsPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: "1rem",
           marginBottom: "2rem",
         }}
       >
         <h1
           style={{
-            fontSize: "2.5rem",
+            fontSize: "clamp(1.6rem, 6.5vw, 2.5rem)",
             color: "var(--accent)",
             fontWeight: 700,
             margin: 0,
@@ -595,7 +594,7 @@ export default function AdminTransactionsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#fbbf24",
             }}
@@ -616,7 +615,7 @@ export default function AdminTransactionsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#a78bfa",
             }}
@@ -637,7 +636,7 @@ export default function AdminTransactionsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#60a5fa",
             }}
@@ -651,6 +650,7 @@ export default function AdminTransactionsPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           gap: "0.5rem",
           marginBottom: "1.5rem",
           borderBottom: "2px solid rgba(255,255,255,0.1)",

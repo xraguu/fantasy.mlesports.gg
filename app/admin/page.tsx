@@ -69,7 +69,7 @@ export default function AdminDashboard() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
           gap: "1.5rem",
           marginBottom: "2rem",
         }}
@@ -87,7 +87,7 @@ export default function AdminDashboard() {
             </div>
             <div
               style={{
-                fontSize: "2rem",
+                fontSize: "clamp(1.4rem, 6vw, 2rem)",
                 fontWeight: 700,
                 color: "var(--accent)",
               }}
@@ -122,6 +122,7 @@ export default function AdminDashboard() {
                   key={entry.id}
                   style={{
                     display: "flex",
+                    flexWrap: "wrap",
                     justifyContent: "space-between",
                     alignItems: "baseline",
                     gap: "1rem",

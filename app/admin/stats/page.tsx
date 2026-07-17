@@ -180,7 +180,7 @@ export default function ManualStatsPage() {
     <div>
       {/* Automatic refresh + manual trigger */}
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
+        <h2 style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
           Stat Refresh
         </h2>
         <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
@@ -219,7 +219,7 @@ export default function ManualStatsPage() {
                 { label: "Matchups Updated", value: refreshResult.calculate.matchupsUpdated, color: "#22c55e" },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
-                  <div style={{ fontSize: "1.5rem", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
+                  <div style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
                   <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</div>
                 </div>
               ))}
@@ -246,10 +246,10 @@ export default function ManualStatsPage() {
 
       {/* Manual Stats Override Section */}
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
           <h2
             style={{
-              fontSize: "1.5rem",
+              fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
               fontWeight: 700,
               color: "var(--accent)",
             }}

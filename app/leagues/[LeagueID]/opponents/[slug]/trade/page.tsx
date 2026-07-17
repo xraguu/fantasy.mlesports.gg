@@ -244,6 +244,7 @@ export default function TradePage() {
           onClick={() => setShowConfirmModal(false)}
         >
           <div
+            className="modal-box"
             style={{
               width: "min(500px, 90vw)",
               background: "linear-gradient(135deg, #1a2332 0%, #0f1419 100%)",
@@ -255,7 +256,7 @@ export default function TradePage() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-main)", marginBottom: "1.5rem", textAlign: "center" }}>
+            <h2 style={{ fontSize: "clamp(1.2rem, 5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)", marginBottom: "1.5rem", textAlign: "center" }}>
               Confirm Trade Proposal
             </h2>
 
@@ -265,7 +266,7 @@ export default function TradePage() {
               <strong>You&apos;re sending {selectedMyTeams.length} team(s) for {selectedOpponentTeams.length} team(s)</strong>
             </p>
 
-            <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", justifyContent: "center" }}>
               <button
                 onClick={() => setShowConfirmModal(false)}
                 disabled={submitting}
@@ -331,6 +332,7 @@ export default function TradePage() {
           }}
         >
           <div
+            className="modal-box"
             style={{
               width: "min(900px, 92vw)",
               background: "linear-gradient(135deg, #1a2332 0%, #0f1419 100%)",
@@ -405,7 +407,7 @@ export default function TradePage() {
 
             {/* Header - Team Info */}
             <div style={{ padding: "3.5rem 2rem 1.5rem", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>
-              <div style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-main)" }}>
+              <div style={{ fontSize: "clamp(1.1rem, 5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)" }}>
                 {myRoster.fantasyTeam.displayName}
               </div>
               <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
@@ -509,7 +511,7 @@ export default function TradePage() {
         >
           ← Back to Opponents
         </Link>
-        <h1 className="page-heading" style={{ color: "#d4af37", fontSize: "2.5rem", margin: 0 }}>Trade</h1>
+        <h1 className="page-heading" style={{ color: "#d4af37", fontSize: "clamp(1.5rem, 6vw, 2.5rem)", margin: 0 }}>Trade</h1>
       </div>
 
       <section style={{
@@ -519,10 +521,7 @@ export default function TradePage() {
         border: "1px solid rgba(255,255,255,0.1)"
       }}>
         {/* Team Headers */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          gap: "2rem",
+        <div className="trade-builder-grid" style={{
           alignItems: "start",
           marginBottom: "2rem",
           paddingBottom: "2rem",
@@ -531,7 +530,7 @@ export default function TradePage() {
           {/* My Team */}
           <div>
             <h2 style={{
-              fontSize: "1.5rem",
+              fontSize: "clamp(1.1rem, 5vw, 1.5rem)",
               fontWeight: 700,
               color: "#ffffff",
               marginBottom: "0.25rem"
@@ -549,6 +548,7 @@ export default function TradePage() {
 
           {/* Propose Trade Button */}
           <button
+            className="trade-propose-btn"
             style={{
               background: selectedMyTeams.length === 0 || selectedOpponentTeams.length === 0
                 ? "rgba(255,255,255,0.2)"
@@ -578,9 +578,9 @@ export default function TradePage() {
           </button>
 
           {/* Opponent Team */}
-          <div style={{ textAlign: "right" }}>
+          <div className="trade-opponent-header">
             <h2 style={{
-              fontSize: "1.5rem",
+              fontSize: "clamp(1.1rem, 5vw, 1.5rem)",
               fontWeight: 700,
               color: "#ffffff",
               marginBottom: "0.25rem"
@@ -597,145 +597,94 @@ export default function TradePage() {
           </div>
         </div>
 
-        {/* Trade Grid */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          gap: "2rem",
-          alignItems: "start"
-        }}>
-          {/* My Teams - Left Side */}
-          <div>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr auto auto auto",
-              gap: "1rem",
-              marginBottom: "0.5rem",
-              paddingBottom: "0.5rem",
-              borderBottom: "1px solid rgba(255,255,255,0.2)",
-              fontSize: "0.85rem",
-              color: "rgba(255,255,255,0.6)",
-              fontWeight: 600
-            }}>
+        {/* Trade Grid: one unified row per roster slot (my team | position |
+            their team), so position/my-team/their-team correspondence is
+            never lost when this collapses to a single column on mobile. */}
+        <div>
+          {/* Column captions - desktop only, hidden on mobile since each
+              slot row below labels itself. */}
+          <div className="trade-slot-header">
+            <div className="trade-team-cell" style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>
               <div></div>
               <div>Team</div>
               <div style={{ textAlign: "right" }}>Fpts</div>
               <div style={{ textAlign: "center" }}>Record</div>
               <div></div>
             </div>
-
-            {myTeams.map((team, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "auto 1fr auto auto auto",
-                  gap: "1rem",
-                  padding: "0.75rem 0",
-                  alignItems: "center",
-                  borderBottom: team.slot === "FLX" ? "2px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.05)"
-                }}
-              >
-                <Image src={team.logo} alt={team.name} width={24} height={24} style={{ borderRadius: "4px" }} />
-                <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{team.name}</div>
-                <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
-                <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
-                <input
-                  type="checkbox"
-                  checked={selectedMyTeams.includes(idx)}
-                  onChange={() => toggleMyTeam(idx)}
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    cursor: "pointer",
-                    accentColor: "#d4af37"
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-
-          {/* Position Labels - Middle */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            <div style={{
-              fontSize: "0.85rem",
-              color: "rgba(255,255,255,0.6)",
-              fontWeight: 600,
-              marginBottom: "1rem",
-              textAlign: "center"
-            }}>
+            <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600, textAlign: "center" }}>
               Position
             </div>
-            {myTeams.map((team, idx) => (
+            <div className="trade-team-cell trade-team-cell--mirror" style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>
+              <div></div>
+              <div>Team</div>
+              <div style={{ textAlign: "right" }}>Fpts</div>
+              <div style={{ textAlign: "center" }}>Record</div>
+              <div></div>
+            </div>
+          </div>
+
+          {myTeams.map((team, idx) => {
+            const oppTeam = opponentTeams[idx];
+            return (
               <div
-                key={idx}
+                key={team.id}
+                className="trade-slot-row"
                 style={{
-                  padding: "0.75rem 0.5rem",
+                  borderBottom: team.slot === "FLX" ? "2px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.05)",
+                  paddingBottom: "0.75rem",
+                  marginBottom: "0.75rem"
+                }}
+              >
+                {/* My team for this slot */}
+                <div className="trade-team-cell">
+                  <Image src={team.logo} alt={team.name} width={24} height={24} style={{ borderRadius: "4px" }} />
+                  <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{team.name}</div>
+                  <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
+                  <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
+                  <input
+                    type="checkbox"
+                    checked={selectedMyTeams.includes(idx)}
+                    onChange={() => toggleMyTeam(idx)}
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      cursor: "pointer",
+                      accentColor: "#d4af37"
+                    }}
+                  />
+                </div>
+
+                {/* Position label for this slot */}
+                <div style={{
                   fontSize: "0.85rem",
                   fontWeight: 700,
                   color: team.slot === "BE" ? "rgba(255,255,255,0.5)" : "#d4af37",
-                  textAlign: "center",
-                  minHeight: "40px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-              >
-                {team.slot}
-              </div>
-            ))}
-          </div>
+                  textAlign: "center"
+                }}>
+                  {team.slot}
+                </div>
 
-          {/* Opponent Teams - Right Side */}
-          <div>
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "auto auto auto 1fr auto",
-              gap: "1rem",
-              marginBottom: "0.5rem",
-              paddingBottom: "0.5rem",
-              borderBottom: "1px solid rgba(255,255,255,0.2)",
-              fontSize: "0.85rem",
-              color: "rgba(255,255,255,0.6)",
-              fontWeight: 600
-            }}>
-              <div></div>
-              <div style={{ textAlign: "center" }}>Record</div>
-              <div style={{ textAlign: "right" }}>Fpts</div>
-              <div>Team</div>
-              <div></div>
-            </div>
-
-            {opponentTeams.map((team, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "auto auto auto 1fr auto",
-                  gap: "1rem",
-                  padding: "0.75rem 0",
-                  alignItems: "center",
-                  borderBottom: team.slot === "FLX" ? "2px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.05)"
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedOpponentTeams.includes(idx)}
-                  onChange={() => toggleOpponentTeam(idx)}
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    cursor: "pointer",
-                    accentColor: "#d4af37"
-                  }}
-                />
-                <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
-                <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
-                <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{team.name}</div>
-                <Image src={team.logo} alt={team.name} width={24} height={24} style={{ borderRadius: "4px" }} />
+                {/* Opponent's team for this slot */}
+                <div className="trade-team-cell trade-team-cell--mirror">
+                  <Image src={oppTeam.logo} alt={oppTeam.name} width={24} height={24} style={{ borderRadius: "4px" }} />
+                  <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{oppTeam.name}</div>
+                  <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{oppTeam.fpts.toFixed(1)}</div>
+                  <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{oppTeam.record}</div>
+                  <input
+                    type="checkbox"
+                    checked={selectedOpponentTeams.includes(idx)}
+                    onChange={() => toggleOpponentTeam(idx)}
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      cursor: "pointer",
+                      accentColor: "#d4af37"
+                    }}
+                  />
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </section>
     </>

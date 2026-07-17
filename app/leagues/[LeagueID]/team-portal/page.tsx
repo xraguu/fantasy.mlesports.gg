@@ -709,6 +709,7 @@ export default function TeamPortalPage() {
               style={{
                 padding: "2rem",
                 display: "flex",
+                flexWrap: "wrap",
                 alignItems: "center",
                 justifyContent: "center",
                 gap: "1rem",
@@ -722,7 +723,7 @@ export default function TeamPortalPage() {
                 height={80}
                 style={{ borderRadius: "8px" }}
               />
-              <div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--text-main)" }}>
+              <div style={{ fontSize: "clamp(1.3rem, 5vw, 2rem)", fontWeight: 700, color: "var(--text-main)" }}>
                 {selectedWaiverTeam.leagueId} {selectedWaiverTeam.name}
               </div>
             </div>
@@ -903,7 +904,7 @@ export default function TeamPortalPage() {
 
       {/* Page Header */}
       <div style={{ marginBottom: "1.5rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "2.5rem", color: "var(--accent)", fontWeight: 700, margin: 0 }}>
+        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>
           Teams
         </h1>
       </div>
@@ -926,9 +927,9 @@ export default function TeamPortalPage() {
       )}
 
       {/* Filters */}
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
         {/* Availability Filter */}
-        <div style={{ position: "relative", width: "200px" }}>
+        <div style={{ position: "relative", width: "200px", maxWidth: "100%" }}>
           <button
             onClick={() => setAvailabilityFilterOpen(!availabilityFilterOpen)}
             style={{
@@ -1034,7 +1035,7 @@ export default function TeamPortalPage() {
         </div>
 
         {/* League Filter */}
-        <div style={{ position: "relative", width: "200px" }}>
+        <div style={{ position: "relative", width: "200px", maxWidth: "100%" }}>
           <button
             onClick={() => setLeagueFilterOpen(!leagueFilterOpen)}
             style={{

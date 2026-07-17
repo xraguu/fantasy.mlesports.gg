@@ -93,11 +93,9 @@ export default function PlayerModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
           maxWidth: "1100px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflow: "auto",
           position: "relative",
           borderRadius: "12px",
           padding: "2rem",
@@ -135,16 +133,17 @@ export default function PlayerModal({
           }}
         >
           <div
+            className="modal-box-header"
             style={{
-              display: "flex",
               justifyContent: "space-between",
               alignItems: "flex-start",
+              gap: "1rem",
             }}
           >
             <div>
               <h2
                 style={{
-                  fontSize: "1.8rem",
+                  fontSize: "clamp(1.2rem, 5vw, 1.8rem)",
                   fontWeight: 700,
                   color: "#ffffff",
                   margin: "0 0 0.5rem 0",
@@ -165,6 +164,7 @@ export default function PlayerModal({
             <button
               onClick={onClose}
               style={{
+                flexShrink: 0,
                 background: "rgba(255, 255, 255, 0.2)",
                 border: "none",
                 color: "#ffffff",
@@ -185,6 +185,8 @@ export default function PlayerModal({
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
+            gap: "0.75rem",
             justifyContent: "space-between",
             alignItems: "center",
             marginBottom: "1.5rem",

@@ -85,8 +85,10 @@ export default function LeagueArchivePage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: "0.75rem",
           marginBottom: "1.5rem",
         }}
       >
@@ -103,6 +105,7 @@ export default function LeagueArchivePage() {
             color: "var(--text-main)",
             fontSize: "0.95rem",
             width: "300px",
+            maxWidth: "100%",
           }}
         />
       </div>
@@ -118,6 +121,7 @@ export default function LeagueArchivePage() {
         >
           Archived Leagues
         </h2>
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
@@ -276,6 +280,7 @@ export default function LeagueArchivePage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

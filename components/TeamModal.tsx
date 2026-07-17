@@ -381,15 +381,13 @@ export default function TeamModal({
         justifyContent: "center",
         zIndex: 1000,
         padding: "1rem",
+        boxSizing: "border-box",
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-box modal-box-tight-padding"
         style={{
-          maxWidth: "900px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflow: "auto",
           position: "relative",
           borderRadius: "12px",
           padding: "2rem",
@@ -418,10 +416,10 @@ export default function TeamModal({
 
         {/* Modal Header */}
         <div
+          className="modal-box-header"
           style={{
-            display: "flex",
             alignItems: "flex-start",
-            gap: "1.5rem",
+            gap: "1rem",
             marginBottom: "2rem",
             paddingBottom: "1.5rem",
             borderBottom: "2px solid rgba(255,255,255,0.2)",
@@ -439,7 +437,7 @@ export default function TeamModal({
           <div style={{ flex: 1 }}>
             <h2
               style={{
-                fontSize: "1.8rem",
+                fontSize: "clamp(1.2rem, 5vw, 1.8rem)",
                 fontWeight: 700,
                 color: "#ffffff",
                 margin: "0 0 0.5rem 0",
@@ -449,7 +447,7 @@ export default function TeamModal({
               {team.leagueId} {team.name}
             </h2>
             {!isDraftContext && (
-              <div style={{ display: "flex", gap: "1.75rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+              <div className="team-modal-stats-grid" style={{ marginBottom: "0.75rem" }}>
                 {loadingOverview ? (
                   <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>
                     Loading standings...
@@ -518,7 +516,7 @@ export default function TeamModal({
             )}
             {/* Staff Information - Always show if available */}
             {!loadingStaff && (staff.franchiseManager || staff.generalManager || staff.assistantGeneralManagers.length > 0 || staff.captains.length > 0) && (
-              <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+              <div className="team-modal-staff-grid" style={{ marginTop: "0.75rem" }}>
                 {staff.franchiseManager && (
                   <div>
                     <div
@@ -654,6 +652,7 @@ export default function TeamModal({
           <button
             onClick={onClose}
             style={{
+              flexShrink: 0,
               background: "rgba(255, 255, 255, 0.2)",
               border: "none",
               color: "#ffffff",
@@ -674,6 +673,8 @@ export default function TeamModal({
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
+              gap: "0.75rem",
               justifyContent: "space-between",
               alignItems: "center",
               marginBottom: "1rem",

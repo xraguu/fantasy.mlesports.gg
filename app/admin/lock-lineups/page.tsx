@@ -247,10 +247,10 @@ export default function LockLineupsPage() {
               overflowY: "auto"
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
                 <div>
-                  <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--accent)", marginBottom: "0.25rem" }}>
+                  <h2 style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--accent)", marginBottom: "0.25rem" }}>
                     {selectedManager.teamName}
                   </h2>
                   <p style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
@@ -265,6 +265,7 @@ export default function LockLineupsPage() {
                 </button>
               </div>
 
+              <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "1.5rem" }}>
                 <thead>
                   <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
@@ -350,8 +351,9 @@ export default function LockLineupsPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
 
-              <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", justifyContent: "flex-end" }}>
                 <button
                   className="btn btn-ghost"
                   onClick={() => setShowRosterModal(false)}
@@ -389,10 +391,10 @@ export default function LockLineupsPage() {
               width: "90%",
             }}
           >
-            <div className="card" style={{ padding: "2rem" }}>
+            <div className="card" style={{ padding: "clamp(1rem, 4vw, 2rem)" }}>
               <h2
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)",
                   fontWeight: 700,
                   marginBottom: "1rem",
                   color: "var(--accent)",
@@ -412,7 +414,7 @@ export default function LockLineupsPage() {
                 This will prevent managers from making any further changes to
                 their rosters.
               </p>
-              <div style={{ display: "flex", gap: "0.75rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
                 <button
                   className="btn btn-ghost"
                   style={{ flex: 1 }}
@@ -437,12 +439,14 @@ export default function LockLineupsPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: "1rem",
           marginBottom: "2rem",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
           <div>
             <label
               style={{
@@ -539,7 +543,7 @@ export default function LockLineupsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "var(--accent)",
             }}
@@ -560,7 +564,7 @@ export default function LockLineupsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#22c55e",
             }}
@@ -581,7 +585,7 @@ export default function LockLineupsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "#ef4444",
             }}
@@ -602,7 +606,7 @@ export default function LockLineupsPage() {
           </div>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "clamp(1.4rem, 6vw, 2rem)",
               fontWeight: 700,
               color: "var(--accent)",
             }}
@@ -614,6 +618,7 @@ export default function LockLineupsPage() {
 
       {/* Lineups Table */}
       <div className="card" style={{ padding: "1.5rem" }}>
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
@@ -787,6 +792,7 @@ export default function LockLineupsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

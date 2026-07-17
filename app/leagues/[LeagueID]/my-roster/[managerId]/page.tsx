@@ -646,6 +646,8 @@ export default function MyRosterPage() {
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
+          gap: "1rem",
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: "1.5rem",
@@ -654,7 +656,7 @@ export default function MyRosterPage() {
         <h1
           className="page-heading"
           style={{
-            fontSize: "2.5rem",
+            fontSize: "clamp(1.15rem, 6vw, 2.5rem)",
             color: "var(--accent)",
             fontWeight: 700,
             margin: 0,
@@ -662,18 +664,19 @@ export default function MyRosterPage() {
         >
           Roster
         </h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "clamp(0.4rem, 2vw, 1rem)" }}>
           <button
             onClick={handleScheduleClick}
             style={{
               backgroundColor: "var(--accent)",
               color: "#1a1a2e",
-              padding: "0.5rem 1.5rem",
+              padding: "clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.75rem, 4vw, 1.5rem)",
               borderRadius: "2rem",
               fontWeight: 700,
-              fontSize: "1rem",
+              fontSize: "clamp(0.8rem, 3vw, 1rem)",
               border: "none",
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             Schedule
@@ -683,12 +686,13 @@ export default function MyRosterPage() {
             style={{
               backgroundColor: "var(--accent)",
               color: "#1a1a2e",
-              padding: "0.5rem 1.5rem",
+              padding: "clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.75rem, 4vw, 1.5rem)",
               borderRadius: "2rem",
               fontWeight: 700,
-              fontSize: "1rem",
+              fontSize: "clamp(0.8rem, 3vw, 1rem)",
               border: "none",
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             Transactions
@@ -704,6 +708,8 @@ export default function MyRosterPage() {
         <div
           style={{
             display: "flex",
+            flexWrap: "wrap",
+            gap: "1.5rem",
             justifyContent: "space-between",
             alignItems: "center",
           }}
@@ -714,6 +720,7 @@ export default function MyRosterPage() {
               <div
                 style={{
                   display: "flex",
+                  flexWrap: "wrap",
                   alignItems: "center",
                   gap: "0.5rem",
                   marginBottom: "0.5rem",
@@ -733,6 +740,7 @@ export default function MyRosterPage() {
                     color: "var(--text-main)",
                     padding: "0.25rem 0.5rem",
                     width: "260px",
+                    maxWidth: "100%",
                   }}
                 />
                 <input
@@ -774,6 +782,10 @@ export default function MyRosterPage() {
             ) : (
               <h2
                 style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  gap: "0.5rem",
                   fontSize: "1.5rem",
                   fontWeight: 700,
                   color: "var(--text-main)",
@@ -781,71 +793,89 @@ export default function MyRosterPage() {
                   marginTop: 0,
                 }}
               >
-                {rosterData.fantasyTeam.displayName}{" "}
-                <span
-                  style={{
-                    fontSize: "0.95rem",
-                    color: "var(--text-muted)",
-                    fontWeight: 600,
-                  }}
-                >
-                  ({rosterData.fantasyTeam.shortCode})
-                </span>{" "}
-              {rosterData.fantasyTeam.isOwner && (
-                <button
-                  onClick={startEditingTeamName}
-                  title="Rename team"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "var(--text-muted)",
-                    fontSize: "0.9rem",
-                    marginLeft: "0.25rem",
-                  }}
-                >
-                  ✏️
-                </button>
-              )}{" "}
-              {rosterData.record && (
-                <>
+                <span style={{ whiteSpace: "nowrap" }}>
+                  {rosterData.fantasyTeam.displayName}{" "}
                   <span
-                    style={{ color: "var(--accent)", marginLeft: "0.75rem" }}
+                    style={{
+                      fontSize: "0.95rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
                   >
-                    {rosterData.record.wins}-{rosterData.record.losses}
-                  </span>{" "}
-                  {rosterData.rank && rosterData.totalTeams && (
-                    <span
+                    ({rosterData.fantasyTeam.shortCode})
+                  </span>
+                  {rosterData.fantasyTeam.isOwner && (
+                    <button
+                      onClick={startEditingTeamName}
+                      title="Rename team"
                       style={{
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
                         color: "var(--text-muted)",
-                        fontSize: "1.2rem",
-                        marginLeft: "0.5rem",
+                        fontSize: "0.9rem",
+                        marginLeft: "0.25rem",
                       }}
                     >
-                      {rosterData.rank}
-                      {rosterData.rank === 1
-                        ? "st"
-                        : rosterData.rank === 2
-                        ? "nd"
-                        : rosterData.rank === 3
-                        ? "rd"
-                        : "th"}
-                    </span>
+                      ✏️
+                    </button>
                   )}
-                </>
-              )}
+                </span>
+                {rosterData.record && (
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span style={{ color: "var(--accent)" }}>
+                      {rosterData.record.wins}-{rosterData.record.losses}
+                    </span>
+                    {rosterData.rank && rosterData.totalTeams && (
+                      <span
+                        style={{
+                          color: "var(--text-muted)",
+                          fontSize: "1.2rem",
+                        }}
+                      >
+                        {rosterData.rank}
+                        {rosterData.rank === 1
+                          ? "st"
+                          : rosterData.rank === 2
+                          ? "nd"
+                          : rosterData.rank === 3
+                          ? "rd"
+                          : "th"}
+                      </span>
+                    )}
+                  </span>
+                )}
               </h2>
             )}
             <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
               {rosterData.fantasyTeam.ownerDisplayName}
             </div>
-            <div style={{ marginTop: "0.5rem", fontSize: "1rem" }}>
-              <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.4rem 1.5rem",
+                marginTop: "0.5rem",
+                fontSize: "1rem",
+              }}
+            >
+              <span
+                style={{
+                  whiteSpace: "nowrap",
+                  fontWeight: 600,
+                  color: "var(--text-main)",
+                }}
+              >
                 {rosterData.totalPoints ?? 0} Fantasy Points
               </span>
-              <span
-                style={{ color: "var(--text-muted)", marginLeft: "1.5rem" }}
-              >
+              <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
                 {rosterData.avgPoints ?? 0} Avg Fantasy Points
               </span>
             </div>
@@ -1014,7 +1044,7 @@ export default function MyRosterPage() {
       </section>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.5rem" }}>
         <button
           onClick={() => setActiveTab("lineup")}
           className={
@@ -1060,13 +1090,15 @@ export default function MyRosterPage() {
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               justifyContent: "space-between",
               alignItems: "center",
+              gap: "0.75rem",
               padding: "1rem 1.5rem",
               borderBottom: "1px solid rgba(255,255,255,0.1)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
               <button
                 onClick={() => setCurrentWeek((prev) => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
@@ -1112,7 +1144,7 @@ export default function MyRosterPage() {
                 {currentWeek === 10 ? "►" : `Week ${getNextWeek(currentWeek)} ►`}
               </button>
             </div>
-            <div style={{ display: "flex", gap: "0.75rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
               <button
                 onClick={() => router.push(`/leagues/${leagueId}/team-portal`)}
                 className="btn btn-primary"
@@ -1628,11 +1660,13 @@ export default function MyRosterPage() {
               padding: "1rem 1.5rem",
               borderBottom: "1px solid rgba(255,255,255,0.1)",
               display: "flex",
+              flexWrap: "wrap",
+              gap: "0.75rem",
               justifyContent: "space-between",
               alignItems: "center",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
               <button
                 onClick={() => setCurrentWeek((prev) => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
@@ -2275,6 +2309,8 @@ export default function MyRosterPage() {
                     <div
                       style={{
                         display: "flex",
+                        flexWrap: "wrap",
+                        gap: "0.5rem",
                         justifyContent: "space-between",
                         alignItems: "center",
                         marginBottom: "1rem",
@@ -2326,10 +2362,8 @@ export default function MyRosterPage() {
 
                     {/* Trade Details */}
                     <div
+                      className="matchup-hero-grid tight"
                       style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr auto 1fr",
-                        gap: "2rem",
                         alignItems: "center",
                       }}
                     >
@@ -2689,6 +2723,7 @@ export default function MyRosterPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "min(800px, 90vw)",
+              maxWidth: "100%",
               background: "linear-gradient(135deg, #1a2332 0%, #0f1419 100%)",
               border: "2px solid rgba(242, 182, 50, 0.3)",
               borderRadius: "16px",
@@ -2697,6 +2732,7 @@ export default function MyRosterPage() {
               position: "relative",
               maxHeight: "80vh",
               overflowY: "auto",
+              boxSizing: "border-box",
             }}
           >
             {/* Close button */}
@@ -2730,13 +2766,13 @@ export default function MyRosterPage() {
             {/* Header */}
             <div
               style={{
-                padding: "2rem",
+                padding: "clamp(1rem, 5vw, 2rem)",
                 borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
               }}
             >
               <h2
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: "clamp(1.2rem, 5vw, 1.5rem)",
                   fontWeight: 700,
                   color: "var(--text-main)",
                   margin: 0,
@@ -2757,7 +2793,7 @@ export default function MyRosterPage() {
             </div>
 
             {/* Roster List */}
-            <div style={{ padding: "1.5rem 2rem" }}>
+            <div style={{ padding: "clamp(1rem, 4vw, 1.5rem) clamp(1rem, 5vw, 2rem)" }}>
               {fullRoster.filter((slot) => slot.mleTeam !== null).length ===
               0 ? (
                 <div
