@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getFantasyStandings } from "@/lib/standings";
+import { computeStreak } from "@/lib/streak";
 
 /**
  * GET /api/leagues/[leagueId]/standings
@@ -68,43 +69,30 @@ export async function GET(
         // aren't "games", so streaks/gamesPlayed are based on actual matchup
         // results only, not the wins/losses totals above which may include
         // double-win bonuses)
-        const gameResults: ("W" | "L")[] = [];
-        let actualGamesPlayed = 0;
-        matchups.forEach((matchup) => {
-          if (!matchup.homeScore || !matchup.awayScore) return;
-
-          const isHome = matchup.homeTeamId === team.id;
-          const isAway = matchup.awayTeamId === team.id;
-
-          if (!isHome && !isAway) return;
-
-          const myScore = isHome ? matchup.homeScore : matchup.awayScore;
-          const oppScore = isHome ? matchup.awayScore : matchup.homeScore;
-
-          actualGamesPlayed++;
-          if (myScore > oppScore) {
-            gameResults.push("W");
-          } else if (myScore < oppScore) {
-            gameResults.push("L");
-          }
-        });
-
+        const teamMatchups = matchups.filter(
+          (m) => m.homeTeamId === team.id || m.awayTeamId === team.id
+        );
+        const actualGamesPlayed = teamMatchups.filter(
+          (m) => m.homeScore !== null && m.awayScore !== null
+        ).length;
         const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
-        // Calculate streak (looking at last 5 games)
-        const recentGames = gameResults.slice(-5);
-        let streak = 0;
-        let streakType = recentGames[recentGames.length - 1] || "L";
-
-        for (let i = recentGames.length - 1; i >= 0; i--) {
-          if (recentGames[i] === streakType) {
-            streak++;
-          } else {
-            break;
-          }
-        }
-
-        const streakString = `${streakType}${streak}`;
+        const streakString = computeStreak(
+          teamMatchups.map((matchup) => {
+            const isHome = matchup.homeTeamId === team.id;
+            const myScore = isHome ? matchup.homeScore : matchup.awayScore;
+            const oppScore = isHome ? matchup.awayScore : matchup.homeScore;
+            const result =
+              myScore === null || oppScore === null
+                ? null
+                : myScore > oppScore
+                ? "W"
+                : myScore < oppScore
+                ? "L"
+                : null;
+            return { week: matchup.week, result };
+          })
+        );
 
         // Get roster slots to find top performing team
         const rosterSlots = await prisma.rosterSlot.findMany({

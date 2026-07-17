@@ -93,6 +93,8 @@ export default function AdminLeagueManagementPage() {
     { userId: "", teamName: "", shortCode: "" },
   ]);
   const [savingDoubleWin, setSavingDoubleWin] = useState(false);
+  const [pickTimeSeconds, setPickTimeSeconds] = useState(90);
+  const [savingPickTime, setSavingPickTime] = useState(false);
 
   const [editRosterTeam, setEditRosterTeam] = useState<FantasyTeam | null>(null);
   const [editRosterData, setEditRosterData] = useState<EditRosterData | null>(null);
@@ -111,6 +113,7 @@ export default function AdminLeagueManagementPage() {
       if (!response.ok) throw new Error("Failed to fetch league");
       const data = await response.json();
       setLeague(data.league);
+      setPickTimeSeconds(data.league.draftPickTimeSeconds || 90);
     } catch (error) {
       console.error("Error fetching league:", error);
       showAlert("Failed to load league", "error");
@@ -190,6 +193,36 @@ export default function AdminLeagueManagementPage() {
       showAlert(error.message || "Failed to update double-win setting", "error");
     } finally {
       setSavingDoubleWin(false);
+    }
+  };
+
+  const handleUpdatePickTime = async () => {
+    if (!league) return;
+    setSavingPickTime(true);
+    try {
+      const response = await fetch(`/api/admin/leagues/${leagueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftPickTimeSeconds: pickTimeSeconds }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update pick timer");
+      }
+
+      setLeague({ ...league, draftPickTimeSeconds: pickTimeSeconds });
+      showAlert(
+        league.draftStatus === "in_progress"
+          ? "Pick timer updated — takes effect starting with the next pick."
+          : "Pick timer updated.",
+        "success"
+      );
+    } catch (error: any) {
+      console.error("Error updating pick timer:", error);
+      showAlert(error.message || "Failed to update pick timer", "error");
+    } finally {
+      setSavingPickTime(false);
     }
   };
 
@@ -1001,6 +1034,84 @@ export default function AdminLeagueManagementPage() {
           </button>
         </div>
       </div>
+
+      {/* Draft Pick Timer */}
+      {league.draftStatus !== "completed" && (
+        <div className="card" style={{ padding: "1.5rem", marginBottom: "2rem" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "1rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: "1rem",
+                  color: "var(--text-main)",
+                  marginBottom: "0.25rem",
+                }}
+              >
+                Draft Pick Timer
+              </div>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                How long each manager gets to make a pick before autodraft takes over.
+                {league.draftStatus === "in_progress" &&
+                  " Changing this while the draft is live only affects picks after the current one."}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <select
+                value={pickTimeSeconds}
+                onChange={(e) => setPickTimeSeconds(parseInt(e.target.value))}
+                disabled={savingPickTime}
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "6px",
+                  color: "var(--text-main)",
+                  fontSize: "0.9rem",
+                }}
+              >
+                <option value={30}>30 seconds</option>
+                <option value={45}>45 seconds</option>
+                <option value={60}>60 seconds</option>
+                <option value={90}>90 seconds</option>
+                <option value={120}>2 minutes</option>
+                <option value={180}>3 minutes</option>
+                <option value={300}>5 minutes</option>
+              </select>
+              <button
+                className="btn"
+                onClick={handleUpdatePickTime}
+                disabled={
+                  savingPickTime ||
+                  pickTimeSeconds === (league.draftPickTimeSeconds || 90)
+                }
+                style={{
+                  opacity:
+                    savingPickTime ||
+                    pickTimeSeconds === (league.draftPickTimeSeconds || 90)
+                      ? 0.5
+                      : 1,
+                  cursor:
+                    savingPickTime ||
+                    pickTimeSeconds === (league.draftPickTimeSeconds || 90)
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {savingPickTime ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Managers / Roster Management (post-draft) */}
       {league.draftStatus === "completed" ? (

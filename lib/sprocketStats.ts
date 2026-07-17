@@ -1,5 +1,7 @@
 import { parse } from "csv-parse/sync";
 import { prisma } from "./prisma";
+import { parseSprocketSeasonNumber } from "./sprocketSeason";
+import { getWeekMatchRange } from "./weekMatchRange";
 
 export const SPROCKET_BASE_URL =
   "https://sprocket-public-datasets.nyc3.cdn.digitaloceanspaces.com/datasets";
@@ -26,6 +28,7 @@ const MATCH_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
 interface SprocketMatch {
   match_id: string;
   match_group_id: string;
+  scheduling_start_time: string;
   scheduled_time: string;
   home: string;
   away: string;
@@ -34,6 +37,19 @@ interface SprocketMatch {
   home_wins: string;
   away_wins: string;
   winning_team: string;
+}
+
+/**
+ * `scheduled_time` is blank for a meaningful slice of real, completed
+ * matches (their `scheduling_start_time`/`scheduling_end_time` are still
+ * populated) — falling back to it instead of silently excluding the match
+ * (`new Date("")` is an Invalid Date, which any range comparison drops).
+ */
+function matchTime(m: SprocketMatch): Date | null {
+  const raw = m.scheduled_time || m.scheduling_start_time;
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return isNaN(parsed.getTime()) ? null : parsed;
 }
 
 interface SprocketPlayerStat {
@@ -108,6 +124,13 @@ export async function importSprocketStatsForWeek(
     throw new Error(`No SeasonSettings found for season ${season}. Configure it at /admin/settings first.`);
   }
 
+  const sprocketSeason = parseSprocketSeasonNumber(settings.draftStatsSeason);
+  if (sprocketSeason === null) {
+    throw new Error(
+      `Season Settings' "Current Season" isn't configured — set it at /admin/settings first. It determines which MLE season's live Sprocket data to pull (e.g. "Season 19"), which is a different number than the fantasy season (${season}).`
+    );
+  }
+
   const weekDates = settings.weekDates as Array<{
     week: number;
     startDate: string;
@@ -121,9 +144,9 @@ export async function importSprocketStatsForWeek(
     );
   }
 
-  const weekStart = new Date(weekConfig.startDate);
-  const weekEnd = new Date(weekConfig.endDate);
-  weekEnd.setHours(23, 59, 59, 999);
+  const range = getWeekMatchRange(weekDates, week)!;
+  const weekStart = range.start;
+  const weekEnd = range.end;
 
   // 2. Fetch matches.csv and find this week's matches
   const matchesCsv = await fetchCsvText(`${SPROCKET_BASE_URL}/matches.csv`);
@@ -135,8 +158,9 @@ export async function importSprocketStatsForWeek(
 
   const weekMatches = allMatches.filter((m) => {
     if (m.winning_team === "Not Played / Data Unavailable") return false;
-    const matchDate = new Date(m.scheduled_time);
-    return matchDate >= weekStart && matchDate <= weekEnd;
+    const matchDate = matchTime(m);
+    if (!matchDate) return false;
+    return matchDate >= weekStart && matchDate < weekEnd;
   });
 
   if (weekMatches.length === 0) {
@@ -150,7 +174,7 @@ export async function importSprocketStatsForWeek(
 
   // 3. Fetch player stats for this season
   const playerStatsCsv = await fetchCsvText(
-    `${SPROCKET_BASE_URL}/player_stats_s${season}.csv`
+    `${SPROCKET_BASE_URL}/player_stats_s${sprocketSeason}.csv`
   );
   const allPlayerStats = parse(playerStatsCsv, {
     columns: true,

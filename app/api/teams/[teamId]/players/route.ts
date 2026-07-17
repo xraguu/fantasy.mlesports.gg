@@ -45,11 +45,18 @@ export async function GET(
     // Get historical stats for each player (we'll aggregate them for current season)
     const playersWithStats = await Promise.all(
       players.map(async (player) => {
-        // Get the most recent season stats for both game modes
+        // Get the most recent REGULAR SEASON stats for both game modes.
+        // Season labels are free text like "Season 19" / "Season 19
+        // Playoffs" — excluding "Playoffs" rows here matters because
+        // "Season 19 Playoffs" sorts ahead of "Season 19" in a plain
+        // string ORDER BY DESC, which was silently showing a player's much
+        // smaller playoffs sample (sometimes 0 games in a mode) mislabeled
+        // as their season totals.
         const doublesStats = await prisma.playerHistoricalStats.findFirst({
           where: {
             playerId: player.id,
             gamemode: "RL_DOUBLES",
+            NOT: { season: { contains: "Playoffs" } },
           },
           orderBy: {
             season: "desc",
@@ -60,6 +67,7 @@ export async function GET(
           where: {
             playerId: player.id,
             gamemode: "RL_STANDARD",
+            NOT: { season: { contains: "Playoffs" } },
           },
           orderBy: {
             season: "desc",

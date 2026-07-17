@@ -85,7 +85,7 @@ export async function PATCH(
 
     const { leagueId } = await params;
     const body = await request.json();
-    const { name, currentWeek, maxTeams, doubleWinEnabled } = body;
+    const { name, currentWeek, maxTeams, doubleWinEnabled, draftPickTimeSeconds } = body;
 
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
@@ -119,6 +119,23 @@ export async function PATCH(
         );
       }
       updateData.doubleWinEnabled = Boolean(doubleWinEnabled);
+    }
+
+    if (draftPickTimeSeconds !== undefined) {
+      if (league.draftStatus === "completed") {
+        return NextResponse.json(
+          { error: "Can't change the pick timer after the draft has completed" },
+          { status: 400 }
+        );
+      }
+      const parsedPickTime = parseInt(draftPickTimeSeconds);
+      if (!Number.isFinite(parsedPickTime) || parsedPickTime < 30) {
+        return NextResponse.json(
+          { error: "draftPickTimeSeconds must be at least 30" },
+          { status: 400 }
+        );
+      }
+      updateData.draftPickTimeSeconds = parsedPickTime;
     }
 
     // Update the league

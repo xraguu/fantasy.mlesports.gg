@@ -115,9 +115,19 @@ export async function getTeamHistoricalStats(
   return result;
 }
 
-/** Distinct season labels available in TeamHistoricalStats, newest-looking first (string sort desc). */
+/**
+ * Distinct REGULAR SEASON labels available in TeamHistoricalStats, newest
+ * first (string sort desc — safe here since every label is "Season N" with
+ * N in the same digit-count range). "Season N Playoffs" rows are excluded
+ * entirely: they're a much smaller, narrower sample (a handful of playoff
+ * series) than a full season, never what "last season's stats" should mean
+ * for draft prep — and a Playoffs label would otherwise sort ahead of its
+ * own season (e.g. "Season 19 Playoffs" > "Season 19" lexicographically),
+ * silently becoming the default "current season" for the draft room.
+ */
 export async function getAvailableHistoricalSeasons(): Promise<string[]> {
   const rows = await prisma.teamHistoricalStats.findMany({
+    where: { NOT: { season: { contains: "Playoffs" } } },
     distinct: ["season"],
     select: { season: true },
   });

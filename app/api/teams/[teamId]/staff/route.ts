@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * GET /api/teams/[teamId]/staff
- * Get franchise manager, general manager, and captain for a specific MLE team
+ * Get franchise manager, general manager, assistant general manager(s), and
+ * captain for a specific MLE team
  */
 export async function GET(
   req: NextRequest,
@@ -63,8 +64,24 @@ export async function GET(
     });
     console.log('Staff API - General Manager:', generalManager);
 
-    // Find Captain for this specific team
-    const captain = await prisma.mLEPlayer.findFirst({
+    // A franchise can have more than one Assistant General Manager
+    const assistantGeneralManagers = await prisma.mLEPlayer.findMany({
+      where: {
+        franchise: franchiseName,
+        staffPosition: "Assistant General Manager",
+      },
+      select: {
+        id: true,
+        name: true,
+        staffPosition: true,
+      },
+    });
+    console.log('Staff API - Assistant General Managers:', assistantGeneralManagers);
+
+    // Captain(s) for this SPECIFIC team only (teamId already isolates by MLE
+    // league — e.g. "alExpress" vs "clExpress" are different teams under the
+    // same franchise — a team can also have more than one, e.g. co-captains).
+    const captains = await prisma.mLEPlayer.findMany({
       where: {
         teamId: teamId,
         staffPosition: "Captain",
@@ -75,7 +92,7 @@ export async function GET(
         staffPosition: true,
       },
     });
-    console.log('Staff API - Captain:', captain);
+    console.log('Staff API - Captains:', captains);
 
     return NextResponse.json({
       team: {
@@ -87,7 +104,8 @@ export async function GET(
       staff: {
         franchiseManager: franchiseManager || null,
         generalManager: generalManager || null,
-        captain: captain || null,
+        assistantGeneralManagers,
+        captains,
       },
     });
   } catch (error) {

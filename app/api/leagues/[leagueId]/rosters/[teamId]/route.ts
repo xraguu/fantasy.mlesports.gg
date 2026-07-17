@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateRosterSlotId } from "@/lib/id-generator";
-import { getTeamSeasonStats, TeamSeasonStatsRow, getWithinLeagueStandings } from "@/lib/teamSeasonStats";
+import { getTeamSeasonStats, TeamSeasonStatsRow, getWithinLeagueStandings, rankTeamsByFpts } from "@/lib/teamSeasonStats";
 import { runAutoLockSweep } from "@/lib/autoLock";
 import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
 import { getFantasyStandings } from "@/lib/standings";
 import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
+import { getWeekMatchRange } from "@/lib/weekMatchRange";
 
 /**
  * GET /api/leagues/[leagueId]/rosters/[teamId]
@@ -137,19 +138,17 @@ export async function GET(
       });
       const weekDates =
         (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
-      const weekConfig = weekDates.find((w) => w.week === week);
+      const range = getWeekMatchRange(weekDates, week);
 
       const mleTeamIds = rosterSlots.map((s) => s.mleTeamId);
       const opponentByTeamId = new Map<string, { id: string; name: string; leagueId: string; slug: string; logoPath: string; primaryColor: string; secondaryColor: string }>();
 
-      if (weekConfig?.startDate && weekConfig?.endDate) {
-        const start = new Date(weekConfig.startDate);
-        const end = new Date(weekConfig.endDate);
-        end.setHours(23, 59, 59, 999);
+      if (range) {
+        const { start, end } = range;
 
         const matches = await prisma.match.findMany({
           where: {
-            scheduledDate: { gte: start, lte: end },
+            scheduledDate: { gte: start, lt: end },
             OR: [{ homeTeamId: { in: mleTeamIds } }, { awayTeamId: { in: mleTeamIds } }],
           },
           include: { homeTeam: true, awayTeam: true },
@@ -177,10 +176,7 @@ export async function GET(
       for (const lens of ["2s", "3s"] as const) {
         const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: week, lens });
         statsByLens.set(lens, stats);
-        const sorted = [...stats.entries()].sort((a, b) => b[1].fpts - a[1].fpts);
-        const rank = new Map<string, number>();
-        sorted.forEach(([id], idx) => rank.set(id, idx + 1));
-        rankByLens.set(lens, rank);
+        rankByLens.set(lens, rankTeamsByFpts(stats));
         standingsByLens.set(lens, await getWithinLeagueStandings(week, lens));
       }
 

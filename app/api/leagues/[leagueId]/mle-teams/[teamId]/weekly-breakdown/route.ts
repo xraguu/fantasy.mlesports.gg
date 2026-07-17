@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calcFpts, getActiveScoringRules } from "@/lib/scoringService";
+import { getWeekMatchRange } from "@/lib/weekMatchRange";
 
 /**
  * GET /api/leagues/[leagueId]/mle-teams/[teamId]/weekly-breakdown
@@ -41,14 +42,13 @@ export async function GET(
         let opponentName: string | null = null;
         let opponentStats: { goals: number; shots: number } | null = null;
 
-        if (weekConfig?.startDate && weekConfig?.endDate) {
-          const start = new Date(weekConfig.startDate);
-          const end = new Date(weekConfig.endDate);
-          end.setHours(23, 59, 59, 999);
+        const range = getWeekMatchRange(weekDates, stat.week);
+        if (range) {
+          const { start, end } = range;
 
           const match = await prisma.match.findFirst({
             where: {
-              scheduledDate: { gte: start, lte: end },
+              scheduledDate: { gte: start, lt: end },
               OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
             },
             include: { homeTeam: true, awayTeam: true },

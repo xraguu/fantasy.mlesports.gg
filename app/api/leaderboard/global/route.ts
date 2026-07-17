@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { getFantasyStandings } from "@/lib/standings";
+import { computeStreak } from "@/lib/streak";
 
 /**
  * GET /api/leaderboard/global
@@ -27,10 +28,10 @@ export async function GET() {
           },
         },
         homeMatchups: {
-          select: { homeScore: true, awayScore: true },
+          select: { week: true, homeScore: true, awayScore: true },
         },
         awayMatchups: {
-          select: { homeScore: true, awayScore: true },
+          select: { week: true, homeScore: true, awayScore: true },
         },
       },
     });
@@ -59,13 +60,41 @@ export async function GET() {
       const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
       const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0;
 
+      const streak = computeStreak([
+        ...team.homeMatchups.map((m) => ({
+          week: m.week,
+          result:
+            m.homeScore === null || m.awayScore === null
+              ? null
+              : m.homeScore > m.awayScore
+              ? ("W" as const)
+              : m.homeScore < m.awayScore
+              ? ("L" as const)
+              : null,
+        })),
+        ...team.awayMatchups.map((m) => ({
+          week: m.week,
+          result:
+            m.homeScore === null || m.awayScore === null
+              ? null
+              : m.awayScore > m.homeScore
+              ? ("W" as const)
+              : m.awayScore < m.homeScore
+              ? ("L" as const)
+              : null,
+        })),
+      ]);
+
       return {
+        fantasyTeamId: team.id,
+        leagueId: team.fantasyLeagueId,
         manager: team.owner.displayName,
         team: team.displayName,
         league: team.league.name,
         wins,
         losses,
         winRate,
+        streak,
         totalPoints,
         avgPoints,
         gamesPlayed,

@@ -134,10 +134,13 @@ interface HistoricalStatsRow {
   season: string;
   games_played: string;
   sprocket_rating: string;
+  avg_score: string;
   total_goals: string;
   total_saves: string;
   total_shots: string;
   total_assists: string;
+  total_goals_against: string;
+  total_shots_against: string;
   total_demos_inflicted: string;
   total_demos_taken: string;
 }
@@ -451,6 +454,38 @@ async function importHistoricalStats() {
       const totalShots = parseInt(stat.total_shots) || 0;
       const totalSaves = parseInt(stat.total_saves) || 0;
       const totalAssists = parseInt(stat.total_assists) || 0;
+      const totalGoalsAgainst = parseInt(stat.total_goals_against) || 0;
+      const totalShotsAgainst = parseInt(stat.total_shots_against) || 0;
+      const totalDemosInflicted = parseInt(stat.total_demos_inflicted) || 0;
+      const totalDemosTaken = parseInt(stat.total_demos_taken) || 0;
+      const avgScore = parseFloat(stat.avg_score) || 0;
+      // skill_group is the league's full name (e.g. "Master League") — map
+      // to the short code used everywhere else, falling back to the raw
+      // value for anything unrecognized rather than silently mislabeling it.
+      const skillGroup = LEAGUE_NAME_TO_ID[stat.skill_group] || stat.skill_group || "";
+
+      const perGameFields = {
+        skillGroup,
+        totalGoals,
+        totalShots,
+        totalSaves,
+        totalAssists,
+        totalGoalsAgainst,
+        totalShotsAgainst,
+        totalDemosInflicted,
+        totalDemosTaken,
+        sprocketRating: parseFloat(stat.sprocket_rating) || 0,
+        gamesPlayed,
+        avgScore,
+        goalsPerGame: gamesPlayed > 0 ? totalGoals / gamesPlayed : 0,
+        assistsPerGame: gamesPlayed > 0 ? totalAssists / gamesPlayed : 0,
+        savesPerGame: gamesPlayed > 0 ? totalSaves / gamesPlayed : 0,
+        shotsPerGame: gamesPlayed > 0 ? totalShots / gamesPlayed : 0,
+        avgGoalsAgainst: gamesPlayed > 0 ? totalGoalsAgainst / gamesPlayed : 0,
+        avgShotsAgainst: gamesPlayed > 0 ? totalShotsAgainst / gamesPlayed : 0,
+        avgDemosInflicted: gamesPlayed > 0 ? totalDemosInflicted / gamesPlayed : 0,
+        avgDemosTaken: gamesPlayed > 0 ? totalDemosTaken / gamesPlayed : 0,
+      };
 
       await prisma.playerHistoricalStats.upsert({
         where: {
@@ -460,20 +495,7 @@ async function importHistoricalStats() {
             gamemode: stat.gamemode || "3s",
           }
         },
-        update: {
-          totalGoals,
-          totalShots,
-          totalSaves,
-          totalAssists,
-          totalDemosInflicted: parseInt(stat.total_demos_inflicted) || 0,
-          totalDemosTaken: parseInt(stat.total_demos_taken) || 0,
-          sprocketRating: parseFloat(stat.sprocket_rating) || 0,
-          gamesPlayed,
-          goalsPerGame: gamesPlayed > 0 ? totalGoals / gamesPlayed : 0,
-          assistsPerGame: gamesPlayed > 0 ? totalAssists / gamesPlayed : 0,
-          savesPerGame: gamesPlayed > 0 ? totalSaves / gamesPlayed : 0,
-          shotsPerGame: gamesPlayed > 0 ? totalShots / gamesPlayed : 0,
-        },
+        update: perGameFields,
         create: {
           // id omitted — schema defaults to @default(cuid()). The old code
           // hardcoded id: stat.member_id, which collided across every season
@@ -482,26 +504,7 @@ async function importHistoricalStats() {
           playerId: stat.member_id,
           season: stat.season,
           gamemode: stat.gamemode || "3s",
-          skillGroup: "ML",
-          totalGoals,
-          totalShots,
-          totalSaves,
-          totalAssists,
-          totalDemosInflicted: parseInt(stat.total_demos_inflicted) || 0,
-          totalDemosTaken: parseInt(stat.total_demos_taken) || 0,
-          totalGoalsAgainst: 0,
-          totalShotsAgainst: 0,
-          sprocketRating: parseFloat(stat.sprocket_rating) || 0,
-          gamesPlayed,
-          goalsPerGame: gamesPlayed > 0 ? totalGoals / gamesPlayed : 0,
-          assistsPerGame: gamesPlayed > 0 ? totalAssists / gamesPlayed : 0,
-          savesPerGame: gamesPlayed > 0 ? totalSaves / gamesPlayed : 0,
-          shotsPerGame: gamesPlayed > 0 ? totalShots / gamesPlayed : 0,
-          avgDemosInflicted: 0,
-          avgDemosTaken: 0,
-          avgGoalsAgainst: 0,
-          avgScore: 0,
-          avgShotsAgainst: 0,
+          ...perGameFields,
         },
       });
       count++;

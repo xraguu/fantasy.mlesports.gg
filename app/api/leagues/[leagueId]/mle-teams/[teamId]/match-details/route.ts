@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { parse } from "csv-parse/sync";
 import { prisma } from "@/lib/prisma";
 import { SPROCKET_BASE_URL, fetchCsvText } from "@/lib/sprocketStats";
+import { parseSprocketSeasonNumber } from "@/lib/sprocketSeason";
+import { getWeekMatchRange } from "@/lib/weekMatchRange";
 
 interface RoundRow {
   match_id: string;
@@ -101,13 +103,11 @@ export async function GET(
       );
     }
 
-    const start = new Date(weekConfig.startDate);
-    const end = new Date(weekConfig.endDate);
-    end.setHours(23, 59, 59, 999);
+    const { start, end } = getWeekMatchRange(weekDates, week)!;
 
     const match = await prisma.match.findFirst({
       where: {
-        scheduledDate: { gte: start, lte: end },
+        scheduledDate: { gte: start, lt: end },
         OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
       },
       include: { homeTeam: true, awayTeam: true },
@@ -120,9 +120,21 @@ export async function GET(
       });
     }
 
+    // Sprocket's files are named by MLE's own season number (e.g. "s19"),
+    // not FantasyLeague/SeasonSettings.season (a fantasy-league label,
+    // currently "2026") — using the latter here previously produced a URL
+    // that doesn't exist on Sprocket's CDN, failing every match lookup.
+    const sprocketSeason = parseSprocketSeasonNumber(settings.draftStatsSeason);
+    if (sprocketSeason === null) {
+      return NextResponse.json(
+        { error: "Current Season isn't configured in Admin Settings — set it before match details can load" },
+        { status: 404 }
+      );
+    }
+
     const [roundsCsv, playerStatsCsv] = await Promise.all([
-      fetchCsvText(`${SPROCKET_BASE_URL}/rounds_s${settings.season}.csv`),
-      fetchCsvText(`${SPROCKET_BASE_URL}/player_stats_s${settings.season}.csv`),
+      fetchCsvText(`${SPROCKET_BASE_URL}/rounds_s${sprocketSeason}.csv`),
+      fetchCsvText(`${SPROCKET_BASE_URL}/player_stats_s${sprocketSeason}.csv`),
     ]);
 
     const allRounds = parse(roundsCsv, {

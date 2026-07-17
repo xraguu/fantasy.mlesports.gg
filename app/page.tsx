@@ -6,6 +6,7 @@ import { useSession, signOut } from "next-auth/react";
 import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import InfoGuideModal from "@/components/InfoGuideModal";
+import ManagerOverviewModal from "@/components/ManagerOverviewModal";
 
 // Mock leagues data removed - now fetched from /api/leagues based on user session
 
@@ -87,6 +88,7 @@ export default function HomePage() {
   const [selectedTeam, setSelectedTeam] = useState<any | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [selectedManagerOverview, setSelectedManagerOverview] = useState<{ leagueId: string; fantasyTeamId: string } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -101,6 +103,10 @@ export default function HomePage() {
   const [globalLeaderboard, setGlobalLeaderboard] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
   const [gameMode, setGameMode] = useState<"2s" | "3s" | "all">("all");
+  const [managerStatsTab, setManagerStatsTab] = useState<"global" | "league">("global");
+  const [standingsLeagueId, setStandingsLeagueId] = useState<string | null>(null);
+  const [leagueStandings, setLeagueStandings] = useState<any[]>([]);
+  const [loadingLeagueStandings, setLoadingLeagueStandings] = useState(false);
 
   // Fetch top teams from API (real 2s/3s/combined season leaderboards)
   useEffect(() => {
@@ -151,6 +157,39 @@ export default function HomePage() {
 
     fetchLeaderboard();
   }, []);
+
+  // Default the per-league standings selector to the user's first league once loaded
+  useEffect(() => {
+    if (!standingsLeagueId && userLeagues.length > 0) {
+      setStandingsLeagueId(userLeagues[0].id);
+    }
+  }, [userLeagues, standingsLeagueId]);
+
+  // Fetch standings for the selected league when the "League Standings" tab is active
+  useEffect(() => {
+    const fetchLeagueStandings = async () => {
+      if (managerStatsTab !== "league" || !standingsLeagueId) return;
+
+      try {
+        setLoadingLeagueStandings(true);
+        const response = await fetch(`/api/leagues/${standingsLeagueId}/standings`);
+        if (response.ok) {
+          const data = await response.json();
+          setLeagueStandings(data.standings || []);
+        } else {
+          console.warn("Failed to fetch league standings");
+          setLeagueStandings([]);
+        }
+      } catch (error) {
+        console.error("Error fetching league standings:", error);
+        setLeagueStandings([]);
+      } finally {
+        setLoadingLeagueStandings(false);
+      }
+    };
+
+    fetchLeagueStandings();
+  }, [managerStatsTab, standingsLeagueId]);
 
   // Check if user is admin
   useEffect(() => {
@@ -298,6 +337,15 @@ export default function HomePage() {
 
       {/* Info Guide Modal */}
       <InfoGuideModal open={showInfoModal} onClose={() => setShowInfoModal(false)} />
+
+      {/* Manager Overview Modal - opened from either leaderboard */}
+      {selectedManagerOverview && (
+        <ManagerOverviewModal
+          leagueId={selectedManagerOverview.leagueId}
+          fantasyTeamId={selectedManagerOverview.fantasyTeamId}
+          onClose={() => setSelectedManagerOverview(null)}
+        />
+      )}
 
       <main>
         {/* Header Section */}
@@ -554,15 +602,61 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Global Leaderboard Section */}
+        {/* Global Leaderboard / Per-League Standings Section */}
         <section className="card">
-          <div className="card-header">
-            <h2 className="card-title">Manager Stats</h2>
-            <span className="card-subtitle">
-              Top 10 performers across all leagues
-            </span>
+          <div
+            className="card-header"
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}
+          >
+            <div>
+              <h2 className="card-title">Manager Stats</h2>
+              <span className="card-subtitle">
+                {managerStatsTab === "global"
+                  ? "Top 10 performers across all leagues"
+                  : "Full standings for the selected league"}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  onClick={() => setManagerStatsTab("global")}
+                  className={managerStatsTab === "global" ? "btn btn-primary" : "btn btn-ghost"}
+                  style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem" }}
+                >
+                  Global
+                </button>
+                <button
+                  onClick={() => setManagerStatsTab("league")}
+                  className={managerStatsTab === "league" ? "btn btn-primary" : "btn btn-ghost"}
+                  style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem" }}
+                >
+                  By League
+                </button>
+              </div>
+              {managerStatsTab === "league" && userLeagues.length > 0 && (
+                <select
+                  value={standingsLeagueId ?? ""}
+                  onChange={(e) => setStandingsLeagueId(e.target.value)}
+                  style={{
+                    padding: "0.5rem 0.75rem",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "6px",
+                    color: "var(--text-main)",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  {userLeagues.map((league) => (
+                    <option key={league.id} value={league.id}>
+                      {league.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
+          {managerStatsTab === "global" ? (
           <div style={{ marginTop: "1rem", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
@@ -688,6 +782,9 @@ export default function HomePage() {
                   globalLeaderboard.map((player) => (
                   <tr
                     key={player.rank}
+                    onClick={() =>
+                      setSelectedManagerOverview({ leagueId: player.leagueId, fantasyTeamId: player.fantasyTeamId })
+                    }
                     style={{
                       borderBottom: "1px solid rgba(255,255,255,0.05)",
                       backgroundColor: player.isYou
@@ -696,6 +793,17 @@ export default function HomePage() {
                       borderLeft: player.isYou
                         ? "3px solid var(--accent)"
                         : "3px solid transparent",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = player.isYou
+                        ? "rgba(242, 182, 50, 0.14)"
+                        : "rgba(255,255,255,0.04)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = player.isYou
+                        ? "rgba(242, 182, 50, 0.08)"
+                        : "transparent";
                     }}
                   >
                     <td
@@ -784,6 +892,129 @@ export default function HomePage() {
               </tbody>
             </table>
           </div>
+          ) : (
+          <div style={{ marginTop: "1rem", overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Rank
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Manager
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Team
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    W-L
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Win %
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Streak
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Total Pts
+                  </th>
+                  <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                    Avg
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {!standingsLeagueId ? (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                      Join a league to see its standings here.
+                    </td>
+                  </tr>
+                ) : loadingLeagueStandings ? (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                      Loading standings...
+                    </td>
+                  </tr>
+                ) : leagueStandings.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                      No standings available yet
+                    </td>
+                  </tr>
+                ) : (
+                  leagueStandings.map((team) => {
+                    const totalGames = team.wins + team.losses;
+                    const winRate = totalGames > 0 ? (team.wins / totalGames) * 100 : 0;
+                    return (
+                      <tr
+                        key={team.fantasyTeamId}
+                        onClick={() =>
+                          standingsLeagueId &&
+                          setSelectedManagerOverview({ leagueId: standingsLeagueId, fantasyTeamId: team.fantasyTeamId })
+                        }
+                        style={{
+                          borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          backgroundColor: team.isYou ? "rgba(242, 182, 50, 0.08)" : "transparent",
+                          borderLeft: team.isYou ? "3px solid var(--accent)" : "3px solid transparent",
+                          cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = team.isYou
+                            ? "rgba(242, 182, 50, 0.14)"
+                            : "rgba(255,255,255,0.04)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = team.isYou
+                            ? "rgba(242, 182, 50, 0.08)"
+                            : "transparent";
+                        }}
+                      >
+                        <td style={{ padding: "0.75rem 0.5rem", fontWeight: 700, fontSize: "1rem", color: team.rank <= 3 ? "var(--accent)" : "inherit" }}>
+                          {team.rank}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>
+                          {team.manager}
+                          {team.isYou && (
+                            <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--accent)" }}>
+                              (You)
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                          {team.team}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 500 }}>
+                          <span style={{ color: "#22c55e" }}>{team.wins}</span>-
+                          <span style={{ color: "#ef4444" }}>{team.losses}</span>
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 600 }}>
+                          {winRate.toFixed(0)}%
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 0.5rem",
+                            textAlign: "center",
+                            fontWeight: 600,
+                            color: team.streak?.startsWith("W") ? "#22c55e" : team.streak?.startsWith("L") ? "#ef4444" : "var(--text-muted)",
+                          }}
+                        >
+                          {team.streak}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 700, color: "var(--accent)" }}>
+                          {team.points.toFixed(1)}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--text-muted)" }}>
+                          {team.avgPoints.toFixed(1)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          )}
         </section>
 
         {/* Team Stats Section */}

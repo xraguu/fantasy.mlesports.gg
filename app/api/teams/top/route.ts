@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getTeamSeasonStats, GamemodeLens } from "@/lib/teamSeasonStats";
+import { getTeamSeasonStats, GamemodeLens, compareByFpts } from "@/lib/teamSeasonStats";
 
 /**
  * GET /api/teams/top
@@ -41,7 +41,7 @@ export async function GET() {
       const stats = await getTeamSeasonStats({ teamIds, throughWeek, lens });
       return [...stats.values()]
         .filter((s) => s.weeksPlayed > 0)
-        .sort((a, b) => b.fpts - a.fpts)
+        .sort(compareByFpts)
         .slice(0, 10)
         .map((s, index) => {
           const team = teamById.get(s.teamId)!;

@@ -25,6 +25,7 @@ export interface TeamSeasonStatsRow {
   avg: number; // fpts / weeksPlayed
   score: number; // throughWeek's own fpts
   last: number; // (throughWeek - 1)'s fpts
+  bestWeek: number; // highest single-week fpts, weeks 1..throughWeek
   weeksPlayed: number;
 }
 
@@ -164,11 +165,36 @@ export async function getTeamSeasonStats(input: {
       avg: weeksPlayed > 0 ? Math.round((fptsTotal / weeksPlayed) * 10) / 10 : 0,
       score: Math.round((fptsByWeek.get(throughWeek) ?? 0) * 10) / 10,
       last: Math.round((fptsByWeek.get(throughWeek - 1) ?? 0) * 10) / 10,
+      bestWeek: fptsByWeek.size > 0 ? Math.round(Math.max(...fptsByWeek.values()) * 10) / 10 : 0,
       weeksPlayed,
     });
   }
 
   return result;
+}
+
+/**
+ * Fantasy-rank ordering: total fpts first. Average is deliberately not a
+ * tiebreaker — two teams tied on total fpts have almost always played the
+ * same number of weeks, so their averages tie too and settle nothing. Ties
+ * instead go to the higher single-week best score, then total goals — the
+ * one comparator every "fantasy rank" in the app should use, so ranking
+ * can't drift or silently lose its tiebreak in a duplicated sort.
+ */
+export function compareByFpts(a: TeamSeasonStatsRow, b: TeamSeasonStatsRow): number {
+  return b.fpts - a.fpts || b.bestWeek - a.bestWeek || b.goals - a.goals;
+}
+
+/** Ranks teams by `compareByFpts`, returning a teamId -> rank (1-indexed) map. */
+export function rankTeamsByFpts(
+  stats: Map<string, TeamSeasonStatsRow> | TeamSeasonStatsRow[]
+): Map<string, number> {
+  const entries = Array.isArray(stats) ? stats.map((s) => [s.teamId, s] as const) : [...stats.entries()];
+  const sorted = entries.sort((a, b) => compareByFpts(a[1], b[1]));
+
+  const ranking = new Map<string, number>();
+  sorted.forEach(([teamId], index) => ranking.set(teamId, index + 1));
+  return ranking;
 }
 
 /**
@@ -182,11 +208,7 @@ export async function getLeagueWideRanking(
   allMleTeamIds: string[]
 ): Promise<Map<string, number>> {
   const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek, lens });
-  const sorted = [...stats.entries()].sort((a, b) => b[1].fpts - a[1].fpts);
-
-  const ranking = new Map<string, number>();
-  sorted.forEach(([teamId], index) => ranking.set(teamId, index + 1));
-  return ranking;
+  return rankTeamsByFpts(stats);
 }
 
 export interface WithinLeagueStanding {

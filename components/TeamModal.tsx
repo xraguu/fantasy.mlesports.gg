@@ -53,7 +53,19 @@ interface TeamModalProps {
 interface TeamStaff {
   franchiseManager: { id: string; name: string } | null;
   generalManager: { id: string; name: string } | null;
-  captain: { id: string; name: string } | null;
+  assistantGeneralManagers: { id: string; name: string }[];
+  captains: { id: string; name: string }[];
+}
+
+interface TeamOverview {
+  week: number;
+  record2s: string;
+  record3s: string;
+  mleStanding2s: { rank: number; totalTeams: number } | null;
+  mleStanding3s: { rank: number; totalTeams: number } | null;
+  fantasyRank2s: number | null;
+  fantasyRank3s: number | null;
+  fantasyRankTotalTeams: number;
 }
 
 export default function TeamModal({
@@ -69,9 +81,12 @@ export default function TeamModal({
   const [staff, setStaff] = useState<TeamStaff>({
     franchiseManager: null,
     generalManager: null,
-    captain: null,
+    assistantGeneralManagers: [],
+    captains: [],
   });
   const [loadingStaff, setLoadingStaff] = useState(true);
+  const [overview, setOverview] = useState<TeamOverview | null>(null);
+  const [loadingOverview, setLoadingOverview] = useState(true);
   const [weeklyStats, setWeeklyStats] = useState<
     Array<{
       week: number;
@@ -150,14 +165,16 @@ export default function TeamModal({
         setStaff(data.staff || {
           franchiseManager: null,
           generalManager: null,
-          captain: null,
+          assistantGeneralManagers: [],
+          captains: [],
         });
       } catch (error) {
         console.error("Error fetching staff:", error);
         setStaff({
           franchiseManager: null,
           generalManager: null,
-          captain: null,
+          assistantGeneralManagers: [],
+          captains: [],
         });
       } finally {
         setLoadingStaff(false);
@@ -165,6 +182,34 @@ export default function TeamModal({
     };
 
     fetchStaff();
+  }, [team?.id]);
+
+  // Fetch the real, always-consistent 2s/3s records + MLE standing + fantasy
+  // rank when the team changes — independent of whatever record/rank the
+  // opening page happened to pass in for whichever mode it was sorted by.
+  useEffect(() => {
+    const fetchOverview = async () => {
+      if (!team) return;
+
+      try {
+        setLoadingOverview(true);
+        const response = await fetch(`/api/mle-teams/${team.id}/overview`);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch team overview");
+        }
+
+        const data = await response.json();
+        setOverview(data);
+      } catch (error) {
+        console.error("Error fetching team overview:", error);
+        setOverview(null);
+      } finally {
+        setLoadingOverview(false);
+      }
+    };
+
+    fetchOverview();
   }, [team?.id]);
 
   // Fetch weekly breakdown when team changes
@@ -403,26 +448,76 @@ export default function TeamModal({
             >
               {team.leagueId} {team.name}
             </h2>
-            {!isDraftContext && team.record && (
-              <div
-                style={{
-                  fontSize: "1rem",
-                  color: "rgba(255,255,255,0.9)",
-                  marginBottom: "0.75rem",
-                }}
-              >
-                {team.record} · {team.rank}
-                {team.rank === 1
-                  ? "st"
-                  : team.rank === 2
-                  ? "nd"
-                  : team.rank === 3
-                  ? "rd"
-                  : "th"}
+            {!isDraftContext && (
+              <div style={{ display: "flex", gap: "1.75rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                {loadingOverview ? (
+                  <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>
+                    Loading standings...
+                  </div>
+                ) : overview ? (
+                  <>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.25rem" }}>
+                        2s Record
+                      </div>
+                      <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 600 }}>
+                        {overview.record2s}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.25rem" }}>
+                        3s Record
+                      </div>
+                      <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 600 }}>
+                        {overview.record3s}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.25rem" }}>
+                        2s MLE Standing
+                      </div>
+                      <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 600 }}>
+                        {overview.mleStanding2s
+                          ? `#${overview.mleStanding2s.rank} of ${overview.mleStanding2s.totalTeams}`
+                          : "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.25rem" }}>
+                        3s MLE Standing
+                      </div>
+                      <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 600 }}>
+                        {overview.mleStanding3s
+                          ? `#${overview.mleStanding3s.rank} of ${overview.mleStanding3s.totalTeams}`
+                          : "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.25rem" }}>
+                        2s Fantasy Rank
+                      </div>
+                      <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 600 }}>
+                        {overview.fantasyRank2s
+                          ? `#${overview.fantasyRank2s} of ${overview.fantasyRankTotalTeams}`
+                          : "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)", marginBottom: "0.25rem" }}>
+                        3s Fantasy Rank
+                      </div>
+                      <div style={{ fontSize: "0.95rem", color: "#ffffff", fontWeight: 600 }}>
+                        {overview.fantasyRank3s
+                          ? `#${overview.fantasyRank3s} of ${overview.fantasyRankTotalTeams}`
+                          : "—"}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             )}
             {/* Staff Information - Always show if available */}
-            {!loadingStaff && (staff.franchiseManager || staff.generalManager || staff.captain) && (
+            {!loadingStaff && (staff.franchiseManager || staff.generalManager || staff.assistantGeneralManagers.length > 0 || staff.captains.length > 0) && (
               <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
                 {staff.franchiseManager && (
                   <div>
@@ -468,7 +563,7 @@ export default function TeamModal({
                     </div>
                   </div>
                 )}
-                {staff.captain && (
+                {staff.assistantGeneralManagers.length > 0 && (
                   <div>
                     <div
                       style={{
@@ -477,16 +572,38 @@ export default function TeamModal({
                         marginBottom: "0.25rem",
                       }}
                     >
-                      Team Captain
+                      {staff.assistantGeneralManagers.length > 1 ? "Assistant General Managers" : "Assistant General Manager"}
                     </div>
                     <div
                       style={{
-                      fontSize: "0.95rem",
+                        fontSize: "0.95rem",
                         color: "#ffffff",
                         fontWeight: 600,
                       }}
                     >
-                      {staff.captain.name}
+                      {staff.assistantGeneralManagers.map((agm) => agm.name).join(", ")}
+                    </div>
+                  </div>
+                )}
+                {staff.captains.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "0.75rem",
+                        color: "rgba(255,255,255,0.7)",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      {staff.captains.length > 1 ? "Team Captains" : "Team Captain"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.95rem",
+                        color: "#ffffff",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {staff.captains.map((c) => c.name).join(", ")}
                     </div>
                   </div>
                 )}
