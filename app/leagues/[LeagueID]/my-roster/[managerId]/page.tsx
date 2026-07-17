@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import { useAlert } from "@/components/AlertProvider";
@@ -62,14 +62,17 @@ interface RosterSlot {
   fprk: { "2s": number | null; "3s": number | null };
 }
 
-// Color tier for a standings position — mirrors lib/teamSeasonStats.ts's
-// getStandingsColor (duplicated here since that file imports Prisma and
-// can't be used from a client component).
-function getStandingsColor(rank: number, totalTeams: number): string {
+// Color tier for how tough an opponent is, from the viewer's perspective —
+// inverted from a normal standings color (lib/teamSeasonStats.ts's
+// getStandingsColor, duplicated here since that file imports Prisma and
+// can't be used from a client component): a well-ranked, dangerous opponent
+// reads as bad news (red), a poorly-ranked, easy one reads as good news
+// (green).
+function getOpponentStandingsColor(rank: number, totalTeams: number): string {
   const percentile = rank / totalTeams;
-  if (percentile <= 1 / 3) return "#22c55e";
+  if (percentile <= 1 / 3) return "#ef4444";
   if (percentile <= 2 / 3) return "#9ca3af";
-  return "#ef4444";
+  return "#22c55e";
 }
 
 function ordinal(n: number): string {
@@ -143,8 +146,19 @@ export default function MyRosterPage() {
   const showAlert = useAlert();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const leagueId = params.LeagueID as string;
   const teamId = params.managerId as string;
+
+  // Landed here right after the draft finished (see the draft room's
+  // completion redirect) — show the pop-up here instead of on the draft
+  // page itself, so it isn't cut off by the navigation. Strips the query
+  // param immediately so a refresh/back-nav doesn't re-show it.
+  useEffect(() => {
+    if (searchParams.get("draftComplete") !== "1") return;
+    showAlert("The draft is complete! Here's your roster.", "success");
+    router.replace(`/leagues/${leagueId}/my-roster/${teamId}`);
+  }, [searchParams, showAlert, router, leagueId, teamId]);
 
   const [rosterData, setRosterData] = useState<RosterData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -319,6 +333,12 @@ export default function MyRosterPage() {
   // they don't count against this).
   const filledSlots = fullRoster.filter((s) => s.mleTeam);
   const isWholeLineupLocked = filledSlots.length > 0 && filledSlots.every((s) => s.isLocked);
+
+  // A week that's already behind the league's real current week is settled
+  // history — its roster stays locked (frozen, can't be edited) but the
+  // urgent red/🔒 "locked" styling is reserved for the active week, so a
+  // manager isn't shown alarm-red rows for a matchup that's long over.
+  const isPastWeek = !!rosterData && currentWeek < rosterData.league.currentWeek;
 
   // Re-sync editable roster whenever fresh roster data loads (e.g. switching
   // weeks) — previously only re-synced when the slot COUNT changed, so
@@ -1113,16 +1133,19 @@ export default function MyRosterPage() {
                 className={moveMode ? "btn btn-primary" : "btn btn-ghost"}
                 style={{
                   fontSize: "0.9rem",
-                  border: isWholeLineupLocked
-                    ? "2px solid #ef4444"
-                    : "2px solid var(--accent)",
-                  background: isWholeLineupLocked ? "rgba(239, 68, 68, 0.15)" : undefined,
-                  color: isWholeLineupLocked ? "#ef4444" : undefined,
-                  boxShadow: isWholeLineupLocked
-                    ? "none"
-                    : moveMode
-                    ? "0 0 12px rgba(242, 182, 50, 0.4)"
-                    : "0 0 8px rgba(242, 182, 50, 0.3)",
+                  border:
+                    isWholeLineupLocked && !isPastWeek
+                      ? "2px solid #ef4444"
+                      : "2px solid var(--accent)",
+                  background:
+                    isWholeLineupLocked && !isPastWeek ? "rgba(239, 68, 68, 0.15)" : undefined,
+                  color: isWholeLineupLocked && !isPastWeek ? "#ef4444" : undefined,
+                  boxShadow:
+                    isWholeLineupLocked
+                      ? "none"
+                      : moveMode
+                      ? "0 0 12px rgba(242, 182, 50, 0.4)"
+                      : "0 0 8px rgba(242, 182, 50, 0.3)",
                   opacity: isSaving ? 0.6 : 1,
                   cursor: isSaving || isWholeLineupLocked ? "not-allowed" : "pointer",
                 }}
@@ -1130,7 +1153,9 @@ export default function MyRosterPage() {
                 {isSaving
                   ? "Saving..."
                   : isWholeLineupLocked
-                  ? "🔒 Lineup Locked"
+                  ? isPastWeek
+                    ? "Week Complete"
+                    : "🔒 Lineup Locked"
                   : moveMode
                   ? "✓ Done Editing"
                   : "Edit Lineup"}
@@ -1279,7 +1304,7 @@ export default function MyRosterPage() {
                         backgroundColor:
                           selectedTeamIndex === index
                             ? "rgba(242, 182, 50, 0.2)"
-                            : !isEmpty && slot.isLocked
+                            : !isEmpty && slot.isLocked && !isPastWeek
                             ? "rgba(239, 68, 68, 0.08)"
                             : isBench
                             ? "rgba(255,255,255,0.02)"
@@ -1295,7 +1320,7 @@ export default function MyRosterPage() {
                         borderLeft:
                           selectedTeamIndex === index
                             ? "3px solid var(--accent)"
-                            : !isEmpty && slot.isLocked
+                            : !isEmpty && slot.isLocked && !isPastWeek
                             ? "3px solid rgba(239, 68, 68, 0.4)"
                             : "3px solid transparent",
                       }}
@@ -1313,7 +1338,7 @@ export default function MyRosterPage() {
                       onMouseLeave={(e) => {
                         if (moveMode && selectedTeamIndex !== index) {
                           e.currentTarget.style.backgroundColor =
-                            !isEmpty && slot.isLocked
+                            !isEmpty && slot.isLocked && !isPastWeek
                               ? "rgba(239, 68, 68, 0.08)"
                               : isBench
                               ? "rgba(255,255,255,0.02)"
@@ -1391,7 +1416,7 @@ export default function MyRosterPage() {
                       >
                         <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
                           {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position}
-                          {!isEmpty && slot.isLocked && (
+                          {!isEmpty && slot.isLocked && !isPastWeek && (
                             <span title="Locked — cannot be edited" style={{ fontSize: "0.8rem" }}>
                               🔒
                             </span>
@@ -1520,7 +1545,7 @@ export default function MyRosterPage() {
                                 {" "}
                                 <span
                                   style={{
-                                    color: getStandingsColor(
+                                    color: getOpponentStandingsColor(
                                       slot.opponent.standing[currentMode]!.rank,
                                       slot.opponent.standing[currentMode]!.totalTeams
                                     ),

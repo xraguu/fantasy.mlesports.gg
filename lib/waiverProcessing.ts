@@ -1,8 +1,8 @@
 import { prisma } from "./prisma";
-import { generateRosterSlotId } from "./id-generator";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "./rosterLocks";
 import { markTeamDroppedForWaivers, clearWaiverPeriod, releaseWaiverPeriodsForLeague } from "./waiverPeriods";
 import { moveTeamToBackOfWaiverLine } from "./waiverPriority";
+import { assignTeamToRosterSlot } from "./rosterSlotAssignment";
 
 export interface ProcessWaiversResult {
   processed: number;
@@ -32,7 +32,7 @@ async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: stri
     include: {
       fantasyTeam: {
         include: {
-          league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true } },
+          league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true, rosterConfig: true } },
         },
       },
     },
@@ -92,44 +92,13 @@ async function executeClaim(claim: ClaimWithTeam): Promise<void> {
   const week = claim.fantasyTeam.league.currentWeek;
 
   await prisma.$transaction(async (tx) => {
-    if (claim.dropTeamId) {
-      const slotToDrop = await tx.rosterSlot.findFirst({
-        where: { fantasyTeamId: claim.fantasyTeamId, mleTeamId: claim.dropTeamId, week },
-      });
-      if (slotToDrop) {
-        await tx.rosterSlot.delete({ where: { id: slotToDrop.id } });
-      }
-    }
-
-    let targetSlot = await tx.rosterSlot.findFirst({
-      where: { fantasyTeamId: claim.fantasyTeamId, week, mleTeamId: claim.dropTeamId || undefined },
+    await assignTeamToRosterSlot(tx, {
+      fantasyTeamId: claim.fantasyTeamId,
+      week,
+      mleTeamId: claim.addTeamId,
+      dropTeamId: claim.dropTeamId,
+      rosterConfig: claim.fantasyTeam.league.rosterConfig,
     });
-
-    if (!targetSlot) {
-      const existingSlots = await tx.rosterSlot.findMany({
-        where: { fantasyTeamId: claim.fantasyTeamId, week },
-      });
-      const position = "be";
-      const slotIndex = existingSlots.filter((s) => s.position === position).length;
-      const rosterSlotId = generateRosterSlotId(claim.fantasyTeamId, week, position, slotIndex);
-
-      await tx.rosterSlot.create({
-        data: {
-          id: rosterSlotId,
-          fantasyTeamId: claim.fantasyTeamId,
-          mleTeamId: claim.addTeamId,
-          week,
-          position,
-          slotIndex,
-          isLocked: false,
-        },
-      });
-    } else {
-      await tx.rosterSlot.update({
-        where: { id: targetSlot.id },
-        data: { mleTeamId: claim.addTeamId },
-      });
-    }
 
     await tx.waiverClaim.update({
       where: { id: claim.id },

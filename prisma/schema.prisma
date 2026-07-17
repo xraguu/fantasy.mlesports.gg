@@ -191,14 +191,21 @@ model TeamHistoricalStats {
   gamemode       String
   gamesPlayed    Int
   goals          Int
+  goalsAgainst   Int     @default(0)
   shots          Int
+  shotsAgainst   Int     @default(0)
   saves          Int
   assists        Int
   demosInflicted Int
   demosTaken     Int
   sprocketRating Float
-  wins           Int     @default(0)
-  losses         Int     @default(0)
+  // Series record: one win/loss per matches.csv row (a best-of-5-ish series).
+  seriesWins     Int     @default(0)
+  seriesLosses   Int     @default(0)
+  // Game record: the individual game wins/losses within those series (a
+  // series won 3-2 contributes 3 game wins and 2 game losses).
+  gameWins       Int     @default(0)
+  gameLosses     Int     @default(0)
   team           MLETeam @relation(fields: [teamId], references: [id])
 
   @@unique([teamId, season, gamemode])

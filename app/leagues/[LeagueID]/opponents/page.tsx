@@ -51,14 +51,17 @@ interface OpponentRoster {
   opponentFantasyRank: number;
 }
 
-// Color tier for a standings position — mirrors lib/teamSeasonStats.ts's
-// getStandingsColor (duplicated here since that file imports Prisma and
-// can't be used from a client component).
-function getStandingsColor(rank: number, totalTeams: number): string {
+// Color tier for how tough an opponent is, from the viewer's perspective —
+// inverted from a normal standings color (lib/teamSeasonStats.ts's
+// getStandingsColor, duplicated here since that file imports Prisma and
+// can't be used from a client component): a well-ranked, dangerous opponent
+// reads as bad news (red), a poorly-ranked, easy one reads as good news
+// (green).
+function getOpponentStandingsColor(rank: number, totalTeams: number): string {
   const percentile = rank / totalTeams;
-  if (percentile <= 1 / 3) return "#22c55e";
+  if (percentile <= 1 / 3) return "#ef4444";
   if (percentile <= 2 / 3) return "#9ca3af";
-  return "#ef4444";
+  return "#22c55e";
 }
 
 function ordinal(n: number): string {
@@ -700,7 +703,7 @@ export default function OpponentsPage() {
                                 {" "}
                                 <span
                                   style={{
-                                    color: getStandingsColor(team.opponentStanding.rank, team.opponentStanding.totalTeams),
+                                    color: getOpponentStandingsColor(team.opponentStanding.rank, team.opponentStanding.totalTeams),
                                     fontWeight: 600,
                                   }}
                                 >

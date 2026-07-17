@@ -175,6 +175,42 @@ export default function TransactionsPage() {
     }
   };
 
+  // Executes a trade right away instead of waiting out the rest of its
+  // 12-hour veto window — for when an admin is confident it won't be vetoed.
+  const processTradeNow = async (id: string) => {
+    if (!confirm("Process this trade now instead of waiting out the rest of the veto window?")) {
+      return;
+    }
+    try {
+      const response = await fetch("/api/admin/trades/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tradeId: id,
+          action: "process",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        showAlert(data.error || "Failed to process trade", "error");
+      } else {
+        showAlert("Trade processed!", "success");
+      }
+    } catch (error: any) {
+      console.error("Error processing trade:", error);
+      showAlert("Failed to process trade. Please try again.", "error");
+    } finally {
+      const dataResponse = await fetch("/api/admin/transactions");
+      const refreshed = await dataResponse.json();
+      setPendingTrades(refreshed.pendingTrades || []);
+      setTransactionHistory(refreshed.transactionHistory || []);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -825,18 +861,33 @@ export default function TransactionsPage() {
                       </div>
                     </div>
                     {trade.status === "awaiting_veto" && (
-                      <button
-                        className="btn btn-ghost"
-                        style={{
-                          padding: "0.5rem 1.25rem",
-                          fontSize: "0.9rem",
-                          background:
-                            "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
-                        }}
-                        onClick={() => vetoTrade(trade.id)}
-                      >
-                        Veto
-                      </button>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button
+                          className="btn btn-ghost"
+                          style={{
+                            padding: "0.5rem 1.25rem",
+                            fontSize: "0.9rem",
+                            background:
+                              "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+                          }}
+                          onClick={() => processTradeNow(trade.id)}
+                          title="Execute this trade now instead of waiting out the rest of the veto window"
+                        >
+                          Process Now
+                        </button>
+                        <button
+                          className="btn btn-ghost"
+                          style={{
+                            padding: "0.5rem 1.25rem",
+                            fontSize: "0.9rem",
+                            background:
+                              "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                          }}
+                          onClick={() => vetoTrade(trade.id)}
+                        >
+                          Veto
+                        </button>
+                      </div>
                     )}
                   </div>
 

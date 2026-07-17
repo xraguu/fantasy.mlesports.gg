@@ -52,6 +52,22 @@ export async function PATCH(
           { status: 400 }
         );
       }
+
+      const nameTaken = await prisma.fantasyTeam.findFirst({
+        where: {
+          fantasyLeagueId: leagueId,
+          id: { not: teamId },
+          displayName: { equals: trimmed, mode: "insensitive" },
+        },
+      });
+
+      if (nameTaken) {
+        return NextResponse.json(
+          { error: "Team name is already taken in this league" },
+          { status: 400 }
+        );
+      }
+
       updateData.displayName = trimmed;
     }
 

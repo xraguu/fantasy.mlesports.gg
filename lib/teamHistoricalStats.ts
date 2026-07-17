@@ -7,18 +7,23 @@ export interface TeamHistoricalStatsRow {
   teamId: string;
   season: string;
   goals: number;
+  goalsAgainst: number;
   shots: number;
+  shotsAgainst: number;
   saves: number;
   assists: number;
   demosInflicted: number;
   demosTaken: number;
   gamesPlayed: number;
   sprocketRating: number;
-  wins: number;
-  losses: number;
-  record: string; // "W-L", e.g. "7-3"
+  seriesWins: number;
+  seriesLosses: number;
+  seriesRecord: string; // "W-L", e.g. "7-3" — one matches.csv row per series
+  gameWins: number;
+  gameLosses: number;
+  gameRecord: string; // "W-L", e.g. "24-11" — individual games within those series
   fpts: number;
-  avg: number; // fpts per series (wins + losses) — fantasy points are scored per series, not per individual game
+  avg: number; // fpts per series (seriesWins + seriesLosses) — fantasy points are scored per series, not per individual game
 }
 
 /**
@@ -59,20 +64,31 @@ export async function getTeamHistoricalStats(
     const totals = rowsToSum.reduce(
       (acc, r) => ({
         goals: acc.goals + r.goals,
+        goalsAgainst: acc.goalsAgainst + r.goalsAgainst,
         shots: acc.shots + r.shots,
+        shotsAgainst: acc.shotsAgainst + r.shotsAgainst,
         saves: acc.saves + r.saves,
         assists: acc.assists + r.assists,
         demosInflicted: acc.demosInflicted + r.demosInflicted,
         demosTaken: acc.demosTaken + r.demosTaken,
         gamesPlayed: acc.gamesPlayed + r.gamesPlayed,
         sprocketRatingWeighted: acc.sprocketRatingWeighted + r.sprocketRating * r.gamesPlayed,
-        wins: acc.wins + r.wins,
-        losses: acc.losses + r.losses,
+        seriesWins: acc.seriesWins + r.seriesWins,
+        seriesLosses: acc.seriesLosses + r.seriesLosses,
+        gameWins: acc.gameWins + r.gameWins,
+        gameLosses: acc.gameLosses + r.gameLosses,
       }),
-      { goals: 0, shots: 0, saves: 0, assists: 0, demosInflicted: 0, demosTaken: 0, gamesPlayed: 0, sprocketRatingWeighted: 0, wins: 0, losses: 0 }
+      {
+        goals: 0, goalsAgainst: 0, shots: 0, shotsAgainst: 0, saves: 0, assists: 0,
+        demosInflicted: 0, demosTaken: 0, gamesPlayed: 0, sprocketRatingWeighted: 0,
+        seriesWins: 0, seriesLosses: 0, gameWins: 0, gameLosses: 0,
+      }
     );
 
     const sprocketRating = totals.gamesPlayed > 0 ? totals.sprocketRatingWeighted / totals.gamesPlayed : 0;
+    // The gameWin scoring bonus is per individual game (same as the live
+    // weekly pipeline, where TeamWeeklyStats.wins is that week's game
+    // score, not "1 win per series") — feed it game wins, not series wins.
     const fpts = calcFpts(
       {
         goals: totals.goals,
@@ -82,31 +98,36 @@ export async function getTeamHistoricalStats(
         demosInflicted: totals.demosInflicted,
         demosTaken: totals.demosTaken,
         sprocketRating,
-        wins: totals.wins,
+        wins: totals.gameWins,
       },
       activeRules
     );
 
     // Fantasy points are scored per series (best-of-5), not per individual
     // game — a season is ~10 series per mode, not ~50 games — so "average"
-    // divides by series played (wins + losses), not raw games_played.
-    const seriesPlayed = totals.wins + totals.losses;
+    // divides by series played, not raw games_played.
+    const seriesPlayed = totals.seriesWins + totals.seriesLosses;
     const avg = seriesPlayed > 0 ? fpts / seriesPlayed : 0;
 
     result.set(teamId, {
       teamId,
       season,
       goals: totals.goals,
+      goalsAgainst: totals.goalsAgainst,
       shots: totals.shots,
+      shotsAgainst: totals.shotsAgainst,
       saves: totals.saves,
       assists: totals.assists,
       demosInflicted: totals.demosInflicted,
       demosTaken: totals.demosTaken,
       gamesPlayed: totals.gamesPlayed,
       sprocketRating: Math.round(sprocketRating * 100) / 100,
-      wins: totals.wins,
-      losses: totals.losses,
-      record: `${totals.wins}-${totals.losses}`,
+      seriesWins: totals.seriesWins,
+      seriesLosses: totals.seriesLosses,
+      seriesRecord: `${totals.seriesWins}-${totals.seriesLosses}`,
+      gameWins: totals.gameWins,
+      gameLosses: totals.gameLosses,
+      gameRecord: `${totals.gameWins}-${totals.gameLosses}`,
       fpts: Math.round(fpts * 10) / 10,
       avg: Math.round(avg * 10) / 10,
     });
@@ -132,4 +153,18 @@ export async function getAvailableHistoricalSeasons(): Promise<string[]> {
     select: { season: true },
   });
   return rows.map((r) => r.season).sort().reverse();
+}
+
+/**
+ * The season whose stats show as "last season" in the draft room — the
+ * admin's configured SeasonSettings.draftStatsSeason, or the most recent
+ * available (already Playoffs-excluded) season if nothing's configured yet.
+ * Shared by every place that needs this "what season" answer, so it can't
+ * drift between the draft state endpoint and a single team's stats lookup.
+ */
+export async function resolveDraftStatsSeason(): Promise<string | null> {
+  const settings = await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
+  if (settings?.draftStatsSeason) return settings.draftStatsSeason;
+  const seasons = await getAvailableHistoricalSeasons();
+  return seasons[0] ?? null;
 }

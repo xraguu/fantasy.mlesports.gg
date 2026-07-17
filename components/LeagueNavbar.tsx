@@ -14,12 +14,18 @@ export default function LeagueNavbar() {
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
   const [draftStatus, setDraftStatus] = useState<string>("not_started");
   const [currentWeek, setCurrentWeek] = useState(1);
+  const [seasonStarted, setSeasonStarted] = useState(false);
 
-  // Fetch the user's fantasy team ID and league data
+  // Fetch the user's fantasy team ID and league data. Client-side navigation
+  // within this league (e.g. the draft room redirecting to My Roster the
+  // moment a draft finishes) doesn't remount this navbar, so a one-shot
+  // fetch would leave the Draft button showing stale after that transition
+  // — poll while the draft hasn't wrapped up yet, so it self-corrects to
+  // the Week pill within a few seconds instead of needing a full reload.
   useEffect(() => {
-    const fetchMyTeam = async () => {
-      if (!session?.user?.id || !leagueId) return;
+    if (!session?.user?.id || !leagueId) return;
 
+    const fetchMyTeam = async () => {
       try {
         const response = await fetch(`/api/leagues/${leagueId}`);
         if (response.ok) {
@@ -35,6 +41,7 @@ export default function LeagueNavbar() {
           if (data.league) {
             setDraftStatus(data.league.draftStatus || "not_started");
             setCurrentWeek(data.league.currentWeek || 1);
+            setSeasonStarted(!!data.league.seasonStarted);
           }
         }
       } catch (error) {
@@ -43,7 +50,11 @@ export default function LeagueNavbar() {
     };
 
     fetchMyTeam();
-  }, [session?.user?.id, leagueId]);
+
+    if (draftStatus === "completed") return;
+    const interval = setInterval(fetchMyTeam, 10000);
+    return () => clearInterval(interval);
+  }, [session?.user?.id, leagueId, draftStatus]);
 
   const links = [
     {
@@ -74,8 +85,12 @@ export default function LeagueNavbar() {
 
         {/* Right: links */}
         <nav className="nav-links flex items-center gap-4">
-          {/* Draft Button - shown while a draft hasn't wrapped up yet */}
-          {(draftStatus === "not_started" || draftStatus === "in_progress" || draftStatus === "paused") && (
+          {/* Draft Button - stays reachable even after the draft finishes,
+              right up until the season itself actually starts (real
+              calendar week 1) — a completed draft and a started season are
+              different things, and managers may still want to review the
+              draft room in between. */}
+          {(draftStatus !== "completed" || !seasonStarted) && (
             <Link
               href={`/leagues/${leagueId}/draft`}
               style={{
@@ -106,8 +121,8 @@ export default function LeagueNavbar() {
             </Link>
           )}
 
-          {/* Current Week Pill - Only show after the draft has wrapped up */}
-          {draftStatus === "completed" && (
+          {/* Current Week Pill - only show once the season has actually started */}
+          {draftStatus === "completed" && seasonStarted && (
             <span className="card-pill" style={{ fontWeight: 700, fontSize: "0.85rem" }}>
               Week {currentWeek}
             </span>

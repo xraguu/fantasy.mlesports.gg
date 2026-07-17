@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { etDateTime } from "@/lib/timezone";
 import { computeCalendarWeek } from "@/lib/currentWeek";
 import { resetWaiverPriorityToReverseStandings } from "@/lib/waiverPriority";
+import { generateRosterSlotId } from "@/lib/id-generator";
 
 interface WeekDateConfig {
   week: number;
@@ -27,11 +28,26 @@ interface WeekDateConfig {
  * gating, the admin Lock Lineups default) was silently stuck on week 1
  * forever. This is the one place already computing "what week is it" for
  * every active league, so it's the natural place to keep that column live.
+ *
+ * Also carries each manager's roster forward into a new week the moment it
+ * starts (real `RosterSlot` rows copied from `week - 1`, not a live
+ * reference) — the draft only ever creates week-1 rows, and nothing else in
+ * the app created week 2+ rows on its own, so every later week silently
+ * rendered empty. Copying real rows (rather than reading week 1 live for
+ * every later week) is what makes "freeze after a week completes" possible
+ * at all: once week N locks, a manager swapping their week N+1 lineup can
+ * never retroactively change what week N's roster/scoring looked like.
  */
 export async function runAutoLockSweep(leagueId?: string): Promise<void> {
   const leagues = await prisma.fantasyLeague.findMany({
     where: leagueId ? { id: leagueId } : undefined,
-    select: { id: true, season: true, currentWeek: true, waiverSystem: true },
+    select: {
+      id: true,
+      season: true,
+      currentWeek: true,
+      waiverSystem: true,
+      fantasyTeams: { select: { id: true } },
+    },
   });
   if (leagues.length === 0) return;
 
@@ -76,7 +92,57 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
     });
     const fired = new Set(existingEvents.map((e) => `${e.week}:${e.type}`));
 
-    for (const wd of weekDates) {
+    // Ascending order matters here: each week's roster carry-forward copies
+    // from week - 1, so week N must be processed after week N - 1 has
+    // already been carried forward in this same pass.
+    const sortedWeekDates = [...weekDates].sort((a, b) => a.week - b.week);
+
+    for (const wd of sortedWeekDates) {
+      if (
+        wd.week > 1 &&
+        wd.startDate &&
+        !fired.has(`${wd.week}:roster_carry`)
+      ) {
+        const carryTrigger = etDateTime(wd.startDate, 3, 0);
+        if (now >= carryTrigger) {
+          for (const team of league.fantasyTeams) {
+            const alreadyHasSlots = await prisma.rosterSlot.count({
+              where: { fantasyTeamId: team.id, week: wd.week },
+            });
+            if (alreadyHasSlots > 0) continue;
+
+            const prevWeekSlots = await prisma.rosterSlot.findMany({
+              where: { fantasyTeamId: team.id, week: wd.week - 1 },
+            });
+            if (prevWeekSlots.length === 0) continue;
+
+            await prisma.rosterSlot.createMany({
+              data: prevWeekSlots.map((s) => ({
+                id: generateRosterSlotId(team.id, wd.week, s.position, s.slotIndex),
+                fantasyTeamId: team.id,
+                mleTeamId: s.mleTeamId,
+                week: wd.week,
+                position: s.position,
+                slotIndex: s.slotIndex,
+                isLocked: false,
+              })),
+            });
+          }
+
+          await prisma.weekLockEvent.upsert({
+            where: {
+              fantasyLeagueId_week_type: {
+                fantasyLeagueId: league.id,
+                week: wd.week,
+                type: "roster_carry",
+              },
+            },
+            update: {},
+            create: { fantasyLeagueId: league.id, week: wd.week, type: "roster_carry" },
+          });
+        }
+      }
+
       if (wd.startDate && !fired.has(`${wd.week}:lock`)) {
         const lockTrigger = etDateTime(wd.startDate, 3, 0);
         if (now >= lockTrigger) {

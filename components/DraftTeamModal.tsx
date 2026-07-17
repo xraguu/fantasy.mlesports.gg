@@ -28,6 +28,18 @@ interface TeamStaff {
   captain: { id: string; name: string } | null;
 }
 
+interface TeamHistoricalStats {
+  fpts: number;
+  goals: number;
+  goalsAgainst: number;
+  shots: number;
+  assists: number;
+  saves: number;
+  demosInflicted: number;
+  gameRecord: string;
+  seriesRecord: string;
+}
+
 export default function DraftTeamModal({
   team,
   onClose,
@@ -40,10 +52,39 @@ export default function DraftTeamModal({
   const [loadingStaff, setLoadingStaff] = useState(true);
   const [players, setPlayers] = useState<PlayerWithStats[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
+  const [historicalSeason, setHistoricalSeason] = useState<string | null>(null);
+  const [historicalStats, setHistoricalStats] = useState<TeamHistoricalStats | null>(null);
+  const [loadingHistoricalStats, setLoadingHistoricalStats] = useState(true);
   const [selectedPlayer, setSelectedPlayer] = useState<{
     id: string;
     name: string;
   } | null>(null);
+
+  // Fetch this team's last-completed-season stats when the team changes
+  useEffect(() => {
+    const fetchHistoricalStats = async () => {
+      if (!team) return;
+
+      try {
+        setLoadingHistoricalStats(true);
+        const response = await fetch(`/api/mle-teams/${team.id}/historical-stats`);
+        if (!response.ok) {
+          throw new Error("Failed to fetch team historical stats");
+        }
+        const data = await response.json();
+        setHistoricalSeason(data.season);
+        setHistoricalStats(data.stats);
+      } catch (error) {
+        console.error("Error fetching team historical stats:", error);
+        setHistoricalSeason(null);
+        setHistoricalStats(null);
+      } finally {
+        setLoadingHistoricalStats(false);
+      }
+    };
+
+    fetchHistoricalStats();
+  }, [team?.id]);
 
   // Fetch players when team changes
   useEffect(() => {
@@ -289,6 +330,73 @@ export default function DraftTeamModal({
           >
             ×
           </button>
+        </div>
+
+        {/* Last-season stats */}
+        <div style={{ position: "relative", zIndex: 1, marginBottom: "1.5rem" }}>
+          {loadingHistoricalStats ? (
+            <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)" }}>
+              Loading stats...
+            </div>
+          ) : !historicalStats ? (
+            <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)", fontStyle: "italic" }}>
+              No {historicalSeason ?? "last-season"} stats available
+            </div>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontSize: "0.75rem",
+                  color: "rgba(255,255,255,0.6)",
+                  marginBottom: "0.5rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {historicalSeason}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                {[
+                  { label: "Fantasy Pts", value: historicalStats.fpts },
+                  { label: "Goals", value: historicalStats.goals },
+                  { label: "Goals Against", value: historicalStats.goalsAgainst },
+                  { label: "Shots", value: historicalStats.shots },
+                  { label: "Assists", value: historicalStats.assists },
+                  { label: "Saves", value: historicalStats.saves },
+                  { label: "Demos", value: historicalStats.demosInflicted },
+                  { label: "Game Record", value: historicalStats.gameRecord },
+                  { label: "Series Record", value: historicalStats.seriesRecord },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    style={{
+                      background: "rgba(255,255,255,0.1)",
+                      backdropFilter: "blur(4px)",
+                      borderRadius: "8px",
+                      padding: "0.5rem 0.85rem",
+                      minWidth: "90px",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "0.7rem",
+                        color: "rgba(255,255,255,0.7)",
+                        marginBottom: "0.15rem",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.03em",
+                      }}
+                    >
+                      {stat.label}
+                    </div>
+                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#ffffff" }}>
+                      {stat.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Roster - Horizontal Layout */}

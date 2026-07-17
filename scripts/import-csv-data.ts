@@ -523,13 +523,22 @@ async function importHistoricalStats() {
 // just the current season — unlike player_stats_sXX.csv/rounds_sXX.csv,
 // which are re-fetched per season and don't stick around). Cross-referenced
 // with match_groups.csv (match_group_id -> season label, e.g. "Season 18")
-// to build real series win/loss records per team/season/gamemode — one row
-// in matches.csv is one series (best-of-5-ish), decided by home_wins vs
-// away_wins, which is exactly the "series" the draft room's average-per-
-// series stat needs to divide by.
+// to build two real records per team/season/gamemode: the series record (one
+// row in matches.csv = one series, decided by home_wins vs away_wins — this
+// is the "series" the draft room's average-per-series stat divides by) and
+// the game record (the individual game wins/losses within those series —
+// home_wins/away_wins themselves, e.g. a series won 3-2 is 3 game wins and 2
+// game losses, not just 1 series win).
+interface TeamRecord {
+  seriesWins: number;
+  seriesLosses: number;
+  gameWins: number;
+  gameLosses: number;
+}
+
 async function computeSeriesRecords(
   teamLookup: Map<string, string>
-): Promise<Map<string, { wins: number; losses: number }>> {
+): Promise<Map<string, TeamRecord>> {
   const matches = readCSV<MatchRow>("matches.csv");
   const matchGroups = readCSV<MatchGroupRow>("match_groups.csv");
 
@@ -538,10 +547,16 @@ async function computeSeriesRecords(
     seasonByGroup.set(g.match_group_id, g.parent_group_title);
   }
 
-  const records = new Map<string, { wins: number; losses: number }>();
-  const bump = (key: string, field: "wins" | "losses") => {
-    if (!records.has(key)) records.set(key, { wins: 0, losses: 0 });
-    records.get(key)![field]++;
+  const records = new Map<string, TeamRecord>();
+  const bump = (key: string, won: boolean, gamesWon: number, gamesLost: number) => {
+    if (!records.has(key)) {
+      records.set(key, { seriesWins: 0, seriesLosses: 0, gameWins: 0, gameLosses: 0 });
+    }
+    const r = records.get(key)!;
+    if (won) r.seriesWins++;
+    else r.seriesLosses++;
+    r.gameWins += gamesWon;
+    r.gameLosses += gamesLost;
   };
 
   for (const match of matches) {
@@ -558,10 +573,10 @@ async function computeSeriesRecords(
     const awayTeamId = teamLookup.get(`${leagueCode}:${match.away}`);
 
     if (homeTeamId) {
-      bump(`${homeTeamId}:${season}:${gamemode}`, homeWins > awayWins ? "wins" : "losses");
+      bump(`${homeTeamId}:${season}:${gamemode}`, homeWins > awayWins, homeWins, awayWins);
     }
     if (awayTeamId) {
-      bump(`${awayTeamId}:${season}:${gamemode}`, awayWins > homeWins ? "wins" : "losses");
+      bump(`${awayTeamId}:${season}:${gamemode}`, awayWins > homeWins, awayWins, homeWins);
     }
   }
 
@@ -590,13 +605,31 @@ async function importTeamHistoricalStats() {
     gamemode: "2s" | "3s";
     gamesPlayed: number;
     goals: number;
+    goalsAgainst: number;
     shots: number;
+    shotsAgainst: number;
     saves: number;
     assists: number;
     demosInflicted: number;
     demosTaken: number;
     sprocketRatingWeighted: number; // sum(rating * gamesPlayed), divided at the end
   }
+
+  const emptyAgg = (teamId: string, season: string, gamemode: "2s" | "3s"): TeamSeasonAgg => ({
+    teamId,
+    season,
+    gamemode,
+    gamesPlayed: 0,
+    goals: 0,
+    goalsAgainst: 0,
+    shots: 0,
+    shotsAgainst: 0,
+    saves: 0,
+    assists: 0,
+    demosInflicted: 0,
+    demosTaken: 0,
+    sprocketRatingWeighted: 0,
+  });
 
   const seriesRecords = await computeSeriesRecords(teamLookup);
 
@@ -617,25 +650,15 @@ async function importTeamHistoricalStats() {
     const gamesPlayed = parseInt(row.games_played) || 0;
     const key = `${teamId}:${row.season}:${gamemode}`;
     if (!aggMap.has(key)) {
-      aggMap.set(key, {
-        teamId,
-        season: row.season,
-        gamemode,
-        gamesPlayed: 0,
-        goals: 0,
-        shots: 0,
-        saves: 0,
-        assists: 0,
-        demosInflicted: 0,
-        demosTaken: 0,
-        sprocketRatingWeighted: 0,
-      });
+      aggMap.set(key, emptyAgg(teamId, row.season, gamemode));
     }
 
     const agg = aggMap.get(key)!;
     agg.gamesPlayed += gamesPlayed;
     agg.goals += parseInt(row.total_goals) || 0;
+    agg.goalsAgainst += parseInt(row.total_goals_against) || 0;
     agg.shots += parseInt(row.total_shots) || 0;
+    agg.shotsAgainst += parseInt(row.total_shots_against) || 0;
     agg.saves += parseInt(row.total_saves) || 0;
     agg.assists += parseInt(row.total_assists) || 0;
     agg.demosInflicted += parseInt(row.total_demos_inflicted) || 0;
@@ -648,25 +671,27 @@ async function importTeamHistoricalStats() {
   for (const key of seriesRecords.keys()) {
     if (aggMap.has(key)) continue;
     const [teamId, season, gamemode] = key.split(":") as [string, string, "2s" | "3s"];
-    aggMap.set(key, {
-      teamId,
-      season,
-      gamemode,
-      gamesPlayed: 0,
-      goals: 0,
-      shots: 0,
-      saves: 0,
-      assists: 0,
-      demosInflicted: 0,
-      demosTaken: 0,
-      sprocketRatingWeighted: 0,
-    });
+    aggMap.set(key, emptyAgg(teamId, season, gamemode));
   }
 
   let count = 0;
   for (const [key, agg] of aggMap.entries()) {
     const sprocketRating = agg.gamesPlayed > 0 ? agg.sprocketRatingWeighted / agg.gamesPlayed : 0;
-    const { wins, losses } = seriesRecords.get(key) ?? { wins: 0, losses: 0 };
+    const record = seriesRecords.get(key) ?? { seriesWins: 0, seriesLosses: 0, gameWins: 0, gameLosses: 0 };
+
+    const sharedFields = {
+      gamesPlayed: agg.gamesPlayed,
+      goals: agg.goals,
+      goalsAgainst: agg.goalsAgainst,
+      shots: agg.shots,
+      shotsAgainst: agg.shotsAgainst,
+      saves: agg.saves,
+      assists: agg.assists,
+      demosInflicted: agg.demosInflicted,
+      demosTaken: agg.demosTaken,
+      sprocketRating,
+      ...record,
+    };
 
     await prisma.teamHistoricalStats.upsert({
       where: {
@@ -676,32 +701,12 @@ async function importTeamHistoricalStats() {
           gamemode: agg.gamemode,
         },
       },
-      update: {
-        gamesPlayed: agg.gamesPlayed,
-        goals: agg.goals,
-        shots: agg.shots,
-        saves: agg.saves,
-        assists: agg.assists,
-        demosInflicted: agg.demosInflicted,
-        demosTaken: agg.demosTaken,
-        sprocketRating,
-        wins,
-        losses,
-      },
+      update: sharedFields,
       create: {
         teamId: agg.teamId,
         season: agg.season,
         gamemode: agg.gamemode,
-        gamesPlayed: agg.gamesPlayed,
-        goals: agg.goals,
-        shots: agg.shots,
-        saves: agg.saves,
-        assists: agg.assists,
-        demosInflicted: agg.demosInflicted,
-        demosTaken: agg.demosTaken,
-        sprocketRating,
-        wins,
-        losses,
+        ...sharedFields,
       },
     });
     count++;

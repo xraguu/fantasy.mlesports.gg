@@ -2,21 +2,27 @@ import { prisma } from "@/lib/prisma";
 import { executeDraftPick } from "@/lib/draftPick";
 
 /**
- * Enforces the draft pick timer. Runs lazily from GET /api/leagues/[leagueId]/draft
- * (the draft room polls that route every 3s while a draft is in progress) —
- * AND from a frequent in-process interval in instrumentation.ts, since the
- * lazy-only version stalled the whole draft whenever nobody had the draft
- * room open: the deadline would pass with zero requests hitting the API to
- * trigger the sweep, so picks just didn't advance until someone came back.
- * The interval keeps real wall-clock time actually moving the draft forward
- * regardless of who's watching; the page-view sweep keeps it snappy for
- * whoever currently is.
+ * Enforces the draft pick timer and autodraft. Runs lazily from GET
+ * /api/leagues/[leagueId]/draft (the draft room polls that route every 3s
+ * while a draft is in progress) — AND from a frequent in-process interval
+ * in instrumentation.ts (every 10s), since the lazy-only version stalled
+ * the whole draft whenever nobody had the draft room open: the deadline
+ * would pass with zero requests hitting the API to trigger the sweep, so
+ * picks just didn't advance until someone came back. The interval keeps
+ * real wall-clock time actually moving the draft forward regardless of who's
+ * watching; the page-view sweep keeps it snappy for whoever currently is.
  *
- * If the current pick's deadline has passed, autopicks for that team: first
- * available team in their draftQueue (skipping anything already drafted),
- * else a random team from the remaining pool. Flips autodraftEnabled on for
- * that team as a status flag — this never happens early; the timer always
- * runs its full duration regardless of that flag's state.
+ * Two ways a pick gets auto-made:
+ * - The team on the clock already has `autodraftEnabled` — picks
+ *   immediately (next sweep tick, not waiting for the timer) every time it
+ *   becomes their turn.
+ * - Otherwise, only once the pick's deadline has passed — this is the
+ *   fallback for a team that never toggled autodraft on, and flips
+ *   `autodraftEnabled` on for them afterward so they don't get stuck again
+ *   next time it's their turn.
+ * Either way, the pick itself is: first available team in their
+ * draftQueue (skipping anything already drafted), else a random team from
+ * the remaining pool.
  *
  * Pass a specific leagueId to sweep just that league (the page-view case);
  * omit it to sweep every league with a draft currently in progress (the
@@ -39,7 +45,6 @@ export async function runDraftAutopickSweep(leagueId?: string): Promise<void> {
     select: { draftStatus: true, draftPickDeadline: true },
   });
   if (!league || league.draftStatus !== "in_progress") return;
-  if (!league.draftPickDeadline || new Date() < league.draftPickDeadline) return;
 
   const currentPick = await prisma.draftPick.findFirst({
     where: { fantasyLeagueId: leagueId, pickedAt: null },
@@ -49,9 +54,12 @@ export async function runDraftAutopickSweep(leagueId?: string): Promise<void> {
 
   const team = await prisma.fantasyTeam.findUnique({
     where: { id: currentPick.fantasyTeamId },
-    select: { id: true, draftQueue: true },
+    select: { id: true, draftQueue: true, autodraftEnabled: true },
   });
   if (!team) return;
+
+  const deadlinePassed = !!league.draftPickDeadline && new Date() >= league.draftPickDeadline;
+  if (!team.autodraftEnabled && !deadlinePassed) return;
 
   const draftedTeamIds = new Set(
     (
@@ -73,10 +81,12 @@ export async function runDraftAutopickSweep(leagueId?: string): Promise<void> {
     mleTeamId = available[Math.floor(Math.random() * available.length)].id;
   }
 
-  await prisma.fantasyTeam.update({
-    where: { id: team.id },
-    data: { autodraftEnabled: true },
-  });
+  if (!team.autodraftEnabled) {
+    await prisma.fantasyTeam.update({
+      where: { id: team.id },
+      data: { autodraftEnabled: true },
+    });
+  }
 
   await executeDraftPick(leagueId, currentPick.id, mleTeamId);
 }

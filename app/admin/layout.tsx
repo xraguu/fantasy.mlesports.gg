@@ -119,7 +119,7 @@ export default function AdminLayout({
     { label: "Settings", path: "/admin/settings" },
     { label: "Manual Stats", path: "/admin/stats" },
     { label: "League Archive", path: "/admin/leagues/archive" },
-    { label: "Database Tools", path: "/admin/database" },
+    { label: "Database Info", path: "/admin/database" },
   ];
 
   return (

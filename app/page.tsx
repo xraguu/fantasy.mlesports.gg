@@ -457,33 +457,6 @@ export default function HomePage() {
               Sign Out
             </button>
 
-            {/* Info Button */}
-            <button
-              onClick={() => setShowInfoModal(true)}
-              style={{
-                padding: "0.65rem 1.5rem",
-                backgroundColor: "rgba(42, 75, 130, 0.85)",
-                color: "var(--accent)",
-                border: "2px solid rgba(242, 182, 50, 0.5)",
-                borderRadius: "12px",
-                fontWeight: 700,
-                fontSize: "0.95rem",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
-                e.currentTarget.style.borderColor = "var(--accent)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
-                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
-              }}
-            >
-              Info
-            </button>
-
             {/* Help Section */}
             <a
               href="https://discordapp.com/channels/@me/1419789164240699513"
@@ -529,6 +502,39 @@ export default function HomePage() {
             </a>
           </div>
         </div>
+
+        {/* Learn About How To Play - full-width bar */}
+        <button
+          onClick={() => setShowInfoModal(true)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.6rem",
+            padding: "1rem 1.5rem",
+            marginBottom: "1.5rem",
+            backgroundColor: "rgba(42, 75, 130, 0.85)",
+            color: "var(--accent)",
+            border: "2px solid rgba(242, 182, 50, 0.5)",
+            borderRadius: "12px",
+            fontWeight: 700,
+            fontSize: "1.05rem",
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
+            e.currentTarget.style.borderColor = "var(--accent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
+            e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
+          }}
+        >
+          Learn about how to play!
+        </button>
 
         {/* Your Leagues Section - Horizontal Bar */}
         <section className="card" style={{ marginBottom: "1.5rem" }}>

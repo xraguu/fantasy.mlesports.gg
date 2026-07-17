@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { assignTeamToRosterSlot } from "@/lib/rosterSlotAssignment";
 
 export const TRADE_VETO_WINDOW_MS = 12 * 60 * 60 * 1000;
 
@@ -21,7 +22,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
 
     const league = await tx.fantasyLeague.findUnique({
       where: { id: trade.fantasyLeagueId },
-      select: { currentWeek: true },
+      select: { currentWeek: true, rosterConfig: true },
     });
     if (!league) throw new Error("League not found");
     const currentWeek = league.currentWeek;
@@ -74,32 +75,18 @@ export async function executeTrade(tradeId: string): Promise<void> {
       }
     }
 
+    // Remove each side's outgoing teams first, so the incoming teams below
+    // land in the freed-up slots (via assignTeamToRosterSlot's priority-
+    // order empty-slot search) instead of always being pushed to the bench
+    // regardless of what position they're replacing — and never past the
+    // league's configured slot counts, which used to silently create
+    // roster rows My Roster could never render.
     for (const mleTeamId of trade.proposerGives) {
       const slot = await tx.rosterSlot.findFirst({
         where: { fantasyTeamId: trade.proposerTeamId, mleTeamId, week: currentWeek },
       });
       if (slot) await tx.rosterSlot.delete({ where: { id: slot.id } });
     }
-
-    for (const mleTeamId of trade.receiverGives) {
-      const existingSlots = await tx.rosterSlot.findMany({
-        where: { fantasyTeamId: trade.proposerTeamId, week: currentWeek },
-      });
-      const position = "be";
-      const slotIndex = existingSlots.filter((s) => s.position === position).length;
-      await tx.rosterSlot.create({
-        data: {
-          id: `${trade.proposerTeamId}-${currentWeek}-${position}-${slotIndex}`,
-          fantasyTeamId: trade.proposerTeamId,
-          mleTeamId,
-          week: currentWeek,
-          position,
-          slotIndex,
-          isLocked: false,
-        },
-      });
-    }
-
     for (const mleTeamId of trade.receiverGives) {
       const slot = await tx.rosterSlot.findFirst({
         where: { fantasyTeamId: trade.receiverTeamId, mleTeamId, week: currentWeek },
@@ -107,22 +94,20 @@ export async function executeTrade(tradeId: string): Promise<void> {
       if (slot) await tx.rosterSlot.delete({ where: { id: slot.id } });
     }
 
-    for (const mleTeamId of trade.proposerGives) {
-      const existingSlots = await tx.rosterSlot.findMany({
-        where: { fantasyTeamId: trade.receiverTeamId, week: currentWeek },
+    for (const mleTeamId of trade.receiverGives) {
+      await assignTeamToRosterSlot(tx, {
+        fantasyTeamId: trade.proposerTeamId,
+        week: currentWeek,
+        mleTeamId,
+        rosterConfig: league.rosterConfig,
       });
-      const position = "be";
-      const slotIndex = existingSlots.filter((s) => s.position === position).length;
-      await tx.rosterSlot.create({
-        data: {
-          id: `${trade.receiverTeamId}-${currentWeek}-${position}-${slotIndex}`,
-          fantasyTeamId: trade.receiverTeamId,
-          mleTeamId,
-          week: currentWeek,
-          position,
-          slotIndex,
-          isLocked: false,
-        },
+    }
+    for (const mleTeamId of trade.proposerGives) {
+      await assignTeamToRosterSlot(tx, {
+        fantasyTeamId: trade.receiverTeamId,
+        week: currentWeek,
+        mleTeamId,
+        rosterConfig: league.rosterConfig,
       });
     }
 

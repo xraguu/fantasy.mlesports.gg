@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { etDateTime } from "@/lib/timezone";
 
 // GET /api/leagues/[leagueId] - Get league details
 export async function GET(
@@ -62,7 +63,19 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ league });
+    // Whether the real season calendar has actually reached week 1's start
+    // date — distinct from draftStatus, since the draft can finish well
+    // before the season itself begins. Defaults to false (not started) if
+    // there's no week-dates configuration to check against yet.
+    const settings = await prisma.seasonSettings.findFirst({
+      where: { season: league.season },
+      select: { weekDates: true },
+    });
+    const weekDates = settings?.weekDates as Array<{ week: number; startDate: string }> | undefined;
+    const week1Start = weekDates?.find((w) => w.week === 1)?.startDate;
+    const seasonStarted = !!week1Start && new Date() >= etDateTime(week1Start, 0, 0);
+
+    return NextResponse.json({ league: { ...league, seasonStarted } });
   } catch (error) {
     console.error("Error fetching league:", error);
     return NextResponse.json(

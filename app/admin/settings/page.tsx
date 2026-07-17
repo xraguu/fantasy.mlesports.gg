@@ -269,7 +269,7 @@ export default function SettingsPage() {
           </ul>
         </div>
 
-        {/* Current Season (draft stats) */}
+        {/* Draft Room "Last Season" Stats */}
         <div style={{ marginBottom: "1.5rem" }}>
           <label
             style={{
@@ -280,10 +280,10 @@ export default function SettingsPage() {
               fontWeight: 600,
             }}
           >
-            Current Season
+            Draft Room &quot;Last Season&quot; Stats
           </label>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            Which completed season&apos;s stats show as &quot;last season&quot; in the draft room&apos;s Available Teams tab.
+            Which completed regular season&apos;s stats show as &quot;last season&quot; in the draft room&apos;s Available Teams tab. This is unrelated to a league&apos;s own Season number (set at creation) — playoff seasons are intentionally excluded from this list, since a handful of playoff series isn&apos;t a meaningful sample for draft prep.
           </p>
           <select
             value={settings.draftStatsSeason ?? ""}

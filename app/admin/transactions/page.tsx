@@ -399,7 +399,7 @@ export default function AdminTransactionsPage() {
             key={transaction.id}
             style={{
               background: "rgba(15, 23, 42, 0.6)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
+              border: "1px solid rgba(255, 255, 255, 0.15)",
               borderRadius: "8px",
               padding: "1.25rem 1.5rem",
               display: "grid",

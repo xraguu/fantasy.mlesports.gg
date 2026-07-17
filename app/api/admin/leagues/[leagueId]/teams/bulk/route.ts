@@ -49,6 +49,9 @@ export async function POST(
       league.fantasyTeams.map((t) => t.shortCode.toLowerCase())
     );
     const takenUserIds = new Set(league.fantasyTeams.map((t) => t.ownerUserId));
+    const takenNames = new Set(
+      league.fantasyTeams.map((t) => t.displayName.toLowerCase())
+    );
 
     const createData: {
       id: string;
@@ -99,6 +102,13 @@ export async function POST(
         );
       }
 
+      if (takenNames.has(teamName.trim().toLowerCase())) {
+        return NextResponse.json(
+          { error: `Row ${i + 1}: team name "${teamName}" is already taken in this league (or duplicated in this batch)` },
+          { status: 400 }
+        );
+      }
+
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: { id: true },
@@ -113,6 +123,7 @@ export async function POST(
       teamCount++;
       takenUserIds.add(userId);
       takenShortCodes.add(shortCode.toLowerCase());
+      takenNames.add(teamName.trim().toLowerCase());
 
       createData.push({
         id: generateFantasyTeamId(leagueId, userId),

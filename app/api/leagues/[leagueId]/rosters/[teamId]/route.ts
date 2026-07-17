@@ -116,11 +116,20 @@ export async function GET(
           }
         : undefined;
 
-    // Get roster slots for the specified week
+    // Get roster slots for the specified week. A future week (past
+    // currentWeek) doesn't get its own real rows until its lock boundary
+    // actually passes (see lib/autoLock.ts's carry-forward step) — until
+    // then, show it as a live mirror of the current roster, since that's
+    // exactly what it'll be frozen into the moment it starts. A trade or
+    // waiver pickup right now should be visible on every future week
+    // immediately, not just once each one individually rolls over. Past
+    // weeks are real history and never get this fallback.
+    const rosterWeek =
+      week > fantasyTeam.league.currentWeek ? fantasyTeam.league.currentWeek : week;
     const rosterSlots = await prisma.rosterSlot.findMany({
       where: {
         fantasyTeamId: teamId,
-        week,
+        week: rosterWeek,
       },
       include: {
         mleTeam: true,

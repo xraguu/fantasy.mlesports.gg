@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { runDraftAutopickSweep } from "@/lib/draftAutopick";
-import { getTeamHistoricalStats, getAvailableHistoricalSeasons, HistoricalLens } from "@/lib/teamHistoricalStats";
+import { getTeamHistoricalStats, resolveDraftStatsSeason, HistoricalLens } from "@/lib/teamHistoricalStats";
 import { generateDraftPickOrder } from "@/lib/draftPickOrder";
 
 /**
@@ -123,15 +123,10 @@ export async function GET(
       orderBy: { id: "asc" },
     });
 
-    // Real last-season team stats, keyed off the admin's configured
-    // "Current Season" (falls back to the most recent season on file so
-    // this isn't broken before an admin sets one).
-    const settings = await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
-    let statsSeason = settings?.draftStatsSeason ?? null;
-    if (!statsSeason) {
-      const seasons = await getAvailableHistoricalSeasons();
-      statsSeason = seasons[0] ?? null;
-    }
+    // Real last-season team stats, keyed off the admin's configured "Draft
+    // Room 'Last Season' Stats" setting (falls back to the most recent
+    // season on file so this isn't broken before an admin sets one).
+    const statsSeason = await resolveDraftStatsSeason();
     const historicalStats = statsSeason
       ? await getTeamHistoricalStats(statsSeason, mode)
       : new Map();
@@ -190,6 +185,7 @@ export async function GET(
                 fpts: stats.fpts,
                 avg: stats.avg,
                 goals: stats.goals,
+                goalsAgainst: stats.goalsAgainst,
                 shots: stats.shots,
                 saves: stats.saves,
                 assists: stats.assists,
@@ -197,7 +193,8 @@ export async function GET(
                 demosTaken: stats.demosTaken,
                 gamesPlayed: stats.gamesPlayed,
                 sprocketRating: stats.sprocketRating,
-                record: stats.record,
+                gameRecord: stats.gameRecord,
+                seriesRecord: stats.seriesRecord,
               }
             : null,
         };

@@ -89,6 +89,18 @@ export async function POST(
       );
     }
 
+    // Check if team name is already taken
+    const nameTaken = league.fantasyTeams.some(
+      (team) => team.displayName.toLowerCase() === teamName.trim().toLowerCase()
+    );
+
+    if (nameTaken) {
+      return NextResponse.json(
+        { error: "Team name is already taken in this league" },
+        { status: 400 }
+      );
+    }
+
     // Generate custom team ID
     const teamId = generateFantasyTeamId(leagueId, user.id);
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import DraftTeamModal from "@/components/DraftTeamModal";
 import { useAlert } from "@/components/AlertProvider";
@@ -11,6 +11,7 @@ interface TeamStats {
   fpts: number;
   avg: number;
   goals: number;
+  goalsAgainst: number;
   shots: number;
   saves: number;
   assists: number;
@@ -18,7 +19,8 @@ interface TeamStats {
   demosTaken: number;
   gamesPlayed: number;
   sprocketRating: number;
-  record: string;
+  gameRecord: string;
+  seriesRecord: string;
 }
 
 interface MLETeam {
@@ -92,6 +94,7 @@ const MODE_FILTER_TO_API: Record<string, string> = {
 
 export default function DraftPage() {
   const showAlert = useAlert();
+  const router = useRouter();
   const params = useParams();
   const leagueId = params.LeagueID as string;
 
@@ -151,6 +154,24 @@ export default function DraftPage() {
   useEffect(() => {
     fetchDraftState();
   }, [fetchDraftState]);
+
+  // Detect the draft finishing live (not just landing on an already-completed
+  // one) and send the viewer to their roster — the pop-up itself fires there
+  // instead of here, so navigating away doesn't cut it off mid-display.
+  const prevDraftStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draftState) return;
+    const prevStatus = prevDraftStatusRef.current;
+    prevDraftStatusRef.current = draftState.status;
+    if (prevStatus && prevStatus !== "completed" && draftState.status === "completed") {
+      const myTeam = draftState.fantasyTeams.find((t) => t.ownerUserId === currentUserId);
+      router.push(
+        myTeam
+          ? `/leagues/${leagueId}/my-roster/${myTeam.id}?draftComplete=1`
+          : `/leagues/${leagueId}`
+      );
+    }
+  }, [draftState, currentUserId, leagueId, router]);
 
   // Default the Rosters tab's manager selector to the viewer's own team,
   // once we know both who they are and which teams exist — falls back to
@@ -471,7 +492,7 @@ export default function DraftPage() {
                       }}
                     >
                       <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.4rem" }}>
-                        Pick {pick.round}.{pick.pickNumber}
+                        Pick {pick.round}.{pick.pickNumber} ({pick.overallPick})
                       </div>
                       {pick.mleTeam ? (
                         <>
@@ -798,7 +819,7 @@ export default function DraftPage() {
                             )}
                           </div>
                           <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", textAlign: "right" }}>
-                            {draftPick ? `${draftPick.round} (${draftPick.pickNumber})` : "-"}
+                            {draftPick ? `${draftPick.round}.${draftPick.pickNumber} (${draftPick.overallPick})` : "-"}
                           </div>
                         </div>
                       );
@@ -984,7 +1005,7 @@ export default function DraftPage() {
                           </div>
                           {team.stats ? (
                             <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                              {team.stats.fpts} fpts · {team.stats.avg} avg · {team.stats.record}
+                              {team.stats.fpts} fpts · {team.stats.gameRecord}
                             </div>
                           ) : (
                             <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>No last-season stats</div>

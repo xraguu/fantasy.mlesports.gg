@@ -109,7 +109,7 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      message: `Draft started! Created ${draftPicks.length} draft picks (${numRounds} rounds x ${numTeams} teams)`,
+      message: "Draft started!",
       picksCreated: draftPicks.length,
       firstPickDeadline,
     });

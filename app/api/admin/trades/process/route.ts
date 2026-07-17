@@ -6,10 +6,13 @@ import { executeTrade, tradeVetoDeadline } from "@/lib/tradeExecution";
 
 /**
  * POST /api/admin/trades/process
- * Veto a trade that's in its 12-hour post-acceptance window (admin only).
+ * Admin action on a trade that's in its 12-hour post-acceptance window.
  * Trades auto-process once that window closes without a veto — see
  * lib/tradeExecution.ts.
- * Body: { tradeId: string, reason?: string }
+ * Body: { tradeId: string, action?: "veto" | "process", reason?: string }
+ * - "veto" (default): blocks the trade instead of letting it execute.
+ * - "process": executes the trade immediately instead of waiting out the
+ *   rest of the window — for when an admin is confident it won't be vetoed.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -32,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { tradeId, reason } = body;
+    const { tradeId, reason, action = "veto" } = body;
 
     if (!tradeId) {
       return NextResponse.json(
@@ -62,6 +65,21 @@ export async function POST(req: NextRequest) {
         { error: `Trade is not awaiting veto (status: ${trade.status})` },
         { status: 400 }
       );
+    }
+
+    if (action === "process") {
+      await executeTrade(tradeId);
+      await logAdminActivity({
+        adminUserId: session.user.id!,
+        action: "trade.process_now",
+        description: `Processed a trade between ${trade.proposer.displayName} and ${trade.receiver.displayName} early, skipping the rest of the veto window`,
+        targetType: "Trade",
+        targetId: tradeId,
+      });
+      return NextResponse.json({
+        success: true,
+        message: "Trade processed successfully",
+      });
     }
 
     const deadline = trade.acceptedAt ? tradeVetoDeadline(trade.acceptedAt) : null;
