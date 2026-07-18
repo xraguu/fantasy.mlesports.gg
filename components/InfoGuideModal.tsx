@@ -575,11 +575,11 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
 
         <Section title="Where to find things">
           <p>
-            <strong>My Roster</strong> — your team, lineup, and waivers.{" "}
-            <strong>MLE Teams</strong> — browse every MLE team and their season
-            stats. <strong>Scoreboard</strong> — this week&apos;s matchups.{" "}
-            <strong>Standings</strong> — league rankings and playoff picture.{" "}
-            <strong>Opponents</strong> — your opponents rosters.
+            <strong>My Roster</strong> — Your fantasy team, lineups, and waivers.{" "}<br></br>
+            <strong>MLE Teams</strong> — Browse every MLE team and their season stats.<br></br> 
+            <strong>Scoreboard</strong> — This week&apos;s matchups and results.{" "}<br></br>
+            <strong>Standings</strong> — League standings and playoff bracket.{" "}<br></br>
+            <strong>Opponents</strong> — Your opponents&apos; fantasy teams.
           </p>
         </Section>
       </div>
