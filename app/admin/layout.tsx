@@ -239,23 +239,23 @@ export default function AdminLayout({
 
       {/* Main Content */}
       <div className="admin-main">
-        {/* Page Header */}
-        <div style={{ marginBottom: "2rem" }}>
-          <h1
-            style={{
-              fontSize: "clamp(1.4rem, 6vw, 2rem)",
-              fontWeight: 700,
-              color: "var(--text-main)",
-              marginBottom: "0.25rem",
-            }}
-          >
-            {adminNavItems.find((item) => item.path === pathname)?.label ||
-              "Admin Control Panel"}
-          </h1>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
-            Manage leagues, users, and system settings
-          </p>
-        </div>
+        {/* Page Header - the Transactions page has its own header, so skip
+            the generic fallback title there. */}
+        {pathname !== "/admin/transactions" && (
+          <div style={{ marginBottom: "2rem" }}>
+            <h1
+              style={{
+                fontSize: "clamp(1.4rem, 6vw, 2rem)",
+                fontWeight: 700,
+                color: "var(--text-main)",
+                marginBottom: "0.25rem",
+              }}
+            >
+              {adminNavItems.find((item) => item.path === pathname)?.label ||
+                "Admin Control Panel"}
+            </h1>
+          </div>
+        )}
 
         {/* Page Content */}
         <div style={{ maxWidth: "1400px" }}>{children}</div>

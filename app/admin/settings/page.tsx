@@ -258,19 +258,7 @@ export default function SettingsPage() {
         >
           Season Settings
         </h2>
-        <div style={{ marginBottom: "1.5rem", padding: "1rem", background: "rgba(242, 182, 50, 0.1)", borderRadius: "6px", borderLeft: "3px solid var(--accent)" }}>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
-            Season number, playoff start week, and lineup lock time are no longer manually
-            configured here — they're now fully automatic per league:
-          </p>
-          <ul style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6, margin: "0.5rem 0 0", paddingLeft: "1.25rem" }}>
-            <li><strong style={{ color: "var(--text-main)" }}>Season</strong> is set when a league is created.</li>
-            <li><strong style={{ color: "var(--text-main)" }}>Playoff start week</strong> is derived from each league's manager count (week 8 for 12-manager leagues, week 9 for 8/10-manager leagues).</li>
-            <li><strong style={{ color: "var(--text-main)" }}>Lineup lock time</strong> is always 3:00am ET on a week's start date (below). Need a different time for a specific week? Lock/unlock it manually from Admin → Lock Lineups.</li>
-            <li><strong style={{ color: "var(--text-main)" }}>Trade cutoff</strong> is 11:59pm ET the night before each league's first playoff week, based on the week dates below.</li>
-          </ul>
-        </div>
-
+        
         {/* Draft Room "Last Season" Stats */}
         <div style={{ marginBottom: "1.5rem" }}>
           <label
@@ -285,7 +273,7 @@ export default function SettingsPage() {
             Draft Room &quot;Last Season&quot; Stats
           </label>
           <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            Which completed regular season&apos;s stats show as &quot;last season&quot; in the draft room&apos;s Available Teams tab. This is unrelated to a league&apos;s own Season number (set at creation) — playoff seasons are intentionally excluded from this list, since a handful of playoff series isn&apos;t a meaningful sample for draft prep.
+            Which completed regular season&apos;s stats show as &quot;last season&quot; in the draft room&apos;s Available Teams tab.
           </p>
           <select
             value={settings.draftStatsSeason ?? ""}
@@ -393,7 +381,7 @@ export default function SettingsPage() {
           Scoring Rules
         </h2>
         <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "1.5rem" }}>
-          Points per stat (negative values allowed for penalties)
+          Points per stat (negative values allowed)
         </p>
         <div
           style={{
@@ -728,7 +716,7 @@ export default function SettingsPage() {
                 Sprocket Rating (SR) Point Ranges
               </h3>
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                Points are added based on the team's Sprocket Rating range (not multiplied)
+                Points are added based on the team&apos;s Sprocket Rating range
               </p>
             </div>
             <button
@@ -849,7 +837,7 @@ export default function SettingsPage() {
           Waiver Processing Schedule
         </h2>
         <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "1.5rem" }}>
-          Default times when waivers are processed automatically
+          Times for waivers to be processed automatically
         </p>
 
         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>

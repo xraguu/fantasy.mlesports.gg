@@ -579,7 +579,7 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
             <strong>MLE Teams</strong> — Browse every MLE team and their season stats.<br></br> 
             <strong>Scoreboard</strong> — This week&apos;s matchups and results.{" "}<br></br>
             <strong>Standings</strong> — League standings and playoff bracket.{" "}<br></br>
-            <strong>Opponents</strong> — Your opponents&apos; fantasy teams.
+            <strong>Opponents</strong> — Your opponents&apos; fantasy teams .
           </p>
         </Section>
       </div>

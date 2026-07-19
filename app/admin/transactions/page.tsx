@@ -533,23 +533,12 @@ export default function AdminTransactionsPage() {
         style={{
           display: "flex",
           flexWrap: "wrap",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           alignItems: "center",
           gap: "1rem",
           marginBottom: "2rem",
         }}
       >
-        <h1
-          style={{
-            fontSize: "clamp(1.6rem, 6.5vw, 2.5rem)",
-            color: "var(--accent)",
-            fontWeight: 700,
-            margin: 0,
-          }}
-        >
-          Transactions
-        </h1>
-
         {/* League Filter */}
         <select
           value={filterLeague}

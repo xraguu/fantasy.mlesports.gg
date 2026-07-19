@@ -121,12 +121,9 @@ export default function AdminDashboard() {
                 <div
                   key={entry.id}
                   style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                    gap: "1rem",
+                    position: "relative",
                     paddingBottom: "0.75rem",
+                    paddingRight: "9rem",
                     borderBottom: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
@@ -136,7 +133,15 @@ export default function AdminDashboard() {
                     </span>{" "}
                     {entry.description}
                   </div>
-                  <div style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      whiteSpace: "nowrap",
+                      textAlign: "right",
+                    }}
+                  >
                     <div style={{ fontSize: "0.8rem" }}>{timeAgo(entry.createdAt)}</div>
                     <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
                       {formatTimestamp(entry.createdAt)}
