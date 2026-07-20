@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getTeamSeasonStats, GamemodeLens, lensForPosition, getWithinLeagueStandings, rankTeamsByFpts } from "@/lib/teamSeasonStats";
 import { getFantasyStandings, formatPlacement } from "@/lib/standings";
 import { runAutoLockSweep } from "@/lib/autoLock";
-import { getWeekMatchRange } from "@/lib/weekMatchRange";
+import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
 
 /**
  * GET /api/leagues/[leagueId]/opponents
@@ -100,7 +100,7 @@ export async function GET(
     });
     const weekDates =
       (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
-    const range = getWeekMatchRange(weekDates, week);
+    const range = await getEffectiveWeekMatchRange(weekDates, week);
 
     const opponentByMleTeamId = new Map<string, { id: string; name: string; leagueId: string; slug: string; logoPath: string; primaryColor: string; secondaryColor: string }>();
     if (range && allRosteredMleTeamIds.length > 0) {
@@ -132,14 +132,23 @@ export async function GET(
     const allMleTeams = await prisma.mLETeam.findMany({ select: { id: true } });
     const allMleTeamIds = allMleTeams.map((t) => t.id);
 
+    // Real MLE match data already exists for every week of the season (it's
+    // already over) — but this app still paces fantasy stats one week at a
+    // time, so a manager previewing a future week's roster (currentWeek < a
+    // requested week) shouldn't see real stats for weeks that haven't
+    // "happened" yet fantasy-wise. Capped independently from `week` itself,
+    // which still drives the actual roster/opponent preview below — that
+    // part legitimately looks ahead.
+    const statsWeek = Math.min(week, league.currentWeek);
+
     const rankByLens = new Map<GamemodeLens, Map<string, number>>();
     const statsByLens = new Map<GamemodeLens, Awaited<ReturnType<typeof getTeamSeasonStats>>>();
     const standingsByLens = new Map<GamemodeLens, Awaited<ReturnType<typeof getWithinLeagueStandings>>>();
     for (const lens of ["2s", "3s", "bestball"] as GamemodeLens[]) {
-      const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: week, lens });
+      const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: statsWeek, lens });
       statsByLens.set(lens, stats);
       rankByLens.set(lens, rankTeamsByFpts(stats));
-      standingsByLens.set(lens, await getWithinLeagueStandings(week, lens));
+      standingsByLens.set(lens, await getWithinLeagueStandings(statsWeek, lens, stats));
     }
 
     // All matchups in the league, fetched once and reused for every team's
@@ -168,8 +177,12 @@ export async function GET(
       const losses = base?.losses ?? 0;
       const totalPoints = base?.pointsFor ?? 0;
 
+      // avgPoints' denominator has to stay regular-season only too — points
+      // for is already regular-season only (getFantasyStandings excludes
+      // playoffs), so dividing by a games-played count that includes
+      // playoff games would understate the real average.
       const actualGamesPlayed = matchups.filter(
-        (m) => m.homeScore !== null && m.awayScore !== null
+        (m) => !m.isPlayoff && m.homeScore !== null && m.awayScore !== null
       ).length;
       const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 

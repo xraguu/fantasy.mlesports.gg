@@ -29,8 +29,23 @@ export async function register() {
     globalThis.__statsRefreshScheduled = true;
 
     const { runStatsRefresh } = await import("@/lib/statsRefresh");
+    const { runAutoLockSweep } = await import("@/lib/autoLock");
 
     const refresh = async () => {
+      try {
+        // Every league's own currentWeek/lock state/roster carry-forward is
+        // otherwise only ever advanced lazily, from that specific league's
+        // own roster/scoreboard routes — a league nobody has opened since a
+        // week boundary passed just sits stuck on its old week forever (no
+        // carried-forward roster rows, so nothing to score), same class of
+        // bug the draft autopick sweep below already exists to avoid. Run
+        // it globally (no leagueId) here so every league stays current
+        // regardless of whether anyone's actively browsing it.
+        await runAutoLockSweep();
+      } catch (error) {
+        console.error("[stats-refresh] Scheduled auto-lock sweep failed:", error);
+      }
+
       try {
         const result = await runStatsRefresh();
         console.log(

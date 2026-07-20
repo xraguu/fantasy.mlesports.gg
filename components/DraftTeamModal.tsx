@@ -40,6 +40,8 @@ interface TeamHistoricalStats {
   seriesRecord: string;
 }
 
+type StatsLens = "2s" | "3s" | "combined";
+
 export default function DraftTeamModal({
   team,
   onClose,
@@ -52,6 +54,7 @@ export default function DraftTeamModal({
   const [loadingStaff, setLoadingStaff] = useState(true);
   const [players, setPlayers] = useState<PlayerWithStats[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
+  const [statsLens, setStatsLens] = useState<StatsLens>("combined");
   const [historicalSeason, setHistoricalSeason] = useState<string | null>(null);
   const [historicalStats, setHistoricalStats] = useState<TeamHistoricalStats | null>(null);
   const [loadingHistoricalStats, setLoadingHistoricalStats] = useState(true);
@@ -60,14 +63,23 @@ export default function DraftTeamModal({
     name: string;
   } | null>(null);
 
-  // Fetch this team's last-completed-season stats when the team changes
+  // Reset to the combined lens whenever a new team is opened, rather than
+  // carrying over whatever lens was selected for the previously-viewed team.
+  useEffect(() => {
+    setStatsLens("combined");
+  }, [team?.id]);
+
+  // Fetch this team's last-completed-season stats when the team or the
+  // selected 2s/3s/Both lens changes.
   useEffect(() => {
     const fetchHistoricalStats = async () => {
       if (!team) return;
 
       try {
         setLoadingHistoricalStats(true);
-        const response = await fetch(`/api/mle-teams/${team.id}/historical-stats`);
+        const response = await fetch(
+          `/api/mle-teams/${team.id}/historical-stats?mode=${statsLens}`
+        );
         if (!response.ok) {
           throw new Error("Failed to fetch team historical stats");
         }
@@ -84,7 +96,7 @@ export default function DraftTeamModal({
     };
 
     fetchHistoricalStats();
-  }, [team?.id]);
+  }, [team?.id, statsLens]);
 
   // Fetch players when team changes
   useEffect(() => {
@@ -332,6 +344,47 @@ export default function DraftTeamModal({
 
         {/* Last-season stats */}
         <div style={{ position: "relative", zIndex: 1, marginBottom: "1.5rem" }}>
+          {/* 2s / 3s / Both toggle */}
+          <div
+            style={{
+              display: "inline-flex",
+              background: "rgba(255,255,255,0.1)",
+              borderRadius: "8px",
+              padding: "0.25rem",
+              marginBottom: "0.75rem",
+              gap: "0.25rem",
+            }}
+          >
+            {(
+              [
+                { value: "2s", label: "2s" },
+                { value: "3s", label: "3s" },
+                { value: "combined", label: "Both" },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setStatsLens(option.value)}
+                style={{
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "0.35rem 0.9rem",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background:
+                    statsLens === option.value
+                      ? "rgba(255,255,255,0.9)"
+                      : "transparent",
+                  color: statsLens === option.value ? "#1a1a2e" : "#ffffff",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
           {loadingHistoricalStats ? (
             <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)" }}>
               Loading stats...

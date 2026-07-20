@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateFantasyTeamId } from "@/lib/id-generator";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
+import { uniqueShortCode, uniqueTeamName } from "@/lib/teamNaming";
 
 // POST /api/admin/leagues/[leagueId]/teams - Add a user to the league (admin only)
 export async function POST(
@@ -18,19 +19,12 @@ export async function POST(
 
     const { leagueId } = await params;
     const body = await request.json();
-    const { userId, teamName, shortCode } = body;
+    const { userId } = body;
 
     // Validation
-    if (!userId || !teamName || !shortCode) {
+    if (!userId) {
       return NextResponse.json(
-        { error: "userId, teamName, and shortCode are required" },
-        { status: 400 }
-      );
-    }
-
-    if (shortCode.length < 1 || shortCode.length > 3) {
-      return NextResponse.json(
-        { error: "Short code must be 1-3 characters" },
+        { error: "userId is required" },
         { status: 400 }
       );
     }
@@ -38,7 +32,7 @@ export async function POST(
     // Check if user exists
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true },
+      select: { id: true, displayName: true },
     });
 
     if (!user) {
@@ -77,29 +71,14 @@ export async function POST(
       );
     }
 
-    // Check if short code is already taken
-    const shortCodeTaken = league.fantasyTeams.some(
-      (team) => team.shortCode.toLowerCase() === shortCode.toLowerCase()
+    const takenShortCodes = new Set(
+      league.fantasyTeams.map((t) => t.shortCode.toLowerCase())
     );
-
-    if (shortCodeTaken) {
-      return NextResponse.json(
-        { error: "Short code is already taken in this league" },
-        { status: 400 }
-      );
-    }
-
-    // Check if team name is already taken
-    const nameTaken = league.fantasyTeams.some(
-      (team) => team.displayName.toLowerCase() === teamName.trim().toLowerCase()
+    const takenNames = new Set(
+      league.fantasyTeams.map((t) => t.displayName.toLowerCase())
     );
-
-    if (nameTaken) {
-      return NextResponse.json(
-        { error: "Team name is already taken in this league" },
-        { status: 400 }
-      );
-    }
+    const teamName = uniqueTeamName(user.displayName, takenNames);
+    const shortCode = uniqueShortCode(user.displayName, takenShortCodes);
 
     // Generate custom team ID
     const teamId = generateFantasyTeamId(leagueId, user.id);
@@ -111,7 +90,7 @@ export async function POST(
         fantasyLeagueId: leagueId,
         ownerUserId: userId,
         displayName: teamName,
-        shortCode: shortCode.toUpperCase(),
+        shortCode,
         draftPosition: league.fantasyTeams.length + 1,
         faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
         waiverPriority:

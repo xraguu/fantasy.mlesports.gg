@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getFantasyStandings } from "@/lib/standings";
+import { getFantasyStandings, getDoubleWinResultsByTeam } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
 
 /**
@@ -39,11 +39,19 @@ export async function GET(
       return NextResponse.json({ error: "Team not found in this league" }, { status: 404 });
     }
 
-    const [standings, matchups, rosterSlots] = await Promise.all([
-      getFantasyStandings(leagueId),
+    // doubleWinResultsByTeamId is fetched once and handed to
+    // getFantasyStandings, which needs the exact same (leagueId, no
+    // throughWeek) result internally — without passing it through, that was
+    // a second, identical query alongside this one.
+    const [doubleWinResultsByTeamId, matchups, rosterSlots] = await Promise.all([
+      getDoubleWinResultsByTeam(leagueId),
+      // Playoff matchups never count toward standings — excluded so streak
+      // and avgPoints stay regular-season only, consistent with
+      // getFantasyStandings' wins/losses/points.
       prisma.matchup.findMany({
         where: {
           fantasyLeagueId: leagueId,
+          isPlayoff: false,
           OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
         },
         select: { week: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
@@ -55,10 +63,16 @@ export async function GET(
       }),
     ]);
 
+    const standings = await getFantasyStandings(leagueId, undefined, doubleWinResultsByTeamId);
     const standing = standings.find((s) => s.teamId === teamId);
 
-    const streak = computeStreak(
-      matchups.map((m) => {
+    // Double-win results are appended after the matchup results (not
+    // merged/sorted together) so that for any week with both, the matchup
+    // result stays first and the double-win result — the chronologically
+    // second result that week — is what a stable sort by week leaves as
+    // the more recent of the two.
+    const streak = computeStreak([
+      ...matchups.map((m) => {
         const isHome = m.homeTeamId === teamId;
         const myScore = isHome ? m.homeScore : m.awayScore;
         const oppScore = isHome ? m.awayScore : m.homeScore;
@@ -71,8 +85,9 @@ export async function GET(
             ? ("L" as const)
             : null;
         return { week: m.week, result };
-      })
-    );
+      }),
+      ...(doubleWinResultsByTeamId.get(teamId) ?? []),
+    ]);
 
     // Roster teams, deduplicated (a team shouldn't appear in more than one
     // slot, but defend against it anyway) and excluding empty slots.

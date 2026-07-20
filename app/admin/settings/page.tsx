@@ -52,6 +52,8 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [availableHistoricalSeasons, setAvailableHistoricalSeasons] = useState<string[]>([]);
+  const [availableLeagueSeasons, setAvailableLeagueSeasons] = useState<number[]>([]);
+  const [currentSeason, setCurrentSeason] = useState<number | null>(null);
 
   // Load settings from API on mount
   useEffect(() => {
@@ -61,6 +63,8 @@ export default function SettingsPage() {
         if (response.ok) {
           const data = await response.json();
           setAvailableHistoricalSeasons(data.availableHistoricalSeasons || []);
+          setAvailableLeagueSeasons(data.availableLeagueSeasons || []);
+          setCurrentSeason(data.currentSeason ?? null);
           if (data.settings) {
             // Transform API data to match UI structure
             setSettings({
@@ -157,6 +161,7 @@ export default function SettingsPage() {
         scoringRules: settings.scoring,
         waiverSchedule: settings.waivers.processingSchedule,
         draftStatsSeason: settings.draftStatsSeason,
+        currentSeason,
       };
 
       const response = await fetch("/api/admin/settings", {
@@ -296,6 +301,50 @@ export default function SettingsPage() {
               {availableHistoricalSeasons.length > 0 ? "Most recent available" : "No historical seasons imported yet"}
             </option>
             {availableHistoricalSeasons.map((season) => (
+              <option key={season} value={season}>
+                {season}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Current Season */}
+        <div style={{ marginBottom: "1.5rem" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "0.5rem",
+              fontSize: "0.9rem",
+              color: "var(--text-muted)",
+              fontWeight: 600,
+            }}
+          >
+            Current Season
+          </label>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
+            Which season counts as active league-wide — decides things like which leagues show up under &quot;Your Leagues&quot; vs. the archive.
+          </p>
+          <select
+            value={currentSeason?.toString() ?? ""}
+            onChange={(e) => {
+              setCurrentSeason(e.target.value ? parseInt(e.target.value, 10) : null);
+              setHasChanges(true);
+            }}
+            style={{
+              width: "100%",
+              maxWidth: "300px",
+              padding: "0.75rem",
+              background: "rgba(255,255,255,0.1)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "6px",
+              color: "var(--text-main)",
+              fontSize: "0.95rem",
+            }}
+          >
+            <option value="">
+              {availableLeagueSeasons.length > 0 ? "Most recent league" : "No leagues created yet"}
+            </option>
+            {availableLeagueSeasons.map((season) => (
               <option key={season} value={season}>
                 {season}
               </option>

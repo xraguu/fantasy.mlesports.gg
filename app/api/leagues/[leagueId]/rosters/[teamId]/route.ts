@@ -7,7 +7,7 @@ import { runAutoLockSweep } from "@/lib/autoLock";
 import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
 import { getFantasyStandings } from "@/lib/standings";
 import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
-import { getWeekMatchRange } from "@/lib/weekMatchRange";
+import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
 
 /**
  * GET /api/leagues/[leagueId]/rosters/[teamId]
@@ -25,8 +25,16 @@ export async function GET(
     }
 
     const { leagueId, teamId } = await params;
-    await runAutoLockSweep(leagueId);
+    // Waivers first, then the week/lock sweep — the auto-lock sweep is what
+    // resets a "fixed" league's waiver priority the moment a new week
+    // begins (see lib/autoLock.ts). Running it before processing pending
+    // claims would resolve claims submitted under the OLD week's priority
+    // order against the NEW week's just-reset order instead, whenever the
+    // admin-configured waiver-processing time falls at/after that week
+    // boundary. Processing claims against the still-current priority first
+    // means this call order can never produce that mismatch.
     await runWaiverProcessingSweep(leagueId);
+    await runAutoLockSweep(leagueId);
 
     const url = new URL(req.url);
     const week = parseInt(url.searchParams.get("week") || "1");
@@ -99,7 +107,12 @@ export async function GET(
 
     // Average is points-per-week-actually-played — deliberately NOT
     // (wins + losses), since double-win bonus credit isn't a separate game.
-    const gamesPlayed = sortedMyMatchups.length;
+    // Playoff matchups don't count toward standings (totalPoints above is
+    // already regular-season only via getFantasyStandings), so they're
+    // excluded from this denominator too — but NOT from sortedMyMatchups
+    // itself, since last/current matchup below should still show a real
+    // playoff game while one's in progress.
+    const gamesPlayed = sortedMyMatchups.filter((m) => !m.isPlayoff).length;
     const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
     const lastMatchupRow = sortedMyMatchups[sortedMyMatchups.length - 2];
     const currentMatchupRow = sortedMyMatchups[sortedMyMatchups.length - 1];
@@ -124,8 +137,39 @@ export async function GET(
     // waiver pickup right now should be visible on every future week
     // immediately, not just once each one individually rolls over. Past
     // weeks are real history and never get this fallback.
-    const rosterWeek =
-      week > fantasyTeam.league.currentWeek ? fantasyTeam.league.currentWeek : week;
+    //
+    // But a manager can also edit a future week directly (My Roster lets
+    // you navigate ahead and swap teams there) — /roster/update writes
+    // those real rows immediately, before that week's own carry-forward
+    // ever runs. Once that's happened, this route must read the future
+    // week's own rows back, not keep substituting the current week's — a
+    // blanket substitution would silently discard the edit on next load,
+    // which is exactly the "swap reverts after it loads" bug this guards
+    // against.
+    let isFutureWeekPreview = week > fantasyTeam.league.currentWeek;
+    if (isFutureWeekPreview) {
+      const futureWeekHasOwnRows = await prisma.rosterSlot.count({
+        where: { fantasyTeamId: teamId, week },
+      });
+      if (futureWeekHasOwnRows > 0) isFutureWeekPreview = false;
+    }
+    const rosterWeek = isFutureWeekPreview ? fantasyTeam.league.currentWeek : week;
+
+    // Bye/off week: this week's matchups have been generated for the league
+    // (someone's playing) but this team isn't in any of them — either a real
+    // round-1 bracket bye (12-team money bracket's top 2 seeds) or a team
+    // that's simply skipping this week (e.g. the 12-team money bracket's
+    // round-1 losers, who sit out the semifinal week and meet each other for
+    // 5th/6th in the final week instead) or an odd-team-count regular-season
+    // round-robin bye. Never true for a week nobody's matchups exist for yet.
+    const weekMatchups = await prisma.matchup.findMany({
+      where: { fantasyLeagueId: leagueId, week },
+      select: { homeTeamId: true, awayTeamId: true },
+    });
+    const isByeWeek =
+      weekMatchups.length > 0 &&
+      !weekMatchups.some((m) => m.homeTeamId === teamId || m.awayTeamId === teamId);
+
     const rosterSlots = await prisma.rosterSlot.findMany({
       where: {
         fantasyTeamId: teamId,
@@ -147,7 +191,7 @@ export async function GET(
       });
       const weekDates =
         (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
-      const range = getWeekMatchRange(weekDates, week);
+      const range = await getEffectiveWeekMatchRange(weekDates, week);
 
       const mleTeamIds = rosterSlots.map((s) => s.mleTeamId);
       const opponentByTeamId = new Map<string, { id: string; name: string; leagueId: string; slug: string; logoPath: string; primaryColor: string; secondaryColor: string }>();
@@ -179,14 +223,23 @@ export async function GET(
       const allMleTeams = await prisma.mLETeam.findMany({ select: { id: true } });
       const allMleTeamIds = allMleTeams.map((t) => t.id);
 
+      // Real MLE match data already exists for every week of the season
+      // (it's already over) — but this app still paces fantasy stats one
+      // week at a time, so previewing a future week's lineup shouldn't
+      // surface real stats for weeks that haven't "happened" yet
+      // fantasy-wise. Capped independently from `week` itself, which still
+      // drives the roster/opponent preview above — that part legitimately
+      // looks ahead.
+      const statsWeek = Math.min(week, fantasyTeam.league.currentWeek);
+
       const statsByLens = new Map<"2s" | "3s", Awaited<ReturnType<typeof getTeamSeasonStats>>>();
       const rankByLens = new Map<"2s" | "3s", Map<string, number>>();
       const standingsByLens = new Map<"2s" | "3s", Awaited<ReturnType<typeof getWithinLeagueStandings>>>();
       for (const lens of ["2s", "3s"] as const) {
-        const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: week, lens });
+        const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: statsWeek, lens });
         statsByLens.set(lens, stats);
         rankByLens.set(lens, rankTeamsByFpts(stats));
-        standingsByLens.set(lens, await getWithinLeagueStandings(week, lens));
+        standingsByLens.set(lens, await getWithinLeagueStandings(statsWeek, lens, stats));
       }
 
       const toStatBundle = (s: TeamSeasonStatsRow | undefined) => ({
@@ -228,7 +281,11 @@ export async function GET(
           id: slot.id,
           position: slot.position,
           slotIndex: slot.slotIndex,
-          isLocked: slot.isLocked,
+          // A future week previewed off the current week's real rows (see
+          // isFutureWeekPreview above) hasn't actually started yet — it
+          // shouldn't borrow the current week's lock status along with its
+          // team assignments, or it'd show as locked before it's even begun.
+          isLocked: isFutureWeekPreview ? false : slot.isLocked,
           fantasyPoints: slot.fantasyPoints,
           defaultMode,
           mleTeam: {
@@ -291,6 +348,7 @@ export async function GET(
         waiverSystem: fantasyTeam.league.waiverSystem,
       },
       week,
+      isByeWeek,
       rosterSlots: enrichedSlots,
       record: { wins: myWins, losses: myLosses },
       rank,
@@ -325,6 +383,12 @@ export async function POST(
     }
 
     const { leagueId, teamId } = await params;
+
+    // Make sure lock state is current before checking it below (e.g. an
+    // add attempted right at the 3am ET boundary shouldn't slip through on
+    // a stale isLocked value from before this request).
+    await runAutoLockSweep(leagueId);
+
     const body = await req.json();
     const { week, position, slotIndex, mleTeamId } = body;
 
@@ -519,6 +583,12 @@ export async function PATCH(
     }
 
     const { leagueId, teamId } = await params;
+
+    // Make sure lock state is current before checking it below (e.g. a
+    // move attempted right at the 3am ET boundary shouldn't slip through on
+    // a stale isLocked value from before this request).
+    await runAutoLockSweep(leagueId);
+
     const body = await req.json();
     const { rosterSlotId, newPosition, newSlotIndex } = body;
 
@@ -595,64 +665,85 @@ export async function PATCH(
       );
     }
 
-    // Check if target slot is occupied
-    const targetSlot = await prisma.rosterSlot.findUnique({
-      where: {
-        fantasyTeamId_week_position_slotIndex: {
-          fantasyTeamId: teamId,
-          week: rosterSlot.week,
-          position: newPosition,
-          slotIndex: newSlotIndex,
-        },
-      },
-    });
+    // The actual move/swap runs as one transaction that RE-READS both slots
+    // and gates every write on the exact state just read, instead of the
+    // findUnique-then-blind-update this used to be. Two rapid clicks (or any
+    // other overlapping PATCH for slots sharing a row) used to both read the
+    // same pre-move snapshot and both write their own version of the "swap",
+    // which could leave the same mleTeam sitting in two slots at once.
+    // Gating each update's WHERE clause on the position/slotIndex we just
+    // read means a losing concurrent request's update simply matches zero
+    // rows once it's actually applied (Postgres re-checks the WHERE clause
+    // against the committed row when the lock is acquired) — it throws and
+    // the whole transaction rolls back cleanly instead of corrupting state.
+    try {
+      await prisma.$transaction(async (tx) => {
+        const freshSlot = await tx.rosterSlot.findUnique({ where: { id: rosterSlotId } });
+        if (!freshSlot) throw new Error("SLOT_GONE");
+        if (freshSlot.isLocked) throw new Error("SLOT_LOCKED");
 
-    // If target slot exists and is locked, can't swap
-    if (targetSlot && targetSlot.isLocked) {
-      return NextResponse.json(
-        { error: "Target slot is locked and cannot be swapped" },
-        { status: 400 }
-      );
-    }
+        const targetSlot = await tx.rosterSlot.findUnique({
+          where: {
+            fantasyTeamId_week_position_slotIndex: {
+              fantasyTeamId: teamId,
+              week: freshSlot.week,
+              position: newPosition,
+              slotIndex: newSlotIndex,
+            },
+          },
+        });
 
-    // Perform the swap/move
-    if (targetSlot) {
-      // Swap the two slots
-      await prisma.$transaction([
-        // Temporarily move target to a placeholder
-        prisma.rosterSlot.update({
-          where: { id: targetSlot.id },
-          data: {
-            position: "temp",
-            slotIndex: 999,
-          },
-        }),
-        // Move source to target position
-        prisma.rosterSlot.update({
-          where: { id: rosterSlotId },
-          data: {
-            position: newPosition,
-            slotIndex: newSlotIndex,
-          },
-        }),
-        // Move target to source position
-        prisma.rosterSlot.update({
-          where: { id: targetSlot.id },
-          data: {
-            position: rosterSlot.position,
-            slotIndex: rosterSlot.slotIndex,
-          },
-        }),
-      ]);
-    } else {
-      // Just move to empty slot
-      await prisma.rosterSlot.update({
-        where: { id: rosterSlotId },
-        data: {
-          position: newPosition,
-          slotIndex: newSlotIndex,
-        },
+        if (targetSlot && targetSlot.isLocked) {
+          throw new Error("TARGET_LOCKED");
+        }
+
+        if (targetSlot) {
+          // Swap the two slots, each write gated on the state just read.
+          const step1 = await tx.rosterSlot.updateMany({
+            where: { id: targetSlot.id, position: newPosition, slotIndex: newSlotIndex },
+            data: { position: "temp", slotIndex: 999 },
+          });
+          if (step1.count === 0) throw new Error("CONFLICT");
+
+          const step2 = await tx.rosterSlot.updateMany({
+            where: { id: rosterSlotId, position: freshSlot.position, slotIndex: freshSlot.slotIndex },
+            data: { position: newPosition, slotIndex: newSlotIndex },
+          });
+          if (step2.count === 0) throw new Error("CONFLICT");
+
+          const step3 = await tx.rosterSlot.updateMany({
+            where: { id: targetSlot.id, position: "temp", slotIndex: 999 },
+            data: { position: freshSlot.position, slotIndex: freshSlot.slotIndex },
+          });
+          if (step3.count === 0) throw new Error("CONFLICT");
+        } else {
+          const step = await tx.rosterSlot.updateMany({
+            where: { id: rosterSlotId, position: freshSlot.position, slotIndex: freshSlot.slotIndex },
+            data: { position: newPosition, slotIndex: newSlotIndex },
+          });
+          if (step.count === 0) throw new Error("CONFLICT");
+        }
       });
+    } catch (error) {
+      if (error instanceof Error && error.message === "SLOT_LOCKED") {
+        return NextResponse.json(
+          { error: "This roster slot is locked and cannot be modified" },
+          { status: 400 }
+        );
+      }
+      if (error instanceof Error && error.message === "TARGET_LOCKED") {
+        return NextResponse.json(
+          { error: "Target slot is locked and cannot be swapped" },
+          { status: 400 }
+        );
+      }
+      if (error instanceof Error && (error.message === "CONFLICT" || error.message === "SLOT_GONE")) {
+        return NextResponse.json(
+          { error: "This lineup changed before your edit went through — refresh and try again" },
+          { status: 409 }
+        );
+      }
+      throw error;
     }
 
     // Fetch updated roster
@@ -708,6 +799,12 @@ export async function DELETE(
     }
 
     const { leagueId, teamId } = await params;
+
+    // Make sure lock state is current before checking it below (e.g. a drop
+    // attempted right at the 3am ET boundary shouldn't slip through on a
+    // stale isLocked value from before this request).
+    await runAutoLockSweep(leagueId);
+
     const body = await req.json();
     const { rosterSlotId } = body;
 
@@ -772,7 +869,12 @@ export async function DELETE(
       );
     }
 
-    // Delete the roster slot and create transaction record
+    // Delete the roster slot, create the transaction record, and mark the
+    // team as on-waivers all in the same transaction — doing the waiver-
+    // period write as a separate call after this commits would leave a gap
+    // where the slot is already gone but the team doesn't look "on waivers"
+    // yet, letting a concurrent add request slip through as a normal free-
+    // agent pickup and bypass clearance entirely.
     await prisma.$transaction(async (tx) => {
       await tx.rosterSlot.delete({
         where: { id: rosterSlotId },
@@ -791,11 +893,11 @@ export async function DELETE(
           processedAt: new Date(),
         },
       });
-    });
 
-    // Manager-initiated drop: the team enters the waiver clearance window
-    // rather than going straight back to free agency.
-    await markTeamDroppedForWaivers(leagueId, rosterSlot.mleTeamId);
+      // Manager-initiated drop: the team enters the waiver clearance window
+      // rather than going straight back to free agency.
+      await markTeamDroppedForWaivers(leagueId, rosterSlot.mleTeamId, tx);
+    });
 
     return NextResponse.json({
       success: true,

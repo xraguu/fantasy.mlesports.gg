@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getFantasyStandings } from "@/lib/standings";
+import { getFantasyStandings, getDoubleWinResultsByTeam, compareStandings } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
 
 /**
@@ -27,6 +27,7 @@ export async function GET(
         id: true,
         name: true,
         currentWeek: true,
+        maxTeams: true,
       },
     });
 
@@ -47,13 +48,18 @@ export async function GET(
       },
     });
 
-    // Get all matchups for the league (used for streak calc below)
+    // Get all regular-season matchups for the league (used for streak calc
+    // below) — playoff matchups never count toward standings.
     const matchups = await prisma.matchup.findMany({
-      where: { fantasyLeagueId: leagueId },
+      where: { fantasyLeagueId: leagueId, isPlayoff: false },
     });
 
-    // Shared win/loss/points source (honors double-win if enabled on this league)
-    const fantasyStandings = await getFantasyStandings(leagueId);
+    // Shared win/loss/points source (honors double-win if enabled on this
+    // league) — computed once and handed to getFantasyStandings too, which
+    // needs the exact same (leagueId, no throughWeek) result internally;
+    // without passing it through, that was a second, identical query.
+    const doubleWinResultsByTeamId = await getDoubleWinResultsByTeam(leagueId);
+    const fantasyStandings = await getFantasyStandings(leagueId, undefined, doubleWinResultsByTeamId);
     const standingByTeamId = new Map(fantasyStandings.map((s) => [s.teamId, s]));
 
     // Calculate standings for each team
@@ -65,10 +71,8 @@ export async function GET(
         const totalPoints = base?.pointsFor ?? 0;
         const pointsAgainst = base?.pointsAgainst ?? 0;
 
-        // Streak calc still needs per-game W/L sequence (double-win bonuses
-        // aren't "games", so streaks/gamesPlayed are based on actual matchup
-        // results only, not the wins/losses totals above which may include
-        // double-win bonuses)
+        // gamesPlayed/avgPoints are based on actual matchup results only —
+        // a double-win bonus isn't a separate "game" played.
         const teamMatchups = matchups.filter(
           (m) => m.homeTeamId === team.id || m.awayTeamId === team.id
         );
@@ -77,8 +81,13 @@ export async function GET(
         ).length;
         const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
-        const streakString = computeStreak(
-          teamMatchups.map((matchup) => {
+        // Double-win results are appended after the matchup results (not
+        // merged/sorted together) so that for any week with both, the
+        // matchup result stays first and the double-win result — the
+        // chronologically second result that week — is what a stable sort
+        // by week leaves as the more recent of the two.
+        const streakString = computeStreak([
+          ...teamMatchups.map((matchup) => {
             const isHome = matchup.homeTeamId === team.id;
             const myScore = isHome ? matchup.homeScore : matchup.awayScore;
             const oppScore = isHome ? matchup.awayScore : matchup.homeScore;
@@ -86,13 +95,14 @@ export async function GET(
               myScore === null || oppScore === null
                 ? null
                 : myScore > oppScore
-                ? "W"
+                ? ("W" as const)
                 : myScore < oppScore
-                ? "L"
+                ? ("L" as const)
                 : null;
             return { week: matchup.week, result };
-          })
-        );
+          }),
+          ...(doubleWinResultsByTeamId.get(team.id) ?? []),
+        ]);
 
         // Get roster slots to find top performing team
         const rosterSlots = await prisma.rosterSlot.findMany({
@@ -173,11 +183,13 @@ export async function GET(
       })
     );
 
-    // Sort standings by wins (desc), then by points (desc)
-    standings.sort((a, b) => {
-      if (a.wins !== b.wins) return b.wins - a.wins;
-      return b.points - a.points;
-    });
+    // Win rate, then points for, then points against — see lib/standings.ts's compareStandings.
+    standings.sort((a, b) =>
+      compareStandings(
+        { wins: a.wins, losses: a.losses, pointsFor: a.points, pointsAgainst: a.pointsAgainst },
+        { wins: b.wins, losses: b.losses, pointsFor: b.points, pointsAgainst: b.pointsAgainst }
+      )
+    );
 
     // Add rank
     const standingsWithRank = standings.map((team, index) => ({
@@ -191,6 +203,7 @@ export async function GET(
         id: league.id,
         name: league.name,
         currentWeek: league.currentWeek,
+        maxTeams: league.maxTeams,
       },
     });
   } catch (error) {

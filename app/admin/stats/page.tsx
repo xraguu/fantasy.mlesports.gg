@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { TEAMS, getTeamById } from "@/lib/teams";
 import { useAlert } from "@/components/AlertProvider";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 interface ImportedTeam {
   teamId: string;
@@ -12,7 +13,7 @@ interface ImportedTeam {
   isManualOverride: boolean;
 }
 
-interface RefreshResult {
+interface ImportResult {
   season: number;
   week: number;
   import: {
@@ -23,6 +24,10 @@ interface RefreshResult {
     errors: string[];
     teams: ImportedTeam[];
   };
+}
+
+interface RecalculateResult {
+  week: number;
   calculate: {
     slotsScored: number;
     matchupsUpdated: number;
@@ -49,11 +54,19 @@ interface ManualOverride {
 
 export default function ManualStatsPage() {
   const showAlert = useAlert();
-  // Manual refresh state (import + calculate, same job the cron runs every
-  // 120 minutes — this button just runs it on demand)
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshResult, setRefreshResult] = useState<RefreshResult | null>(null);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
+  // Re-import state — always the current week, same import the cron runs
+  // every 120 minutes; this button just runs it on demand.
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Recalculate state — a separate action, for an admin-chosen week (e.g.
+  // to fix a specific week's scores after a roster correction, without
+  // re-importing or touching every other week).
+  const [recalculateWeek, setRecalculateWeek] = useState(1);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalculateResult, setRecalculateResult] = useState<RecalculateResult | null>(null);
+  const [recalculateError, setRecalculateError] = useState<string | null>(null);
 
   // Manual stats override state
   const [showManualForm, setShowManualForm] = useState(false);
@@ -138,19 +151,39 @@ export default function ManualStatsPage() {
     }
   };
 
-  const runRefresh = async () => {
-    setRefreshing(true);
-    setRefreshResult(null);
-    setRefreshError(null);
+  const runImport = async () => {
+    setImporting(true);
+    setImportResult(null);
+    setImportError(null);
     try {
-      const res = await fetch("/api/admin/stats/refresh", { method: "POST" });
+      const res = await fetch("/api/admin/stats/import", { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Refresh failed");
-      setRefreshResult(data);
+      if (!res.ok) throw new Error(data.error || "Import failed");
+      setImportResult(data);
     } catch (err) {
-      setRefreshError(err instanceof Error ? err.message : "Refresh failed");
+      setImportError(err instanceof Error ? err.message : "Import failed");
     } finally {
-      setRefreshing(false);
+      setImporting(false);
+    }
+  };
+
+  const runRecalculate = async () => {
+    setRecalculating(true);
+    setRecalculateResult(null);
+    setRecalculateError(null);
+    try {
+      const res = await fetch("/api/admin/stats/recalculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week: recalculateWeek }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Recalculate failed");
+      setRecalculateResult(data);
+    } catch (err) {
+      setRecalculateError(err instanceof Error ? err.message : "Recalculate failed");
+    } finally {
+      setRecalculating(false);
     }
   };
 
@@ -178,45 +211,44 @@ export default function ManualStatsPage() {
 
   return (
     <div>
-      {/* Automatic refresh + manual trigger */}
+      {/* Re-import stats */}
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
         <h2 style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
-          Stat Refresh
+          Re-import Stats
         </h2>
         <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
-          Sprocket stats re-import and fantasy score calculation run automatically every 120 minutes
-          for the current week — no admin action needed. Use this button to force a refresh right now
-          instead of waiting for the next scheduled run (e.g. right after a match finishes).
+          Sprocket stats re-import runs automatically every 120 minutes for the current week — no admin
+          action needed. Use this button to force a re-import right now instead of waiting for the next
+          scheduled run (e.g. right after a match finishes). This does not recalculate fantasy scores —
+          use Recalculate Scores below for that.
         </p>
 
         <button
           className="btn btn-primary"
-          onClick={runRefresh}
-          disabled={refreshing}
+          onClick={runImport}
+          disabled={importing}
           style={{ padding: "0.75rem 2rem", fontWeight: 700, marginBottom: "1.5rem" }}
         >
-          {refreshing ? "Refreshing..." : "Re-import & Recalculate Now"}
+          {importing ? "Importing..." : "Re-import Now"}
         </button>
 
-        {refreshError && (
+        {importError && (
           <div style={{ padding: "1rem", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "8px", color: "#f87171", marginBottom: "1rem" }}>
-            {refreshError}
+            {importError}
           </div>
         )}
 
-        {refreshResult && (
+        {importResult && (
           <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "1.25rem" }}>
             <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-              Season {refreshResult.season}, Week {refreshResult.week}
+              Season {importResult.season}, Week {importResult.week}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
               {[
-                { label: "Matches Found", value: refreshResult.import.matchesFound },
-                { label: "Teams Imported", value: refreshResult.import.imported, color: "#22c55e" },
-                { label: "Manual Overrides", value: refreshResult.import.manualOverrides, color: "var(--accent)" },
-                { label: "Import Skipped", value: refreshResult.import.skipped, color: refreshResult.import.skipped > 0 ? "#f87171" : undefined },
-                { label: "Slots Scored", value: refreshResult.calculate.slotsScored, color: "#22c55e" },
-                { label: "Matchups Updated", value: refreshResult.calculate.matchupsUpdated, color: "#22c55e" },
+                { label: "Matches Found", value: importResult.import.matchesFound },
+                { label: "Teams Imported", value: importResult.import.imported, color: "#22c55e" },
+                { label: "Manual Overrides", value: importResult.import.manualOverrides, color: "var(--accent)" },
+                { label: "Import Skipped", value: importResult.import.skipped, color: importResult.import.skipped > 0 ? "#f87171" : undefined },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
                   <div style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
@@ -225,19 +257,91 @@ export default function ManualStatsPage() {
               ))}
             </div>
 
-            {refreshResult.import.errors.length > 0 && (
-              <div style={{ marginBottom: "1rem" }}>
-                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#f87171", marginBottom: "0.5rem" }}>Import errors ({refreshResult.import.errors.length})</div>
-                {refreshResult.import.errors.map((e, i) => (
+            {importResult.import.errors.length > 0 && (
+              <div>
+                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#f87171", marginBottom: "0.5rem" }}>Import errors ({importResult.import.errors.length})</div>
+                {importResult.import.errors.map((e, i) => (
                   <div key={i} style={{ fontSize: "0.8rem", color: "#f87171", padding: "0.25rem 0" }}>{e}</div>
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </div>
 
-            {refreshResult.calculate.teamsWithNoStats.length > 0 && (
+      {/* Recalculate scores */}
+      <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
+        <h2 style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
+          Recalculate Scores
+        </h2>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
+          Recalculates fantasy scores for a specific week from whatever stats are already imported —
+          doesn&apos;t re-import Sprocket data first. Useful after a roster correction, or to fix a past
+          week&apos;s scores without touching any other week.
+        </p>
+
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+          <div>
+            <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+              Week
+            </label>
+            <select
+              value={recalculateWeek}
+              onChange={(e) => setRecalculateWeek(parseInt(e.target.value))}
+              style={{
+                padding: "0.75rem",
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "6px",
+                color: "var(--text-main)",
+                fontSize: "0.9rem",
+              }}
+            >
+              {Array.from({ length: 14 }, (_, i) => i + 1).map((week) => (
+                <option key={week} value={week}>
+                  Week {week}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            className="btn btn-primary"
+            onClick={runRecalculate}
+            disabled={recalculating}
+            style={{ padding: "0.75rem 2rem", fontWeight: 700, alignSelf: "flex-end" }}
+          >
+            {recalculating ? "Recalculating..." : "Recalculate Now"}
+          </button>
+        </div>
+
+        {recalculateError && (
+          <div style={{ padding: "1rem", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "8px", color: "#f87171", marginBottom: "1rem" }}>
+            {recalculateError}
+          </div>
+        )}
+
+        {recalculateResult && (
+          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "1.25rem" }}>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+              Week {recalculateResult.week}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+              {[
+                { label: "Slots Scored", value: recalculateResult.calculate.slotsScored, color: "#22c55e" },
+                { label: "Matchups Updated", value: recalculateResult.calculate.matchupsUpdated, color: "#22c55e" },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+                  <div style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {recalculateResult.calculate.teamsWithNoStats.length > 0 && (
               <div>
                 <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#f87171", marginBottom: "0.5rem" }}>Teams with no stats (scores left blank)</div>
-                <div style={{ fontSize: "0.8rem", color: "#f87171" }}>{refreshResult.calculate.teamsWithNoStats.join(", ")}</div>
+                <div style={{ fontSize: "0.8rem", color: "#f87171" }}>{recalculateResult.calculate.teamsWithNoStats.join(", ")}</div>
               </div>
             )}
           </div>
@@ -554,9 +658,9 @@ export default function ManualStatsPage() {
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Shots</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Saves</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Assists</th>
-                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>D.Inf</th>
-                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>D.Tkn</th>
-                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>SR%</th>
+                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="D.Inf" full="Demos Inflicted" /></th>
+                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="D.Tkn" full="Demos Taken" /></th>
+                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="SR%" full="Save Rate" /></th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Record</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Actions</th>
                   </tr>

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import { useAlert } from "@/components/AlertProvider";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 interface MLETeam {
   id: string;
@@ -110,6 +111,7 @@ export default function TeamPortalPage() {
     waivers: true
   });
   const [availabilityFilterOpen, setAvailabilityFilterOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Real roster data
   const [rosterData, setRosterData] = useState<RosterData | null>(null);
@@ -319,6 +321,12 @@ export default function TeamPortalPage() {
       return false;
     });
 
+    // Filter by search term (team name)
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().toLowerCase();
+      filteredData = filteredData.filter(team => team.name.toLowerCase().includes(term));
+    }
+
     // Then sort the filtered data
     return filteredData.sort((a, b) => {
       const aValue = a[sortColumn];
@@ -330,7 +338,7 @@ export default function TeamPortalPage() {
         return aValue < bValue ? 1 : -1;
       }
     });
-  }, [sortColumn, sortDirection, leagueFilter, availabilityFilter, mleTeams]);
+  }, [sortColumn, sortDirection, leagueFilter, availabilityFilter, searchTerm, mleTeams]);
 
   return (
     <>
@@ -928,6 +936,24 @@ export default function TeamPortalPage() {
 
       {/* Filters */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+        {/* Search */}
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search teams..."
+          style={{
+            width: "200px",
+            maxWidth: "100%",
+            background: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            color: "var(--text-main)",
+            padding: "0.5rem 1rem",
+            borderRadius: "6px",
+            fontSize: "0.9rem",
+          }}
+        />
+
         {/* Availability Filter */}
         <div style={{ position: "relative", width: "200px", maxWidth: "100%" }}>
           <button
@@ -1173,19 +1199,19 @@ export default function TeamPortalPage() {
                   onClick={() => handleSort("fpts")}
                   style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600, cursor: "pointer", userSelect: "none" }}
                 >
-                  Fpts<SortIcon column="fpts" sortColumn={sortColumn} sortDirection={sortDirection} />
+                  <HeaderTooltip label="Fpts" full="Fantasy Points" /><SortIcon column="fpts" sortColumn={sortColumn} sortDirection={sortDirection} />
                 </th>
                 <th
                   onClick={() => handleSort("avg")}
                   style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600, cursor: "pointer", userSelect: "none" }}
                 >
-                  Avg<SortIcon column="avg" sortColumn={sortColumn} sortDirection={sortDirection} />
+                  <HeaderTooltip label="Avg" full="Average Fantasy Points" /><SortIcon column="avg" sortColumn={sortColumn} sortDirection={sortDirection} />
                 </th>
                 <th
                   onClick={() => handleSort("last")}
                   style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600, cursor: "pointer", userSelect: "none" }}
                 >
-                  Last<SortIcon column="last" sortColumn={sortColumn} sortDirection={sortDirection} />
+                  <HeaderTooltip label="Last" full="Last Week's Fantasy Points" /><SortIcon column="last" sortColumn={sortColumn} sortDirection={sortDirection} />
                 </th>
                 <th
                   onClick={() => handleSort("goals")}
@@ -1215,7 +1241,7 @@ export default function TeamPortalPage() {
                   onClick={() => handleSort("demos")}
                   style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600, cursor: "pointer", userSelect: "none" }}
                 >
-                  Demos<SortIcon column="demos" sortColumn={sortColumn} sortDirection={sortDirection} />
+                  <HeaderTooltip label="Demos" full="Demolitions" /><SortIcon column="demos" sortColumn={sortColumn} sortDirection={sortDirection} />
                 </th>
                 <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Record</th>
               </tr>

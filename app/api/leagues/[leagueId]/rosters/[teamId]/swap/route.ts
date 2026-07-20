@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
+import { runAutoLockSweep } from "@/lib/autoLock";
 
 /**
  * POST /api/leagues/[leagueId]/rosters/[teamId]/swap
@@ -35,6 +36,12 @@ export async function POST(
     }
 
     const { leagueId, teamId } = await params;
+
+    // Make sure lock state is current before checking it below (e.g. a swap
+    // attempted right at the 3am ET boundary shouldn't slip through on a
+    // stale isLocked value from before this request).
+    await runAutoLockSweep(leagueId);
+
     const body = await req.json();
     const { week, dropMleTeamId, addMleTeamId } = body;
 
@@ -116,6 +123,11 @@ export async function POST(
       );
     }
 
+    // The waiver-period writes below happen inside this same transaction —
+    // doing them as separate calls after commit would leave a gap where the
+    // roster's already updated but the dropped team doesn't look "on
+    // waivers" yet, letting a concurrent request instant-add it as a plain
+    // free agent and bypass clearance entirely.
     const updatedSlot = await prisma.$transaction(async (tx) => {
       const slot = await tx.rosterSlot.update({
         where: { id: slotToReplace.id },
@@ -136,13 +148,13 @@ export async function POST(
         },
       });
 
+      // Dropped team enters the waiver clearance window; the added team's
+      // own clearance (if any) is cleared since it's now been picked up.
+      await markTeamDroppedForWaivers(leagueId, dropMleTeamId, tx);
+      await clearWaiverPeriod(leagueId, addMleTeamId, tx);
+
       return slot;
     });
-
-    // Dropped team enters the waiver clearance window; the added team's own
-    // clearance (if any) is cleared since it's now been picked up.
-    await markTeamDroppedForWaivers(leagueId, dropMleTeamId);
-    await clearWaiverPeriod(leagueId, addMleTeamId);
 
     return NextResponse.json({
       success: true,

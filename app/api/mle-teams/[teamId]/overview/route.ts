@@ -39,19 +39,25 @@ export async function GET(
     const allMleTeams = await prisma.mLETeam.findMany({ select: { id: true } });
     const allMleTeamIds = allMleTeams.map((t) => t.id);
 
-    const [stats2s, stats3s, standing2s, standing3s, fantasyRanking2s, fantasyRanking3s] = await Promise.all([
-      getTeamSeasonStats({ teamIds: [teamId], throughWeek, lens: "2s" }),
-      getTeamSeasonStats({ teamIds: [teamId], throughWeek, lens: "3s" }),
-      getWithinLeagueStandings(throughWeek, "2s"),
-      getWithinLeagueStandings(throughWeek, "3s"),
-      getLeagueWideRanking(throughWeek, "2s", allMleTeamIds),
-      getLeagueWideRanking(throughWeek, "3s", allMleTeamIds),
+    // Every team's stats, fetched once per lens — getWithinLeagueStandings
+    // and getLeagueWideRanking both need the same all-teams data, and this
+    // team's own row is just a lookup into it, so there's no need for a
+    // separate single-team query on top.
+    const [allStats2s, allStats3s] = await Promise.all([
+      getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek, lens: "2s" }),
+      getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek, lens: "3s" }),
+    ]);
+    const [standing2s, standing3s, fantasyRanking2s, fantasyRanking3s] = await Promise.all([
+      getWithinLeagueStandings(throughWeek, "2s", allStats2s),
+      getWithinLeagueStandings(throughWeek, "3s", allStats3s),
+      getLeagueWideRanking(throughWeek, "2s", allMleTeamIds, allStats2s),
+      getLeagueWideRanking(throughWeek, "3s", allMleTeamIds, allStats3s),
     ]);
 
     return NextResponse.json({
       week: throughWeek,
-      record2s: stats2s.get(teamId)?.record ?? "0-0",
-      record3s: stats3s.get(teamId)?.record ?? "0-0",
+      record2s: allStats2s.get(teamId)?.record ?? "0-0",
+      record3s: allStats3s.get(teamId)?.record ?? "0-0",
       mleStanding2s: standing2s.get(teamId) ?? null,
       mleStanding3s: standing3s.get(teamId) ?? null,
       fantasyRank2s: fantasyRanking2s.get(teamId) ?? null,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { runAutoLockSweep } from "@/lib/autoLock";
 
 /**
  * POST /api/leagues/[leagueId]/rosters/set-lineup
@@ -17,6 +18,12 @@ export async function POST(
     }
 
     const { leagueId } = await params;
+
+    // Make sure lock state is current before checking it below (e.g. an
+    // edit attempted right at the 3am ET boundary shouldn't slip through on
+    // a stale isLocked value from before this request).
+    await runAutoLockSweep(leagueId);
+
     const body = await req.json();
     const { fantasyTeamId, week, updates } = body;
 

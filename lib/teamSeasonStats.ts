@@ -200,14 +200,17 @@ export function rankTeamsByFpts(
 /**
  * Ranks a set of MLE teams by cumulative fpts through a given week, under a
  * gamemode lens. Compute once per (week, lens) per page render and reuse —
- * do not call this per-row.
+ * do not call this per-row. Pass `precomputedStats` (from a `getTeamSeasonStats`
+ * call the caller already made for the same `teamIds`/`throughWeek`/`lens`)
+ * to skip re-querying TeamWeeklyStats entirely.
  */
 export async function getLeagueWideRanking(
   throughWeek: number,
   lens: GamemodeLens,
-  allMleTeamIds: string[]
+  allMleTeamIds: string[],
+  precomputedStats?: Map<string, TeamSeasonStatsRow>
 ): Promise<Map<string, number>> {
-  const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek, lens });
+  const stats = precomputedStats ?? (await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek, lens }));
   return rankTeamsByFpts(stats);
 }
 
@@ -220,12 +223,26 @@ export interface WithinLeagueStanding {
  * MLE "standings" — rank of every MLE team WITHIN its own league/tier (AL/CL/ML
  * have 32 teams, FL/PL have 16), as opposed to getLeagueWideRanking's global
  * rank across all ~160 teams. Computed once for every MLE league, not per row.
+ *
+ * Used to call `getLeagueWideRanking` (a fresh `TeamWeeklyStats` query) once
+ * per sub-league in a sequential loop — 5+ extra round trips to a remote DB
+ * on every call, on top of its own `mLETeam.findMany`. All five sub-leagues'
+ * rankings come from the exact same underlying per-team fpts, so this now
+ * fetches every team's stats ONCE (or reuses `precomputedStats`, if the
+ * caller already fetched the same `throughWeek`/`lens` for all teams — most
+ * callers here do, right before calling this) and just re-groups it by
+ * `leagueId` in memory — 0-2 queries total instead of 6+.
  */
 export async function getWithinLeagueStandings(
   throughWeek: number,
-  lens: GamemodeLens
+  lens: GamemodeLens,
+  precomputedStats?: Map<string, TeamSeasonStatsRow>
 ): Promise<Map<string, WithinLeagueStanding>> {
   const allTeams = await prisma.mLETeam.findMany({ select: { id: true, leagueId: true } });
+  const stats =
+    precomputedStats ??
+    (await getTeamSeasonStats({ teamIds: allTeams.map((t) => t.id), throughWeek, lens }));
+
   const byLeague = new Map<string, string[]>();
   for (const t of allTeams) {
     if (!byLeague.has(t.leagueId)) byLeague.set(t.leagueId, []);
@@ -234,7 +251,9 @@ export async function getWithinLeagueStandings(
 
   const result = new Map<string, WithinLeagueStanding>();
   for (const teamIds of byLeague.values()) {
-    const ranking = await getLeagueWideRanking(throughWeek, lens, teamIds);
+    const idSet = new Set(teamIds);
+    const subsetStats = new Map([...stats].filter(([id]) => idSet.has(id)));
+    const ranking = rankTeamsByFpts(subsetStats);
     for (const [id, rank] of ranking) {
       result.set(id, { rank, totalTeams: teamIds.length });
     }

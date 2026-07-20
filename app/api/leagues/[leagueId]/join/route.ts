@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyTeamId } from "@/lib/id-generator";
@@ -67,6 +68,18 @@ export async function POST(
       return NextResponse.json({ error: "League not found" }, { status: 404 });
     }
 
+    // A league can only be joined before its draft starts — joining
+    // mid-draft or after it's completed leaves the new team with no
+    // DraftPick rows assigned to it at all, permanently stuck at 0 roster
+    // slots (free-agent pickups are blocked until draftStatus ===
+    // "completed", so there'd be no way to ever fill a roster).
+    if (league.draftStatus !== "not_started") {
+      return NextResponse.json(
+        { error: "This league's draft has already started — it can no longer be joined" },
+        { status: 400 }
+      );
+    }
+
     // Check if league is full
     if (league.fantasyTeams.length >= league.maxTeams) {
       return NextResponse.json(
@@ -114,29 +127,49 @@ export async function POST(
     // Generate custom team ID
     const teamId = generateFantasyTeamId(leagueId, user.id);
 
-    // Create the fantasy team
-    const fantasyTeam = await prisma.fantasyTeam.create({
-      data: {
-        id: teamId,
-        fantasyLeagueId: leagueId,
-        ownerUserId: session.user.id,
-        displayName: teamName,
-        shortCode: shortCode.toUpperCase(),
-        draftPosition: league.fantasyTeams.length + 1,
-        faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
-        waiverPriority: league.waiverSystem !== "faab" ? league.fantasyTeams.length + 1 : null,
-      },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-          },
+    // Create the fantasy team. The capacity/already-a-member checks above
+    // read a snapshot of fantasyTeams that can go stale the instant another
+    // join request lands concurrently — two requests both reading the same
+    // "N of maxTeams" count would otherwise both pass validation and both
+    // create a team, overfilling the league with duplicate draftPositions.
+    // `FantasyTeam` has a `@@unique([fantasyLeagueId, draftPosition])`
+    // constraint precisely so the database (not this read-then-write race)
+    // is what actually enforces "one team per position" — the loser of a
+    // concurrent race gets a clean P2002 here instead of silently
+    // succeeding into an invalid state.
+    let fantasyTeam;
+    try {
+      fantasyTeam = await prisma.fantasyTeam.create({
+        data: {
+          id: teamId,
+          fantasyLeagueId: leagueId,
+          ownerUserId: session.user.id,
+          displayName: teamName,
+          shortCode: shortCode.toUpperCase(),
+          draftPosition: league.fantasyTeams.length + 1,
+          faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
+          waiverPriority: league.waiverSystem !== "faab" ? league.fantasyTeams.length + 1 : null,
         },
-        league: true,
-      },
-    });
+        include: {
+          owner: {
+            select: {
+              id: true,
+              displayName: true,
+              avatarUrl: true,
+            },
+          },
+          league: true,
+        },
+      });
+    } catch (createError) {
+      if (createError instanceof Prisma.PrismaClientKnownRequestError && createError.code === "P2002") {
+        return NextResponse.json(
+          { error: "That spot in the league was just taken — please refresh and try again" },
+          { status: 409 }
+        );
+      }
+      throw createError;
+    }
 
     // Auto-generate the regular season schedule the moment the league fills up
     if (league.fantasyTeams.length + 1 === league.maxTeams) {

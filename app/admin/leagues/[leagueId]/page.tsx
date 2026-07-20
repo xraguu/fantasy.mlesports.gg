@@ -8,7 +8,6 @@ interface User {
   id: string;
   displayName: string;
   avatarUrl: string | null;
-  discordId: string;
 }
 
 interface FantasyTeam {
@@ -31,13 +30,13 @@ interface League {
   draftType: string;
   waiverSystem: string;
   faabBudget: number | null;
-  rosterConfig: any;
+  rosterConfig: Record<string, number>;
   draftStatus: string | null;
   draftPickDeadline: string | null;
   draftPickTimeSeconds: number | null;
   doubleWinEnabled: boolean;
   fantasyTeams: FantasyTeam[];
-  draftPicks: any[];
+  draftPicks: unknown[];
   _count: {
     fantasyTeams: number;
     draftPicks: number;
@@ -49,8 +48,6 @@ interface League {
 
 interface BulkRow {
   userId: string;
-  teamName: string;
-  shortCode: string;
 }
 
 interface RosterSlotView {
@@ -86,12 +83,6 @@ interface EditRosterData {
   availableMleTeams: AvailableMleTeam[];
 }
 
-function formatSlotPosition(position: string): string {
-  return position === "be" || position === "flx"
-    ? position.toUpperCase()
-    : position;
-}
-
 export default function AdminLeagueManagementPage() {
   const params = useParams();
   const router = useRouter();
@@ -103,7 +94,7 @@ export default function AdminLeagueManagementPage() {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([
-    { userId: "", teamName: "", shortCode: "" },
+    { userId: "" },
   ]);
   const [savingDoubleWin, setSavingDoubleWin] = useState(false);
   const [pickTimeSeconds, setPickTimeSeconds] = useState(90);
@@ -172,11 +163,11 @@ export default function AdminLeagueManagementPage() {
         "success",
       );
       setShowAddUserModal(false);
-      setBulkRows([{ userId: "", teamName: "", shortCode: "" }]);
+      setBulkRows([{ userId: "" }]);
       fetchLeague();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error adding users:", error);
-      showAlert(error.message || "Failed to add users", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to add users", "error");
     }
   };
 
@@ -193,7 +184,7 @@ export default function AdminLeagueManagementPage() {
   const addBulkRow = () => {
     setBulkRows((rows) => [
       ...rows,
-      { userId: "", teamName: "", shortCode: "" },
+      { userId: "" },
     ]);
   };
 
@@ -218,10 +209,10 @@ export default function AdminLeagueManagementPage() {
       }
 
       setLeague({ ...league, doubleWinEnabled: next });
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error toggling double-win:", error);
       showAlert(
-        error.message || "Failed to update double-win setting",
+        error instanceof Error ? error.message : "Failed to update double-win setting",
         "error",
       );
     } finally {
@@ -251,9 +242,9 @@ export default function AdminLeagueManagementPage() {
           : "Pick timer updated.",
         "success",
       );
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating pick timer:", error);
-      showAlert(error.message || "Failed to update pick timer", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to update pick timer", "error");
     } finally {
       setSavingPickTime(false);
     }
@@ -283,9 +274,9 @@ export default function AdminLeagueManagementPage() {
 
       showAlert("Team removed successfully!", "success");
       fetchLeague();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error removing team:", error);
-      showAlert(error.message || "Failed to remove team", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to remove team", "error");
     }
   };
 
@@ -348,9 +339,9 @@ export default function AdminLeagueManagementPage() {
 
       // Optionally refetch to ensure consistency
       fetchLeague();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating draft order:", error);
-      showAlert(error.message || "Failed to update draft order", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to update draft order", "error");
       // Revert on error
       fetchLeague();
     }
@@ -381,9 +372,9 @@ export default function AdminLeagueManagementPage() {
       const data = await response.json();
       showAlert(data.message || "Draft started successfully!", "success");
       fetchLeague();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error initializing draft:", error);
-      showAlert(error.message || "Failed to initialize draft", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to initialize draft", "error");
     }
   };
 
@@ -412,9 +403,9 @@ export default function AdminLeagueManagementPage() {
       const data = await response.json();
       showAlert(data.message || "Draft skipped.", "success");
       fetchLeague();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error skipping draft:", error);
-      showAlert(error.message || "Failed to skip draft", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to skip draft", "error");
     }
   };
 
@@ -447,9 +438,9 @@ export default function AdminLeagueManagementPage() {
         "success",
       );
       fetchLeague();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error running waivers:", error);
-      showAlert(error.message || "Failed to process waivers", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to process waivers", "error");
     }
   };
 
@@ -478,9 +469,9 @@ export default function AdminLeagueManagementPage() {
 
       showAlert("League deleted successfully!", "success");
       router.push("/admin/leagues");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error deleting league:", error);
-      showAlert(error.message || "Failed to delete league", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to delete league", "error");
     }
   };
 
@@ -495,8 +486,8 @@ export default function AdminLeagueManagementPage() {
       );
       if (!res.ok) throw new Error("Failed to load roster");
       setEditRosterData(await res.json());
-    } catch (error: any) {
-      showAlert(error.message || "Failed to load roster", "error");
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : "Failed to load roster", "error");
       setEditRosterTeam(null);
     } finally {
       setEditRosterLoading(false);
@@ -534,45 +525,64 @@ export default function AdminLeagueManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to drop team");
       await refreshEditRoster();
-    } catch (error: any) {
-      showAlert(error.message || "Failed to drop team", "error");
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : "Failed to drop team", "error");
     } finally {
       setRosterActionKey(null);
     }
   };
 
-  const handleAddToSlot = async (position: string, slotIndex: number) => {
+  // Saves every pending "add" selection across all empty slots in one go —
+  // an admin filling several open spots shouldn't have to click Add once
+  // per spot. Each selection still goes through as its own request (the API
+  // only supports one slot per call), applied sequentially so an earlier
+  // add can free up availability info before the next one submits, but
+  // there's a single Save action and a single refresh/summary at the end.
+  const handleSaveRosterChanges = async () => {
     if (!editRosterTeam || !editRosterData) return;
-    const key = `${position}-${slotIndex}`;
-    const mleTeamId = pendingAdd[key];
-    if (!mleTeamId) return;
+    const entries = Object.entries(pendingAdd).filter(([, mleTeamId]) => mleTeamId);
+    if (entries.length === 0) return;
 
-    setRosterActionKey(key);
+    setRosterActionKey("save-all");
+    const failures: string[] = [];
     try {
-      const res = await fetch(
-        `/api/admin/leagues/${leagueId}/teams/${editRosterTeam.id}/roster`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            week: editRosterData.week,
-            action: "add",
-            position,
-            slotIndex,
-            mleTeamId,
-          }),
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to add team");
-      setPendingAdd((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
+      for (const [key, mleTeamId] of entries) {
+        const [position, slotIndexStr] = key.split("-");
+        const slotIndex = parseInt(slotIndexStr, 10);
+        try {
+          const res = await fetch(
+            `/api/admin/leagues/${leagueId}/teams/${editRosterTeam.id}/roster`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                week: editRosterData.week,
+                action: "add",
+                position,
+                slotIndex,
+                mleTeamId,
+              }),
+            },
+          );
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to add team");
+          setPendingAdd((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : `Failed to add team to ${key}`);
+        }
+      }
+
       await refreshEditRoster();
-    } catch (error: any) {
-      showAlert(error.message || "Failed to add team", "error");
+
+      if (failures.length > 0) {
+        showAlert(failures.join("; "), "error");
+      } else {
+        showAlert("Roster changes saved!", "success");
+      }
     } finally {
       setRosterActionKey(null);
     }
@@ -717,50 +727,10 @@ export default function AdminLeagueManagementPage() {
                           <option value="">-- Select a user --</option>
                           {rowAvailableUsers.map((user) => (
                             <option key={user.id} value={user.id}>
-                              {user.displayName} ({user.discordId})
+                              {user.displayName}
                             </option>
                           ))}
                         </select>
-                        <input
-                          type="text"
-                          placeholder="Team Name"
-                          value={row.teamName}
-                          onChange={(e) =>
-                            updateBulkRow(index, "teamName", e.target.value)
-                          }
-                          style={{
-                            padding: "0.6rem",
-                            background: "rgba(255,255,255,0.1)",
-                            border: "1px solid rgba(255,255,255,0.2)",
-                            borderRadius: "6px",
-                            color: "var(--text-main)",
-                            fontSize: "0.9rem",
-                          }}
-                          required
-                        />
-                        <input
-                          type="text"
-                          placeholder="ABC"
-                          value={row.shortCode}
-                          onChange={(e) =>
-                            updateBulkRow(
-                              index,
-                              "shortCode",
-                              e.target.value.toUpperCase().slice(0, 3),
-                            )
-                          }
-                          maxLength={3}
-                          style={{
-                            padding: "0.6rem",
-                            background: "rgba(255,255,255,0.1)",
-                            border: "1px solid rgba(255,255,255,0.2)",
-                            borderRadius: "6px",
-                            color: "var(--text-main)",
-                            fontSize: "0.9rem",
-                            textTransform: "uppercase",
-                          }}
-                          required
-                        />
                         <button
                           type="button"
                           onClick={() => removeBulkRow(index)}
@@ -811,7 +781,7 @@ export default function AdminLeagueManagementPage() {
                     onClick={() => {
                       setShowAddUserModal(false);
                       setBulkRows([
-                        { userId: "", teamName: "", shortCode: "" },
+                        { userId: "" },
                       ]);
                     }}
                   >
@@ -1324,7 +1294,7 @@ export default function AdminLeagueManagementPage() {
                 color: "var(--text-muted)",
               }}
             >
-              No teams in this league yet. Click "Add Managers to League" to get
+              No teams in this league yet. Click &quot;Add Managers to League&quot; to get
               started.
             </div>
           ) : (
@@ -1622,17 +1592,6 @@ export default function AdminLeagueManagementPage() {
                           borderRadius: "6px",
                         }}
                       >
-                        <div
-                          style={{
-                            minWidth: "36px",
-                            fontWeight: 700,
-                            fontSize: "0.85rem",
-                            color: "var(--accent)",
-                          }}
-                        >
-                          {formatSlotPosition(slot.position)}
-                        </div>
-
                         {slot.mleTeam ? (
                           <>
                             <div
@@ -1686,52 +1645,71 @@ export default function AdminLeagueManagementPage() {
                             </button>
                           </>
                         ) : (
-                          <>
-                            <select
-                              value={pendingAdd[key] || ""}
-                              onChange={(e) =>
-                                setPendingAdd((prev) => ({
-                                  ...prev,
-                                  [key]: e.target.value,
-                                }))
-                              }
-                              style={{
-                                flex: 1,
-                                padding: "0.5rem",
-                                background: "rgba(255,255,255,0.1)",
-                                border: "1px solid rgba(255,255,255,0.2)",
-                                borderRadius: "6px",
-                                color: "var(--text-main)",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              <option value="">
-                                -- Empty: select a team to add --
-                              </option>
-                              {editRosterData.availableMleTeams.map((t) => (
+                          <select
+                            value={pendingAdd[key] || ""}
+                            onChange={(e) =>
+                              setPendingAdd((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                            disabled={rosterActionKey === "save-all"}
+                            style={{
+                              flex: 1,
+                              padding: "0.5rem",
+                              background: "rgba(255,255,255,0.1)",
+                              border: "1px solid rgba(255,255,255,0.2)",
+                              borderRadius: "6px",
+                              color: "var(--text-main)",
+                              fontSize: "0.85rem",
+                            }}
+                          >
+                            <option value="">
+                              -- Empty: select a team to add --
+                            </option>
+                            {editRosterData.availableMleTeams
+                              .filter(
+                                (t) =>
+                                  t.id === pendingAdd[key] ||
+                                  !Object.entries(pendingAdd).some(
+                                    ([otherKey, mleTeamId]) =>
+                                      otherKey !== key && mleTeamId === t.id,
+                                  ),
+                              )
+                              .map((t) => (
                                 <option key={t.id} value={t.id}>
                                   {t.leagueId} {t.name}
                                 </option>
                               ))}
-                            </select>
-                            <button
-                              className="btn btn-primary"
-                              disabled={isProcessing || !pendingAdd[key]}
-                              style={{
-                                padding: "0.4rem 0.9rem",
-                                fontSize: "0.8rem",
-                              }}
-                              onClick={() =>
-                                handleAddToSlot(slot.position, slot.slotIndex)
-                              }
-                            >
-                              {isProcessing ? "..." : "Add"}
-                            </button>
-                          </>
+                          </select>
                         )}
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {editRosterData && (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginTop: "1rem",
+                  }}
+                >
+                  <button
+                    className="btn btn-primary"
+                    disabled={
+                      rosterActionKey === "save-all" ||
+                      Object.values(pendingAdd).filter(Boolean).length === 0
+                    }
+                    style={{ padding: "0.6rem 1.5rem", fontWeight: 600 }}
+                    onClick={handleSaveRosterChanges}
+                  >
+                    {rosterActionKey === "save-all"
+                      ? "Saving..."
+                      : "Save Changes"}
+                  </button>
                 </div>
               )}
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import HeaderTooltip from "./HeaderTooltip";
 
 interface PlayerHistoricalStats {
   id: string;
@@ -325,7 +326,7 @@ export default function PlayerModal({
                         fontWeight: 600,
                       }}
                     >
-                      GP
+                      <HeaderTooltip label="GP" full="Games Played" />
                     </th>
                     <th
                       style={{
@@ -336,7 +337,7 @@ export default function PlayerModal({
                         fontWeight: 600,
                       }}
                     >
-                      SR
+                      <HeaderTooltip label="SR" full="Sprocket Rating" />
                     </th>
                     <th
                       style={{

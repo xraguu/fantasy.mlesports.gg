@@ -129,6 +129,22 @@ export async function GET(
           },
         });
 
+        // Teams the proposer is dropping (not giving to the receiver) to
+        // make room for this trade.
+        const proposerDropsTeams = await prisma.mLETeam.findMany({
+          where: {
+            id: {
+              in: trade.proposerDrops as string[],
+            },
+          },
+          select: {
+            id: true,
+            name: true,
+            leagueId: true,
+            logoPath: true,
+          },
+        });
+
         const isProposer = trade.proposerTeamId === teamId;
 
         return {
@@ -143,6 +159,11 @@ export async function GET(
             teamName: trade.proposerTeam.displayName,
             managerName: trade.proposerTeam.owner.displayName,
             gives: proposerGivesTeams.map((team) => ({
+              id: team.id,
+              name: `${team.leagueId} ${team.name}`,
+              logoPath: team.logoPath,
+            })),
+            drops: proposerDropsTeams.map((team) => ({
               id: team.id,
               name: `${team.leagueId} ${team.name}`,
               logoPath: team.logoPath,

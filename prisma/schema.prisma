@@ -287,6 +287,7 @@ model FantasyTeam {
   waiverClaims    WaiverClaim[]
 
   @@unique([fantasyLeagueId, ownerUserId])
+  @@unique([fantasyLeagueId, draftPosition])
 }
 
 model RosterSlot {
@@ -329,6 +330,7 @@ model Trade {
   receiverUserId  String
   proposerGives   String[]
   receiverGives   String[]
+  proposerDrops   String[]      @default([])
   status          String        @default("pending")
   acceptedAt      DateTime?
   executedAt      DateTime?
@@ -397,6 +399,8 @@ model Matchup {
 
   @@unique([fantasyLeagueId, week, homeTeamId])
   @@index([week])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
 }
 
 model SeasonSettings {
@@ -412,6 +416,18 @@ model SeasonSettings {
   draftStatsSeason String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// Single-row global config, not tied to any one season. Currently just the
+// admin-set "current season" (used to decide which leagues count as active
+// vs. archived — see lib/currentWeek.ts's getCurrentSeason) — previously
+// this was silently derived from the newest FantasyLeague.season, which
+// broke as soon as any league anywhere (e.g. a test league) had a higher
+// season number than the leagues actually in play.
+model AppSettings {
+  id            String   @id @default("global")
+  currentSeason Int?
+  updatedAt     DateTime @updatedAt
 }
 
 model ManualStatsOverride {

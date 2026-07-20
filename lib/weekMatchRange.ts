@@ -1,3 +1,5 @@
+import { prisma } from "./prisma";
+
 export interface WeekDateConfig {
   week: number;
   startDate: string;
@@ -37,5 +39,68 @@ export function getWeekMatchRange(
         return fallback;
       })();
 
+  return { start, end };
+}
+
+/**
+ * Same idea as getWeekMatchRange, but with a fallback for testing/misconfigured
+ * leagues whose configured week dates don't correspond to when the real
+ * matches actually happened (e.g. a test league dated "this week" while the
+ * imported match data is from a real past season): if the configured range
+ * has zero real Match rows in it, fall back to clustering every locally-known
+ * real match (via PlayerMatchStats — only ever populated for the one season
+ * actively imported, see scripts/import-csv-data.ts) into groups separated by
+ * >2-day gaps, and use the Nth chronological cluster as a stand-in for week N.
+ * Mirrors the identical fallback already used for live stats import (see
+ * lib/sprocketStats.ts) — verified there to cleanly reproduce a real season's
+ * actual week boundaries. Never touches a correctly-configured league: the
+ * fallback only ever runs when the configured range comes up completely empty.
+ */
+export async function getEffectiveWeekMatchRange(
+  weekDates: WeekDateConfig[],
+  week: number
+): Promise<{ start: Date; end: Date } | null> {
+  const configuredRange = getWeekMatchRange(weekDates, week);
+  if (configuredRange) {
+    const anyMatch = await prisma.match.count({
+      where: { scheduledDate: { gte: configuredRange.start, lt: configuredRange.end } },
+    });
+    if (anyMatch > 0) return configuredRange;
+  }
+
+  const statRows = await prisma.playerMatchStats.findMany({
+    distinct: ["matchId"],
+    select: { matchId: true },
+  });
+  if (statRows.length === 0) return configuredRange;
+
+  const matches = await prisma.match.findMany({
+    where: { id: { in: statRows.map((r) => r.matchId) } },
+    select: { scheduledDate: true },
+    orderBy: { scheduledDate: "asc" },
+  });
+  if (matches.length === 0) return configuredRange;
+
+  const clusters: Date[][] = [];
+  let current: Date[] = [];
+  for (const m of matches) {
+    if (current.length > 0) {
+      const gapDays =
+        (m.scheduledDate.getTime() - current[current.length - 1].getTime()) /
+        (1000 * 60 * 60 * 24);
+      if (gapDays > 2) {
+        clusters.push(current);
+        current = [];
+      }
+    }
+    current.push(m.scheduledDate);
+  }
+  if (current.length > 0) clusters.push(current);
+
+  const cluster = clusters[week - 1];
+  if (!cluster || cluster.length === 0) return configuredRange;
+
+  const start = cluster[0];
+  const end = new Date(cluster[cluster.length - 1].getTime() + 24 * 60 * 60 * 1000);
   return { start, end };
 }

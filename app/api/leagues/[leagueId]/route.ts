@@ -85,7 +85,7 @@ export async function GET(
   }
 }
 
-// PATCH /api/leagues/[leagueId] - Update league settings (commissioner only)
+// PATCH /api/leagues/[leagueId] - Update league settings (admin only)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ leagueId: string }> }
@@ -99,24 +99,18 @@ export async function PATCH(
 
     const { leagueId } = await params;
 
-    // Check if user is the league creator (commissioner) or admin
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: {
-        createdByUserId: true,
-      },
+      select: { id: true },
     });
 
     if (!league) {
       return NextResponse.json({ error: "League not found" }, { status: 404 });
     }
 
-    const isCommissioner = league.createdByUserId === session.user.id;
-    const isAdmin = session.user.role === "admin";
-
-    if (!isCommissioner && !isAdmin) {
+    if (session.user.role !== "admin") {
       return NextResponse.json(
-        { error: "Only the league commissioner can update league settings" },
+        { error: "Only an admin can update league settings" },
         { status: 403 }
       );
     }

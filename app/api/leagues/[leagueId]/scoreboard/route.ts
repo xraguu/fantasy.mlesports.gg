@@ -171,6 +171,11 @@ export async function GET(
                 position: existingSlot.position,
                 slotIndex: existingSlot.slotIndex,
                 fantasyPoints: existingSlot.fantasyPoints || 0,
+                // fantasyPoints is only ever null before that team's stats
+                // for the week have been imported — distinct from "played
+                // and scored exactly 0", which the `|| 0` above would
+                // otherwise make indistinguishable from "hasn't played yet".
+                played: existingSlot.fantasyPoints !== null,
                 isLocked: existingSlot.isLocked,
                 mleTeam: existingSlot.mleTeam
                   ? {
@@ -185,7 +190,7 @@ export async function GET(
                   : null,
               });
             } else {
-              // Empty slot
+              // Empty slot — no team assigned, so it can never "play."
               slots.push({
                 id: `empty-${teamId}-${position}-${index}`,
                 position: position,
@@ -193,6 +198,7 @@ export async function GET(
                   .slice(0, index)
                   .filter((p) => p === position).length,
                 fantasyPoints: 0,
+                played: false,
                 isLocked: false,
                 mleTeam: null,
               });

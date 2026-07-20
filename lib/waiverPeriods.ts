@@ -14,11 +14,21 @@ import { prisma } from "@/lib/prisma";
  * unrostered.
  */
 
+/**
+ * `client` defaults to the top-level `prisma` singleton but can be handed a
+ * transaction client instead — a caller that also deletes the dropped
+ * roster slot (or moves it in a trade) in its own transaction should pass
+ * that `tx` through here so both writes commit atomically. Without that, a
+ * request racing the gap between "slot deleted" and "waiver-period row
+ * written" could add the team as if it were still a live free agent,
+ * bypassing clearance entirely.
+ */
 export async function markTeamDroppedForWaivers(
   fantasyLeagueId: string,
-  mleTeamId: string
+  mleTeamId: string,
+  client: any = prisma
 ): Promise<void> {
-  await prisma.teamWaiverPeriod.upsert({
+  await client.teamWaiverPeriod.upsert({
     where: { fantasyLeagueId_mleTeamId: { fantasyLeagueId, mleTeamId } },
     update: { droppedAt: new Date() },
     create: { fantasyLeagueId, mleTeamId },
@@ -27,9 +37,10 @@ export async function markTeamDroppedForWaivers(
 
 export async function clearWaiverPeriod(
   fantasyLeagueId: string,
-  mleTeamId: string
+  mleTeamId: string,
+  client: any = prisma
 ): Promise<void> {
-  await prisma.teamWaiverPeriod.deleteMany({
+  await client.teamWaiverPeriod.deleteMany({
     where: { fantasyLeagueId, mleTeamId },
   });
 }

@@ -147,6 +147,25 @@ export async function GET(req: NextRequest) {
       take: 50,
     });
 
+    // For trade-type history rows we need the full gives/drops from both
+    // sides — Transaction only stores what it received (tradePartnerGave),
+    // so pull the source Trade rows to get the other side.
+    const tradeIds = [
+      ...new Set(transactionHistory.filter((tx) => tx.tradeId).map((tx) => tx.tradeId!)),
+    ];
+    const relatedTrades = await prisma.trade.findMany({
+      where: { id: { in: tradeIds } },
+      select: {
+        id: true,
+        proposerTeamId: true,
+        receiverTeamId: true,
+        proposerGives: true,
+        receiverGives: true,
+        proposerDrops: true,
+      },
+    });
+    const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
+
     // Batch-resolve every real MLE team referenced anywhere below, so the
     // frontend can render real names/logos instead of bare IDs.
     const mleTeamIds = new Set<string>();
@@ -157,11 +176,17 @@ export async function GET(req: NextRequest) {
     pendingTrades.forEach((t) => {
       t.proposerGives.forEach((id) => mleTeamIds.add(id));
       t.receiverGives.forEach((id) => mleTeamIds.add(id));
+      t.proposerDrops.forEach((id) => mleTeamIds.add(id));
     });
     transactionHistory.forEach((tx) => {
       if (tx.addTeamId) mleTeamIds.add(tx.addTeamId);
       if (tx.dropTeamId) mleTeamIds.add(tx.dropTeamId);
       tx.tradePartnerGave.forEach((id) => mleTeamIds.add(id));
+    });
+    relatedTrades.forEach((t) => {
+      t.proposerGives.forEach((id) => mleTeamIds.add(id));
+      t.receiverGives.forEach((id) => mleTeamIds.add(id));
+      t.proposerDrops.forEach((id) => mleTeamIds.add(id));
     });
 
     const mleTeams = await prisma.mLETeam.findMany({
@@ -178,23 +203,18 @@ export async function GET(req: NextRequest) {
     });
     const mleTeamMap = new Map(mleTeams.map((t) => [t.id, t]));
 
-    // For trade-type history rows we also need "what this team gave" —
-    // Transaction only stores what it received (tradePartnerGave), so pull
-    // the source Trade rows to get the other side.
-    const tradeIds = [
-      ...new Set(transactionHistory.filter((tx) => tx.tradeId).map((tx) => tx.tradeId!)),
-    ];
-    const relatedTrades = await prisma.trade.findMany({
-      where: { id: { in: tradeIds } },
-      select: {
-        id: true,
-        proposerTeamId: true,
-        receiverTeamId: true,
-        proposerGives: true,
-        receiverGives: true,
-      },
+    // Need both sides' team/manager names to render one merged row per
+    // trade in history, instead of the two per-side Transaction rows.
+    const tradeTeamIds = new Set<string>();
+    relatedTrades.forEach((t) => {
+      tradeTeamIds.add(t.proposerTeamId);
+      tradeTeamIds.add(t.receiverTeamId);
     });
-    const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
+    const tradeFantasyTeams = await prisma.fantasyTeam.findMany({
+      where: { id: { in: [...tradeTeamIds] } },
+      include: { owner: { select: { displayName: true } } },
+    });
+    const tradeFantasyTeamById = new Map(tradeFantasyTeams.map((t) => [t.id, t]));
 
     // Format pending waivers
     const formattedPendingWaivers = pendingWaivers.map((claim) => ({
@@ -226,15 +246,19 @@ export async function GET(req: NextRequest) {
       receiverGivesTeams: trade.receiverGives
         .map((id) => mleTeamMap.get(id))
         .filter((t): t is NonNullable<typeof t> => Boolean(t)),
+      proposerDropsTeams: trade.proposerDrops
+        .map((id) => mleTeamMap.get(id))
+        .filter((t): t is NonNullable<typeof t> => Boolean(t)),
       status: trade.status,
       submitted: trade.createdAt,
       acceptedAt: trade.acceptedAt,
       vetoDeadline: trade.acceptedAt ? tradeVetoDeadline(trade.acceptedAt) : null,
     }));
 
-    // Format transaction history
-    const formattedHistory = transactionHistory.map((transaction) => {
-      const base = {
+    // Format non-trade transaction history (waiver/pickup/drop) directly.
+    const nonTradeHistory = transactionHistory
+      .filter((transaction) => transaction.type !== "trade")
+      .map((transaction) => ({
         id: transaction.id,
         type: transaction.type,
         fantasyLeague: transaction.league.id,
@@ -246,28 +270,51 @@ export async function GET(req: NextRequest) {
         status: transaction.status,
         processed: transaction.processedAt,
         reason: transaction.reason,
-      };
+      }));
 
-      if (transaction.type === "trade" && transaction.tradeId) {
-        const trade = tradeMap.get(transaction.tradeId);
-        const gaveIds = trade
-          ? transaction.fantasyTeamId === trade.proposerTeamId
-            ? trade.proposerGives
-            : trade.receiverGives
-          : [];
+    // Trade-type transactions are created in pairs (one per side) — dedupe
+    // to a single merged row per trade showing both sides at once.
+    const seenTradeIds = new Set<string>();
+    const tradeHistory = transactionHistory
+      .filter((transaction) => transaction.type === "trade" && transaction.tradeId)
+      .filter((transaction) => {
+        const tradeId = transaction.tradeId as string;
+        if (seenTradeIds.has(tradeId)) return false;
+        seenTradeIds.add(tradeId);
+        return true;
+      })
+      .map((transaction) => {
+        const trade = tradeMap.get(transaction.tradeId as string);
+        const proposerTeam = trade ? tradeFantasyTeamById.get(trade.proposerTeamId) : undefined;
+        const receiverTeam = trade ? tradeFantasyTeamById.get(trade.receiverTeamId) : undefined;
+
         return {
-          ...base,
-          tradeGaveTeams: gaveIds
-            .map((id) => mleTeamMap.get(id))
-            .filter((t): t is NonNullable<typeof t> => Boolean(t)),
-          tradeReceivedTeams: transaction.tradePartnerGave
-            .map((id) => mleTeamMap.get(id))
-            .filter((t): t is NonNullable<typeof t> => Boolean(t)),
+          id: transaction.id,
+          type: "trade" as const,
+          fantasyLeague: transaction.league.id,
+          fantasyLeagueName: transaction.league.name,
+          proposer: proposerTeam?.owner.displayName ?? "Unknown Manager",
+          proposerTeam: proposerTeam?.displayName ?? "Unknown Team",
+          receiver: receiverTeam?.owner.displayName ?? "Unknown Manager",
+          receiverTeam: receiverTeam?.displayName ?? "Unknown Team",
+          proposerGivesTeams: trade
+            ? trade.proposerGives.map((id) => mleTeamMap.get(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
+            : [],
+          receiverGivesTeams: trade
+            ? trade.receiverGives.map((id) => mleTeamMap.get(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
+            : [],
+          proposerDropsTeams: trade
+            ? trade.proposerDrops.map((id) => mleTeamMap.get(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
+            : [],
+          status: transaction.status,
+          processed: transaction.processedAt,
+          reason: transaction.reason,
         };
-      }
+      });
 
-      return base;
-    });
+    const formattedHistory = [...nonTradeHistory, ...tradeHistory].sort(
+      (a, b) => new Date(b.processed).getTime() - new Date(a.processed).getTime()
+    );
 
     return NextResponse.json({
       leagues,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runStatsRefresh } from "@/lib/statsRefresh";
+import { runAutoLockSweep } from "@/lib/autoLock";
 
 /**
  * GET /api/cron/refresh-stats
@@ -28,6 +29,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Same reasoning as instrumentation.ts's scheduled refresh — a league
+    // nobody has opened since a week boundary passed otherwise never
+    // advances its own currentWeek/lock state/roster carry-forward.
+    await runAutoLockSweep();
     const result = await runStatsRefresh();
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

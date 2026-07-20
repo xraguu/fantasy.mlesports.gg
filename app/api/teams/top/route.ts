@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentSeasonWeek } from "@/lib/currentWeek";
 import { getTeamSeasonStats, GamemodeLens, compareByFpts } from "@/lib/teamSeasonStats";
 
 /**
@@ -9,19 +10,15 @@ import { getTeamSeasonStats, GamemodeLens, compareByFpts } from "@/lib/teamSeaso
  */
 export async function GET() {
   try {
-    const settings = await prisma.seasonSettings.findFirst({
-      orderBy: { season: "desc" },
-    });
-    const weekDates =
-      (settings?.weekDates as Array<{
-        week: number;
-        startDate: string;
-        endDate: string;
-      }>) ?? [];
-    const configuredWeeks = weekDates
-      .filter((w) => w.startDate && w.endDate)
-      .map((w) => w.week);
-    const throughWeek = configuredWeeks.length > 0 ? Math.max(...configuredWeeks) : 1;
+    // The real MLE match data already exists for every configured week
+    // (the season's already over), but this app still paces fantasy stats
+    // one week at a time — this used to take the LAST configured week
+    // unconditionally (effectively always the full season), which meant
+    // this list was showing full-season totals no matter what week it
+    // actually is. `getCurrentSeasonWeek` is the same real "what week is
+    // it right now" the automatic stats refresh itself uses.
+    const current = await getCurrentSeasonWeek();
+    const throughWeek = current?.week ?? 1;
 
     const teams = await prisma.mLETeam.findMany({
       select: {

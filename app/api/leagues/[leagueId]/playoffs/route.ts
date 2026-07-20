@@ -116,12 +116,19 @@ export async function GET(
       const consolationMatchups = weekMatchups.filter((m) => consolationTeamIds.includes(m.homeTeamId));
 
       // Byes only ever occur in round 1 of a 12-team league's money bracket —
-      // any money-seed team not appearing in this round's real matchups.
+      // any money-seed team not appearing in round 1's real matchups. Later
+      // rounds can also have a money-seed team missing from that round's
+      // matchups (e.g. the two round-1 losers, who skip round 2 entirely to
+      // meet each other in the final week instead) but that's not a bye —
+      // it's just not their week to play — so it must not render as one.
       const playingTeamIds = new Set(moneyMatchups.flatMap((m) => [m.homeTeamId, m.awayTeamId]));
-      const moneyByes = moneyTeamIds
-        .filter((id) => !playingTeamIds.has(id))
-        .map((id) => teamDTOById.get(id))
-        .filter((t): t is TeamDTO => !!t);
+      const moneyByes =
+        roundNumber === 1
+          ? moneyTeamIds
+              .filter((id) => !playingTeamIds.has(id))
+              .map((id) => teamDTOById.get(id))
+              .filter((t): t is TeamDTO => !!t)
+          : [];
 
       return {
         week,

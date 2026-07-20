@@ -29,7 +29,15 @@ export async function GET(
     const { searchParams } = new URL(req.url);
     const mode = (searchParams.get("mode") as HistoricalLens) || "combined";
 
-    await runDraftAutopickSweep(leagueId);
+    try {
+      await runDraftAutopickSweep(leagueId);
+    } catch (error) {
+      // Don't let a losing race (e.g. two picks for the same team resolved
+      // concurrently, see lib/draftPick.ts) break the draft room's poll —
+      // whichever pick actually won already committed; just log and
+      // continue rendering the current state.
+      console.error(`[draft-sweep] Sweep failed for league ${leagueId}:`, error);
+    }
 
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },

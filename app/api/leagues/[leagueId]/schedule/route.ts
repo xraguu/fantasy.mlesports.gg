@@ -107,10 +107,15 @@ export async function GET(
     const schedule = matchups.map((matchup) => {
       const isHome = matchup.homeTeamId === teamId;
       const opponent = isHome ? matchup.awayTeam : matchup.homeTeam;
-      const myScore = matchup.homeScore && matchup.awayScore
+      // Null check, not a truthiness check — a legitimately-scored 0 (e.g.
+      // every active roster slot came up scoreless that week) is a real
+      // played result, not "not played yet", and `0 && ...` would otherwise
+      // make this whole expression falsy and wrongly show "-".
+      const played = matchup.homeScore !== null && matchup.awayScore !== null;
+      const myScore = played
         ? (isHome ? matchup.homeScore : matchup.awayScore)
         : null;
-      const oppScore = matchup.homeScore && matchup.awayScore
+      const oppScore = played
         ? (isHome ? matchup.awayScore : matchup.homeScore)
         : null;
 

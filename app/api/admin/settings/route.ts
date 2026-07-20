@@ -22,13 +22,42 @@ export async function GET(request: NextRequest) {
         where: { season: parseInt(season) },
       });
     } else {
-      // Get the most recent season settings
-      settings = await prisma.seasonSettings.findFirst({
+      // "Current settings" means whichever season the most recently created
+      // league actually uses — the same resolution POST below uses to
+      // decide where to save. A bare "highest season number" findFirst
+      // doesn't track this: a stale SeasonSettings row left over from an
+      // old test season with a numerically larger season value (e.g. a
+      // leftover "2026" row from early testing, when real leagues now use
+      // season 20) would keep winning the ordering forever, making every
+      // save look like it silently didn't take since the next load reads
+      // back that stale row instead of the one just written.
+      const latestLeagueForSettings = await prisma.fantasyLeague.findFirst({
         orderBy: { season: "desc" },
+        select: { season: true },
       });
+      settings = latestLeagueForSettings
+        ? await prisma.seasonSettings.findUnique({
+            where: { season: latestLeagueForSettings.season },
+          })
+        : await prisma.seasonSettings.findFirst({
+            orderBy: { season: "desc" },
+          });
     }
 
     const availableHistoricalSeasons = await getAvailableHistoricalSeasons();
+
+    // Every distinct season a league actually exists for — the option list
+    // for the "Current Season" dropdown (a different, admin-set concept from
+    // draftStatsSeason's imported-stats seasons above).
+    const leagueSeasonRows = await prisma.fantasyLeague.findMany({
+      distinct: ["season"],
+      select: { season: true },
+      orderBy: { season: "desc" },
+    });
+    const availableLeagueSeasons = leagueSeasonRows.map((r) => r.season);
+
+    const appSettings = await prisma.appSettings.findUnique({ where: { id: "global" } });
+    const currentSeason = appSettings?.currentSeason ?? null;
 
     // If no settings exist, return defaults
     if (!settings) {
@@ -73,10 +102,12 @@ export async function GET(request: NextRequest) {
           draftStatsSeason: null,
         },
         availableHistoricalSeasons,
+        availableLeagueSeasons,
+        currentSeason,
       });
     }
 
-    return NextResponse.json({ settings, availableHistoricalSeasons });
+    return NextResponse.json({ settings, availableHistoricalSeasons, availableLeagueSeasons, currentSeason });
   } catch (error) {
     console.error("Error fetching season settings:", error);
     return NextResponse.json(
@@ -95,7 +126,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { weekDates, scoringRules, waiverSchedule, draftStatsSeason } = body;
+    const { weekDates, scoringRules, waiverSchedule, draftStatsSeason, currentSeason } = body;
 
     // Validate required fields
     if (!weekDates || !scoringRules) {
@@ -103,6 +134,27 @@ export async function POST(request: NextRequest) {
         { error: "Missing required fields" },
         { status: 400 }
       );
+    }
+
+    // currentSeason is a separate, global concept from everything else this
+    // route saves (see AppSettings in schema.prisma) — it isn't tied to any
+    // one season's row, so it's validated and upserted on its own.
+    if (currentSeason !== undefined && currentSeason !== null) {
+      const seasonExists = await prisma.fantasyLeague.findFirst({
+        where: { season: currentSeason },
+        select: { id: true },
+      });
+      if (!seasonExists) {
+        return NextResponse.json(
+          { error: "That season doesn't have any leagues — pick one that does" },
+          { status: 400 }
+        );
+      }
+      await prisma.appSettings.upsert({
+        where: { id: "global" },
+        update: { currentSeason },
+        create: { id: "global", currentSeason },
+      });
     }
 
     // Validate week dates array
@@ -161,7 +213,7 @@ export async function POST(request: NextRequest) {
       description: `Updated season settings for season ${settings.season}`,
     });
 
-    return NextResponse.json({ settings, success: true });
+    return NextResponse.json({ settings, currentSeason: currentSeason ?? null, success: true });
   } catch (error) {
     console.error("Error saving season settings:", error);
     return NextResponse.json(

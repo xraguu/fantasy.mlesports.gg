@@ -148,7 +148,10 @@ export async function importSprocketStatsForWeek(
   const weekStart = range.start;
   const weekEnd = range.end;
 
-  // 2. Fetch matches.csv and find this week's matches
+  // 2. Fetch matches.csv and player stats up front — player stats are
+  // season-specific, so the set of match_ids appearing in it also doubles
+  // as "every real match that belongs to this Sprocket season," which the
+  // chronological fallback below needs.
   const matchesCsv = await fetchCsvText(`${SPROCKET_BASE_URL}/matches.csv`);
   const allMatches = parse(matchesCsv, {
     columns: true,
@@ -156,23 +159,6 @@ export async function importSprocketStatsForWeek(
     trim: true,
   }) as SprocketMatch[];
 
-  const weekMatches = allMatches.filter((m) => {
-    if (m.winning_team === "Not Played / Data Unavailable") return false;
-    const matchDate = matchTime(m);
-    if (!matchDate) return false;
-    return matchDate >= weekStart && matchDate < weekEnd;
-  });
-
-  if (weekMatches.length === 0) {
-    throw new Error(
-      `No completed matches found for week ${week} (${weekConfig.startDate} to ${weekConfig.endDate}). ` +
-        `Check that week dates in Season Settings match when MLE actually plays.`
-    );
-  }
-
-  const weekMatchIds = new Set(weekMatches.map((m) => m.match_id));
-
-  // 3. Fetch player stats for this season
   const playerStatsCsv = await fetchCsvText(
     `${SPROCKET_BASE_URL}/player_stats_s${sprocketSeason}.csv`
   );
@@ -182,6 +168,74 @@ export async function importSprocketStatsForWeek(
     trim: true,
   }) as SprocketPlayerStat[];
 
+  const seasonMatchIds = new Set(allPlayerStats.map((p) => p.match_id));
+  const seasonMatches = allMatches.filter(
+    (m) =>
+      m.winning_team !== "Not Played / Data Unavailable" &&
+      seasonMatchIds.has(m.match_id) &&
+      matchTime(m) !== null
+  );
+
+  let weekMatches = seasonMatches.filter((m) => {
+    const matchDate = matchTime(m)!;
+    return matchDate >= weekStart && matchDate < weekEnd;
+  });
+
+  const fallbackNotes: string[] = [];
+
+  // Configured week dates are meant to line up with when the matches were
+  // actually played, but testing/historical-replay setups regularly reuse a
+  // past season's data under made-up calendar dates that don't overlap it
+  // at all. Rather than hard-failing in that case, fall back to "the Nth
+  // chronological cluster of this season's real matches" as a stand-in for
+  // week N — clusters are match groups separated by >2-day gaps, which
+  // reliably reproduces the season's actual week boundaries (verified
+  // against Season 19: cleanly split into exactly 10 clusters matching its
+  // 10 real weeks). This never triggers when the configured dates actually
+  // overlap real matches, so normal production behavior is unaffected.
+  if (weekMatches.length === 0) {
+    const sorted = [...seasonMatches].sort(
+      (a, b) => matchTime(a)!.getTime() - matchTime(b)!.getTime()
+    );
+    const clusters: SprocketMatch[][] = [];
+    let current: SprocketMatch[] = [];
+    for (const m of sorted) {
+      if (current.length > 0) {
+        const gapDays =
+          (matchTime(m)!.getTime() - matchTime(current[current.length - 1])!.getTime()) /
+          (1000 * 60 * 60 * 24);
+        if (gapDays > 2) {
+          clusters.push(current);
+          current = [];
+        }
+      }
+      current.push(m);
+    }
+    if (current.length > 0) clusters.push(current);
+
+    const cluster = clusters[week - 1];
+    if (cluster && cluster.length > 0) {
+      weekMatches = cluster;
+      const clusterStart = matchTime(cluster[0])!.toISOString().slice(0, 10);
+      const clusterEnd = matchTime(cluster[cluster.length - 1])!.toISOString().slice(0, 10);
+      fallbackNotes.push(
+        `Week ${week}'s configured dates (${weekConfig.startDate} to ${weekConfig.endDate}) had no real matches — ` +
+          `used chronological cluster ${week} of Season ${sprocketSeason} instead (${clusterStart} to ${clusterEnd}, ${cluster.length} matches).`
+      );
+    }
+  }
+
+  if (weekMatches.length === 0) {
+    throw new Error(
+      `No completed matches found for week ${week} (${weekConfig.startDate} to ${weekConfig.endDate}), ` +
+        `and no chronological fallback cluster ${week} exists for Season ${sprocketSeason} either. ` +
+        `Check that week dates in Season Settings match when MLE actually plays.`
+    );
+  }
+
+  errors.push(...fallbackNotes);
+
+  const weekMatchIds = new Set(weekMatches.map((m) => m.match_id));
   const weekPlayerStats = allPlayerStats.filter((p) =>
     weekMatchIds.has(p.match_id)
   );

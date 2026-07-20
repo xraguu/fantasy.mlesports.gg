@@ -131,6 +131,35 @@ export async function calculateScoresForWeek(
   leagueId?: string,
   triggeredByUserId?: string
 ): Promise<ScoreCalculationResult> {
+  // Even though the real MLE season (and its full stats history) is already
+  // over, this app deliberately still paces fantasy scoring one week at a
+  // time — a league sitting on week 2 shouldn't have weeks 3+ pre-scored
+  // just because the underlying data already exists to do it. Every caller
+  // funnels through here (the scheduled refresh, and every admin manual-
+  // recalculate route), so the guard lives here once rather than trusting
+  // every call site to remember it.
+  let eligibleLeagueIds: string[] | null = null;
+  if (leagueId) {
+    const league = await prisma.fantasyLeague.findUnique({
+      where: { id: leagueId },
+      select: { currentWeek: true },
+    });
+    if (league && week > league.currentWeek) {
+      throw new Error(
+        `Week ${week} hasn't happened yet for this league (currently on week ${league.currentWeek}) — scores can't be calculated ahead of time.`
+      );
+    }
+  } else {
+    const leagues = await prisma.fantasyLeague.findMany({
+      where: { currentWeek: { gte: week } },
+      select: { id: true },
+    });
+    eligibleLeagueIds = leagues.map((l) => l.id);
+    if (eligibleLeagueIds.length === 0) {
+      return { slotsScored: 0, matchupsUpdated: 0, teamsWithNoStats: [] };
+    }
+  }
+
   // 1. Get scoring rules from most recent SeasonSettings
   const rules = await getActiveScoringRules();
 
@@ -142,10 +171,13 @@ export async function calculateScoresForWeek(
     statsMap.get(s.teamId)![s.gamemode as "2s" | "3s"] = s;
   }
 
-  // 3. Get all RosterSlots for the week (optionally filtered by league)
+  // 3. Get all RosterSlots for the week — scoped to one league if given, or
+  // (for a global call) only leagues that have actually reached this week.
   const slotWhere: Record<string, unknown> = { week };
   if (leagueId) {
     slotWhere.fantasyTeam = { fantasyLeagueId: leagueId };
+  } else if (eligibleLeagueIds) {
+    slotWhere.fantasyTeam = { fantasyLeagueId: { in: eligibleLeagueIds } };
   }
 
   const rosterSlots = await prisma.rosterSlot.findMany({
@@ -175,6 +207,8 @@ export async function calculateScoresForWeek(
   const matchupWhere: Record<string, unknown> = { week };
   if (leagueId) {
     matchupWhere.fantasyLeagueId = leagueId;
+  } else if (eligibleLeagueIds) {
+    matchupWhere.fantasyLeagueId = { in: eligibleLeagueIds };
   }
 
   const matchups = await prisma.matchup.findMany({ where: matchupWhere });
@@ -231,6 +265,30 @@ export async function calculateScoresForWeek(
 
     const nextWeek = nextPlayoffWeekToGenerate(league.maxTeams, week);
     if (nextWeek === null) continue;
+
+    // If that round's matchups already have real recorded scores, this call
+    // is happening because an EARLIER week is being re-scored (e.g. an
+    // admin stat correction), not because this round is being generated for
+    // the first time — regenerating now would delete-and-recreate a round
+    // that's already been played, destroying its real results and leaving
+    // any round after it referencing matchups that no longer exist. Only
+    // (re)generate a round that hasn't actually been played yet, so a
+    // corrected earlier-week seeding can still flow into an unplayed next
+    // round without ever clobbering one that's already happened.
+    const nextWeekMatchups = await prisma.matchup.findMany({
+      where: { fantasyLeagueId: affectedLeagueId, week: nextWeek },
+      select: { homeScore: true, awayScore: true },
+    });
+    const nextWeekAlreadyPlayed = nextWeekMatchups.some(
+      (m) => m.homeScore !== null || m.awayScore !== null
+    );
+    if (nextWeekAlreadyPlayed) {
+      console.warn(
+        `Skipping auto-generation of week ${nextWeek} playoffs for league ${affectedLeagueId} — ` +
+          `that round already has recorded results (this looks like a recalculation of an earlier week).`
+      );
+      continue;
+    }
 
     try {
       const { matchupsCreated } = await generateAndSavePlayoffRound(affectedLeagueId, nextWeek);

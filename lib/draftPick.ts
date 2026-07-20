@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { generateRosterSlotId } from "@/lib/id-generator";
 import { initializeWaiverPriorityFromDraftOrder } from "@/lib/waiverPriority";
+import { adjustRegularSeasonForLateDraft } from "@/lib/scheduleGenerator";
 
 /**
  * The order draft picks fill a roster in — starters before bench ("top of
@@ -40,6 +41,17 @@ function buildOrderedPositions(rosterConfig: any): string[] {
  * them silently loses its roster slot to a unique-constraint collision —
  * confirmed live: exactly this happened once in 64 picks during a real
  * draft test, leaving a drafted team marked "picked" with no roster slot.
+ *
+ * The "is this team already drafted" check also has to happen in here, not
+ * just in the calling route — the route's check reads draftPicks from a
+ * snapshot fetched before this transaction starts, so two picks for the
+ * *same* mleTeamId submitted close together (e.g. the same manager's two
+ * picks back-to-back at a snake-draft round boundary, one manual + one
+ * autopick) can both pass that stale check and each successfully claim a
+ * *different* DraftPick row for the same team — no unique-constraint
+ * collision (different position/slotIndex), so both roster-slot creates
+ * succeed and the team silently ends up on the roster twice. Re-checking
+ * against DraftPick rows committed as of this transaction closes that gap.
  */
 export async function executeDraftPick(
   leagueId: string,
@@ -58,6 +70,19 @@ export async function executeDraftPick(
     const pick = await tx.draftPick.findUniqueOrThrow({ where: { id: draftPickId } });
     if (!pick.fantasyTeamId) {
       throw new Error("Pick is not available to be made");
+    }
+
+    const duplicatePick = await tx.draftPick.findFirst({
+      where: {
+        fantasyLeagueId: leagueId,
+        mleTeamId,
+        pickedAt: { not: null },
+        NOT: { id: draftPickId },
+      },
+      select: { id: true },
+    });
+    if (duplicatePick) {
+      throw new Error("This team has already been drafted");
     }
 
     const league = await tx.fantasyLeague.findUnique({
@@ -116,6 +141,12 @@ export async function executeDraftPick(
 
   if (draftCompleted) {
     await initializeWaiverPriorityFromDraftOrder(leagueId);
+    // If the season's own week 1 (or later) already passed before this
+    // draft finished, move the draft-day roster off week 1 onto the real
+    // current week and shorten the regular-season schedule to match — see
+    // adjustRegularSeasonForLateDraft's own comment for the full reasoning.
+    // A no-op if the draft finished on time.
+    await adjustRegularSeasonForLateDraft(leagueId);
   }
   return { draftCompleted };
 }

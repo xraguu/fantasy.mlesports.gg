@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import { useAlert } from "@/components/AlertProvider";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 // Types
 interface StatBundle {
@@ -107,6 +108,7 @@ interface RosterData {
     };
   };
   week: number;
+  isByeWeek?: boolean;
   rosterSlots: RosterSlot[];
   record?: {
     wins: number;
@@ -519,35 +521,25 @@ export default function MyRosterPage() {
     if (!moveMode) return;
 
     const slot = editableRoster[index];
-    if (!slot.mleTeam) return; // Can't select empty slots
-    if (slot.isLocked) return; // Can't select locked slots
+    if (slot.isLocked) return; // Can't select/target locked slots
 
     if (selectedTeamIndex === null) {
+      if (!slot.mleTeam) return; // Nothing to pick up from an empty slot
       setSelectedTeamIndex(index);
     } else if (selectedTeamIndex === index) {
       setSelectedTeamIndex(null);
     } else {
-      // Swap the teams but keep slots static
+      // Only the team moves between slots — position/slotIndex identify the
+      // slot itself and must stay put, whether or not the target is empty.
       const newRoster = [...editableRoster];
-      const team1Slot = newRoster[selectedTeamIndex].position;
-      const team2Slot = newRoster[index].position;
+      const teamAtSelected = newRoster[selectedTeamIndex].mleTeam;
+      const teamAtTarget = newRoster[index].mleTeam;
 
-      // Swap the entire team objects
-      const temp = newRoster[selectedTeamIndex];
-      newRoster[selectedTeamIndex] = newRoster[index];
-      newRoster[index] = temp;
-
-      // Restore the original slots
       newRoster[selectedTeamIndex] = {
         ...newRoster[selectedTeamIndex],
-        position: team1Slot,
-        slotIndex: newRoster[selectedTeamIndex].slotIndex,
+        mleTeam: teamAtTarget,
       };
-      newRoster[index] = {
-        ...newRoster[index],
-        position: team2Slot,
-        slotIndex: newRoster[index].slotIndex,
-      };
+      newRoster[index] = { ...newRoster[index], mleTeam: teamAtSelected };
 
       setEditableRoster(newRoster);
       setSelectedTeamIndex(null);
@@ -699,6 +691,27 @@ export default function MyRosterPage() {
           </button>
         </div>
       </div>
+
+      {rosterData.isByeWeek && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
+            padding: "0.75rem 1.25rem",
+            marginBottom: "1.5rem",
+            borderRadius: "8px",
+            backgroundColor: "rgba(242, 182, 50, 0.1)",
+            border: "1px solid rgba(242, 182, 50, 0.35)",
+            color: "var(--accent)",
+            fontWeight: 600,
+            fontSize: "0.95rem",
+          }}
+        >
+          <span aria-hidden="true">⏸</span>
+          No matchup this week — you have a bye/off week for Week {currentWeek}.
+        </div>
+      )}
 
       {/* Team Overview Card */}
       <section
@@ -1262,7 +1275,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Opp
+                    <HeaderTooltip label="Opp" full="Opponent" />
                   </th>
                   <th
                     style={{
@@ -1273,7 +1286,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Oprk
+                    <HeaderTooltip label="Oprk" full="Opponent Rank" />
                   </th>
                   <th
                     style={{
@@ -1284,7 +1297,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Fprk
+                    <HeaderTooltip label="Fprk" full="Fantasy Points Rank" />
                   </th>
                   <th
                     style={{
@@ -1295,7 +1308,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Fpts
+                    <HeaderTooltip label="Fpts" full="Fantasy Points" />
                   </th>
                   <th
                     style={{
@@ -1306,7 +1319,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Avg
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" />
                   </th>
                   <th
                     style={{
@@ -1317,7 +1330,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    Last
+                    <HeaderTooltip label="Last" full="Last Week's Fantasy Points" />
                   </th>
                 </tr>
               </thead>
@@ -1347,7 +1360,12 @@ export default function MyRosterPage() {
                             (editableRoster.length > 0 ? editableRoster : fullRoster).findIndex((s) => s.position === "be")
                             ? "2px solid rgba(255,255,255,0.15)"
                             : "none",
-                        cursor: moveMode && !isEmpty && !slot.isLocked ? "pointer" : "default",
+                        cursor:
+                          moveMode &&
+                          !slot.isLocked &&
+                          (!isEmpty || selectedTeamIndex !== null)
+                            ? "pointer"
+                            : "default",
                         transition: "background-color 0.2s",
                         borderLeft:
                           selectedTeamIndex === index
@@ -1360,8 +1378,8 @@ export default function MyRosterPage() {
                         if (
                           moveMode &&
                           selectedTeamIndex !== index &&
-                          !isEmpty &&
-                          !slot.isLocked
+                          !slot.isLocked &&
+                          (!isEmpty || selectedTeamIndex !== null)
                         ) {
                           e.currentTarget.style.backgroundColor =
                             "rgba(242, 182, 50, 0.1)";
@@ -1808,7 +1826,7 @@ export default function MyRosterPage() {
                       userSelect: "none",
                     }}
                   >
-                    Fprk{" "}
+                    <HeaderTooltip label="Fprk" full="Fantasy Points Rank" />{" "}
                     {statsSortColumn === "fprk" &&
                       (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
@@ -1824,7 +1842,7 @@ export default function MyRosterPage() {
                       userSelect: "none",
                     }}
                   >
-                    Fpts{" "}
+                    <HeaderTooltip label="Fpts" full="Fantasy Points" />{" "}
                     {statsSortColumn === "fpts" &&
                       (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
@@ -1840,7 +1858,7 @@ export default function MyRosterPage() {
                       userSelect: "none",
                     }}
                   >
-                    Avg{" "}
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" />{" "}
                     {statsSortColumn === "avg" &&
                       (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
@@ -1856,7 +1874,7 @@ export default function MyRosterPage() {
                       userSelect: "none",
                     }}
                   >
-                    Last{" "}
+                    <HeaderTooltip label="Last" full="Last Week's Fantasy Points" />{" "}
                     {statsSortColumn === "last" &&
                       (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
@@ -1936,7 +1954,7 @@ export default function MyRosterPage() {
                       userSelect: "none",
                     }}
                   >
-                    Demos{" "}
+                    <HeaderTooltip label="Demos" full="Demolitions" />{" "}
                     {statsSortColumn === "demos" &&
                       (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
@@ -2442,6 +2460,53 @@ export default function MyRosterPage() {
                             </div>
                           ))}
                         </div>
+
+                        {trade.proposer.drops && trade.proposer.drops.length > 0 && (
+                          <>
+                            <div
+                              style={{
+                                fontSize: "0.85rem",
+                                color: "var(--text-muted)",
+                                marginTop: "0.75rem",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              {trade.isProposer ? "You also drop" : `${trade.proposer.managerName} also drops`}
+                            </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "0.5rem",
+                              }}
+                            >
+                              {trade.proposer.drops.map((team: any) => (
+                                <div
+                                  key={team.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "0.5rem",
+                                    padding: "0.5rem",
+                                    background: "rgba(239, 68, 68, 0.08)",
+                                    borderRadius: "6px",
+                                  }}
+                                >
+                                  <Image
+                                    src={team.logoPath}
+                                    alt={team.name}
+                                    width={32}
+                                    height={32}
+                                    style={{ borderRadius: "4px", opacity: 0.7 }}
+                                  />
+                                  <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                                    {team.name}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Arrow */}
@@ -2871,7 +2936,6 @@ export default function MyRosterPage() {
                               marginTop: "0.25rem",
                             }}
                           >
-                            {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position} ·{" "}
                             {slot.fantasyPoints?.toFixed(1) || 0} pts
                             {slot.isLocked && (
                               <span style={{ color: "#ef4444", marginLeft: "0.5rem" }}>

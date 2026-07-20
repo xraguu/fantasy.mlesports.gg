@@ -36,6 +36,18 @@ export async function POST(
       return NextResponse.json({ error: "League not found" }, { status: 404 });
     }
 
+    // Draft position only matters before the draft actually starts —
+    // initialize-draft snapshots it into each DraftPick's team assignment,
+    // and draft-completion seeds waiver priority from it too. Reordering
+    // after either of those has happened desyncs the displayed order from
+    // the picks/priority that already got generated from the old one.
+    if (league.draftStatus !== "not_started") {
+      return NextResponse.json(
+        { error: "Draft order can only be changed before the draft starts" },
+        { status: 400 }
+      );
+    }
+
     // Update all teams in a transaction
     await prisma.$transaction(
       teamOrders.map(({ teamId, draftPosition }) =>

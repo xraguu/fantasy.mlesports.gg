@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 interface RosterTeam {
   id: string;
@@ -49,7 +50,7 @@ export default function TradePage() {
   const [selectedOpponentTeams, setSelectedOpponentTeams] = useState<number[]>([]);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDropModal, setShowDropModal] = useState(false);
-  const [selectedDropTeamIndex, setSelectedDropTeamIndex] = useState<number | null>(null);
+  const [selectedDropTeamIndices, setSelectedDropTeamIndices] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   // Fetch roster data
@@ -89,22 +90,17 @@ export default function TradePage() {
     }
   }, [leagueId, opponentTeamId]);
 
-  // Calculate if user will need to drop teams after trade
-  const calculateNeedsToDrop = () => {
-    if (!myRoster) return false;
+  // A drop is only ever needed when this side is receiving more teams than
+  // it's sending — giving 2 for 1 (or an even trade) never requires making
+  // room, regardless of how full the roster already is.
+  const neededDropCount = Math.max(0, selectedOpponentTeams.length - selectedMyTeams.length);
+  const needsToDrop = neededDropCount > 0;
 
-    const config = myRoster.league.rosterConfig;
-    const totalSlots = config["2s"] + config["3s"] + config.flx + config.be;
-    const currentFilledSlots = myRoster.rosterSlots.filter(slot => slot.mleTeam !== null).length;
-
-    // After trade: current teams - teams sent + teams received
-    const afterTradeFilledSlots = currentFilledSlots - selectedMyTeams.length + selectedOpponentTeams.length;
-
-    // Need to drop if after trade we exceed roster capacity
-    return afterTradeFilledSlots > totalSlots;
+  const toggleDropTeam = (index: number) => {
+    setSelectedDropTeamIndices((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+    );
   };
-
-  const needsToDrop = calculateNeedsToDrop();
 
   const toggleMyTeam = (index: number) => {
     setSelectedMyTeams(prev =>
@@ -127,6 +123,10 @@ export default function TradePage() {
       // Build arrays of MLE team IDs (accessing mleTeam.id from the roster slot)
       const proposerGives = selectedMyTeams.map(idx => myRoster.rosterSlots[idx].mleTeam.id);
       const receiverGives = selectedOpponentTeams.map(idx => opponentRoster.rosterSlots[idx].mleTeam.id);
+      // Teams picked in the "make room" modal ride along as part of this
+      // same proposal — they aren't dropped now, only once the trade
+      // itself actually processes (see lib/tradeExecution.ts).
+      const proposerDrops = selectedDropTeamIndices.map(idx => myRoster.rosterSlots[idx].mleTeam.id);
 
       const response = await fetch(`/api/leagues/${leagueId}/trades/propose`, {
         method: "POST",
@@ -138,6 +138,7 @@ export default function TradePage() {
           receiverTeamId: opponentRoster.fantasyTeam.id,
           proposerGives,
           receiverGives,
+          proposerDrops,
         }),
       });
 
@@ -328,7 +329,7 @@ export default function TradePage() {
           }}
           onClick={() => {
             setShowDropModal(false);
-            setSelectedDropTeamIndex(null);
+            setSelectedDropTeamIndices([]);
           }}
         >
           <div
@@ -350,7 +351,7 @@ export default function TradePage() {
             <button
               onClick={() => {
                 setShowDropModal(false);
-                setSelectedDropTeamIndex(null);
+                setSelectedDropTeamIndices([]);
               }}
               style={{
                 position: "absolute",
@@ -377,11 +378,14 @@ export default function TradePage() {
             {/* Confirm button */}
             <button
               onClick={() => {
-                if (selectedDropTeamIndex !== null) {
+                if (selectedDropTeamIndices.length === neededDropCount) {
                   setShowDropModal(false);
                   handleProposeTrade();
                 } else {
-                  showAlert("Please select a team to drop", "warning");
+                  showAlert(
+                    `Please select ${neededDropCount} team${neededDropCount === 1 ? "" : "s"} to drop`,
+                    "warning"
+                  );
                 }
               }}
               disabled={submitting}
@@ -414,7 +418,7 @@ export default function TradePage() {
                 {myRoster.fantasyTeam.ownerDisplayName}
               </div>
               <div style={{ fontSize: "0.9rem", color: "var(--accent)", marginTop: "1rem", fontWeight: 600 }}>
-                Select a team to drop (You&apos;re receiving more teams than you&apos;re sending)
+                Select {neededDropCount} team{neededDropCount === 1 ? "" : "s"} to drop ({selectedDropTeamIndices.length}/{neededDropCount} selected) — you&apos;re receiving more teams than you&apos;re sending
               </div>
             </div>
 
@@ -424,68 +428,77 @@ export default function TradePage() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: "2px solid rgba(255, 255, 255, 0.2)" }}>
-                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Slot</th>
                       <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
-                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Fpts</th>
+                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Fpts" full="Fantasy Points" /></th>
                       <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Record</th>
                       <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {myTeams.map((team, index) => (
-                      <tr
-                        key={index}
-                        style={{
-                          borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
-                          backgroundColor: selectedDropTeamIndex === index ? "rgba(242, 182, 50, 0.1)" : "transparent",
-                        }}
-                      >
-                        <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.9rem", color: "var(--accent)" }}>
-                          {team.slot}
-                        </td>
-                        <td style={{ padding: "0.75rem 0.5rem" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                            <Image
-                              src={team.logo}
-                              alt={team.name}
-                              width={24}
-                              height={24}
-                              style={{ borderRadius: "4px" }}
-                            />
-                            <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
-                              {team.name}
-                            </span>
-                          </div>
-                        </td>
-                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 600, fontSize: "0.9rem" }}>
-                          {team.fpts.toFixed(1)}
-                        </td>
-                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.9rem", color: "var(--text-muted)" }}>
-                          {team.record}
-                        </td>
-                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
-                          <button
-                            onClick={() => setSelectedDropTeamIndex(index)}
-                            style={{
-                              width: "24px",
-                              height: "24px",
-                              border: "2px solid var(--accent)",
-                              borderRadius: "4px",
-                              background: selectedDropTeamIndex === index ? "var(--accent)" : "transparent",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: selectedDropTeamIndex === index ? "#1a1a2e" : "transparent",
-                              fontWeight: 700,
-                              fontSize: "1rem",
-                            }}
-                          >
-                            ✓
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {myTeams.map((team, index) => {
+                      // A team already selected to give away in the trade
+                      // itself can't also be dropped — it's already leaving.
+                      const alreadyGiven = selectedMyTeams.includes(index);
+                      const selected = selectedDropTeamIndices.includes(index);
+                      return (
+                        <tr
+                          key={index}
+                          style={{
+                            borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
+                            backgroundColor: selected ? "rgba(242, 182, 50, 0.1)" : "transparent",
+                            opacity: alreadyGiven ? 0.4 : 1,
+                          }}
+                        >
+                          <td style={{ padding: "0.75rem 0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <Image
+                                src={team.logo}
+                                alt={team.name}
+                                width={24}
+                                height={24}
+                                style={{ borderRadius: "4px" }}
+                              />
+                              <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
+                                {team.name}
+                              </span>
+                              {alreadyGiven && (
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                  (already in this trade)
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 600, fontSize: "0.9rem" }}>
+                            {team.fpts.toFixed(1)}
+                          </td>
+                          <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                            {team.record}
+                          </td>
+                          <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
+                            <button
+                              onClick={() => !alreadyGiven && toggleDropTeam(index)}
+                              disabled={alreadyGiven}
+                              style={{
+                                width: "24px",
+                                height: "24px",
+                                border: "2px solid var(--accent)",
+                                borderRadius: "4px",
+                                background: selected ? "var(--accent)" : "transparent",
+                                cursor: alreadyGiven ? "not-allowed" : "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: selected ? "#1a1a2e" : "transparent",
+                                fontWeight: 700,
+                                fontSize: "1rem",
+                              }}
+                            >
+                              ✓
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -607,80 +620,89 @@ export default function TradePage() {
             <div className="trade-team-cell" style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>
               <div></div>
               <div>Team</div>
-              <div style={{ textAlign: "right" }}>Fpts</div>
+              <div style={{ textAlign: "right" }}><HeaderTooltip label="Fpts" full="Fantasy Points" /></div>
               <div style={{ textAlign: "center" }}>Record</div>
               <div></div>
             </div>
-            <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600, textAlign: "center" }}>
-              Position
-            </div>
+            <div />
             <div className="trade-team-cell trade-team-cell--mirror" style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>
               <div></div>
               <div>Team</div>
-              <div style={{ textAlign: "right" }}>Fpts</div>
+              <div style={{ textAlign: "right" }}><HeaderTooltip label="Fpts" full="Fantasy Points" /></div>
               <div style={{ textAlign: "center" }}>Record</div>
               <div></div>
             </div>
           </div>
 
-          {myTeams.map((team, idx) => {
+          {/* Iterate over the LONGER of the two rosters — they aren't
+              guaranteed to have the same number of filled slots (e.g. one
+              side dropped a team without a replacement yet), so pairing by
+              array index can run past the end of the shorter one. */}
+          {Array.from({ length: Math.max(myTeams.length, opponentTeams.length) }, (_, idx) => {
+            const team = myTeams[idx];
             const oppTeam = opponentTeams[idx];
             return (
               <div
-                key={team.id}
+                key={team?.id ?? oppTeam?.id ?? idx}
                 className="trade-slot-row"
                 style={{
-                  borderBottom: team.slot === "FLX" ? "2px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.05)",
+                  borderBottom: team?.slot === "FLX" ? "2px solid rgba(255,255,255,0.15)" : "1px solid rgba(255,255,255,0.05)",
                   paddingBottom: "0.75rem",
                   marginBottom: "0.75rem"
                 }}
               >
                 {/* My team for this slot */}
                 <div className="trade-team-cell">
-                  <Image src={team.logo} alt={team.name} width={24} height={24} style={{ borderRadius: "4px" }} />
-                  <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{team.name}</div>
-                  <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
-                  <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
-                  <input
-                    type="checkbox"
-                    checked={selectedMyTeams.includes(idx)}
-                    onChange={() => toggleMyTeam(idx)}
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      cursor: "pointer",
-                      accentColor: "#d4af37"
-                    }}
-                  />
+                  {team ? (
+                    <>
+                      <Image src={team.logo} alt={team.name} width={24} height={24} style={{ borderRadius: "4px" }} />
+                      <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{team.name}</div>
+                      <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
+                      <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
+                      <input
+                        type="checkbox"
+                        checked={selectedMyTeams.includes(idx)}
+                        onChange={() => toggleMyTeam(idx)}
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          cursor: "pointer",
+                          accentColor: "#d4af37"
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontStyle: "italic" }}>—</div>
+                  )}
                 </div>
 
-                {/* Position label for this slot */}
-                <div style={{
-                  fontSize: "0.85rem",
-                  fontWeight: 700,
-                  color: team.slot === "BE" ? "rgba(255,255,255,0.5)" : "#d4af37",
-                  textAlign: "center"
-                }}>
-                  {team.slot}
-                </div>
+                {/* Middle grid column intentionally left blank — the row no
+                    longer surfaces the roster-slot identifier (2s/3s/FLX/BE). */}
+                <div />
 
                 {/* Opponent's team for this slot */}
                 <div className="trade-team-cell trade-team-cell--mirror">
-                  <Image src={oppTeam.logo} alt={oppTeam.name} width={24} height={24} style={{ borderRadius: "4px" }} />
-                  <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{oppTeam.name}</div>
-                  <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{oppTeam.fpts.toFixed(1)}</div>
-                  <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{oppTeam.record}</div>
-                  <input
-                    type="checkbox"
-                    checked={selectedOpponentTeams.includes(idx)}
-                    onChange={() => toggleOpponentTeam(idx)}
-                    style={{
-                      width: "20px",
-                      height: "20px",
-                      cursor: "pointer",
-                      accentColor: "#d4af37"
-                    }}
-                  />
+                  {oppTeam ? (
+                    <>
+                      <Image src={oppTeam.logo} alt={oppTeam.name} width={24} height={24} style={{ borderRadius: "4px" }} />
+                      <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{oppTeam.name}</div>
+                      <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{oppTeam.fpts.toFixed(1)}</div>
+                      <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{oppTeam.record}</div>
+                      <input
+                        type="checkbox"
+                        checked={selectedOpponentTeams.includes(idx)}
+                        onChange={() => toggleOpponentTeam(idx)}
+                        style={{
+                          width: "20px",
+                          height: "20px",
+                          cursor: "pointer",
+                          accentColor: "#d4af37"
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", fontStyle: "italic" }}>—</div>
+                  )}
                 </div>
               </div>
             );

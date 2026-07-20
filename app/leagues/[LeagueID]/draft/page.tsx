@@ -114,6 +114,7 @@ export default function DraftPage() {
   const [modeFilter, setModeFilter] = useState<"Both" | "2s" | "3s">("Both");
   const [leagueFilterOpen, setLeagueFilterOpen] = useState(false);
   const [modeFilterOpen, setModeFilterOpen] = useState(false);
+  const [teamSearchTerm, setTeamSearchTerm] = useState("");
 
   // Fetch current user session
   useEffect(() => {
@@ -357,6 +358,7 @@ export default function DraftPage() {
 
   const filteredAvailableTeams = draftState.availableTeams
     .filter((team) => leagueFilter === "All" || team.leagueId === LEAGUE_FILTER_TO_CODE[leagueFilter])
+    .filter((team) => !teamSearchTerm.trim() || team.name.toLowerCase().includes(teamSearchTerm.trim().toLowerCase()))
     .sort((a, b) => (b.stats?.fpts ?? 0) - (a.stats?.fpts ?? 0));
 
   return (
@@ -558,15 +560,22 @@ export default function DraftPage() {
                 </div>
 
                 {/* Team Rows */}
-                {draftState.fantasyTeams.map((fantasyTeam) => (
+                {draftState.fantasyTeams.map((fantasyTeam) => {
+                  const autodraftLive = fantasyTeam.autodraftEnabled && draftState.status === "in_progress";
+                  return (
                   <div key={fantasyTeam.id} style={{ display: "flex", gap: "0.25rem" }}>
                     <div
                       style={{
                         width: "150px",
                         flexShrink: 0,
                         padding: "0.5rem",
-                        background: fantasyTeam.id === currentUserTeam?.id ? "rgba(242, 182, 50, 0.15)" : "rgba(255,255,255,0.08)",
+                        background: fantasyTeam.id === currentUserTeam?.id
+                          ? "rgba(242, 182, 50, 0.15)"
+                          : autodraftLive
+                          ? "rgba(249, 115, 22, 0.12)"
+                          : "rgba(255,255,255,0.08)",
                         borderRadius: "6px",
+                        border: autodraftLive ? "1px solid rgba(249, 115, 22, 0.55)" : "1px solid transparent",
                         fontSize: "0.85rem",
                         fontWeight: 600,
                         color: fantasyTeam.displayName === selectedManager ? "var(--accent)" : "var(--text-main)",
@@ -576,8 +585,8 @@ export default function DraftPage() {
                     >
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {fantasyTeam.displayName}
-                        {fantasyTeam.autodraftEnabled && draftState.status === "in_progress" && (
-                          <span style={{ marginLeft: "0.4rem", fontSize: "0.65rem", color: "var(--accent)" }}>AUTO</span>
+                        {autodraftLive && (
+                          <span style={{ marginLeft: "0.4rem", fontSize: "0.65rem", color: "#f97316" }}>AUTO</span>
                         )}
                       </span>
                     </div>
@@ -629,7 +638,8 @@ export default function DraftPage() {
                       );
                     })}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               </div>
             </div>
@@ -836,6 +846,25 @@ export default function DraftPage() {
                     Stats shown: {draftState.statsSeason}
                   </div>
                 )}
+
+                {/* Search */}
+                <input
+                  type="text"
+                  value={teamSearchTerm}
+                  onChange={(e) => setTeamSearchTerm(e.target.value)}
+                  placeholder="Search teams..."
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    color: "var(--text-main)",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "6px",
+                    fontSize: "0.85rem",
+                    marginBottom: "0.75rem",
+                  }}
+                />
 
                 {/* Filters */}
                 <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>

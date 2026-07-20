@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calcFpts, getActiveScoringRules } from "@/lib/scoringService";
-import { getWeekMatchRange } from "@/lib/weekMatchRange";
+import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
 
 /**
  * GET /api/leagues/[leagueId]/mle-teams/[teamId]/weekly-breakdown
@@ -11,13 +11,26 @@ import { getWeekMatchRange } from "@/lib/weekMatchRange";
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ teamId: string }> }
+  { params }: { params: Promise<{ leagueId: string; teamId: string }> }
 ) {
   try {
-    const { teamId } = await params;
+    const { leagueId, teamId } = await params;
+
+    // Real MLE match data already exists for every week of the season
+    // (it's already over), but this app still paces fantasy stats one week
+    // at a time — cap this league's breakdown at its own current week so a
+    // manager can't see real stats for weeks that haven't "happened" yet
+    // fantasy-wise, even though the underlying data is already there.
+    const league = await prisma.fantasyLeague.findUnique({
+      where: { id: leagueId },
+      select: { currentWeek: true },
+    });
 
     const weeklyStats = await prisma.teamWeeklyStats.findMany({
-      where: { teamId },
+      where: {
+        teamId,
+        ...(league ? { week: { lte: league.currentWeek } } : {}),
+      },
       orderBy: { week: "asc" },
     });
 
@@ -42,7 +55,7 @@ export async function GET(
         let opponentName: string | null = null;
         let opponentStats: { goals: number; shots: number } | null = null;
 
-        const range = getWeekMatchRange(weekDates, stat.week);
+        const range = await getEffectiveWeekMatchRange(weekDates, stat.week);
         if (range) {
           const { start, end } = range;
 

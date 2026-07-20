@@ -57,41 +57,76 @@ export async function GET(
       },
     });
 
-    // Trade rows reference the other side via tradePartnerTeamId — batch
-    // resolve those to real team/manager names instead of a placeholder.
-    const partnerTeamIds = [
+    // Trade-type transactions are created in pairs (one per side) — pull the
+    // source Trade rows so we can render one row per trade with both sides'
+    // full gives/drops, instead of the partial per-side view stored on
+    // Transaction itself.
+    const tradeIds = [
       ...new Set(
         transactions
-          .filter((t) => t.type === "trade" && t.tradePartnerTeamId)
-          .map((t) => t.tradePartnerTeamId as string)
+          .filter((t) => t.type === "trade" && t.tradeId)
+          .map((t) => t.tradeId as string)
       ),
     ];
-    const partnerTeams = await prisma.fantasyTeam.findMany({
-      where: { id: { in: partnerTeamIds } },
+    const relatedTrades = await prisma.trade.findMany({
+      where: { id: { in: tradeIds } },
+      select: {
+        id: true,
+        proposerTeamId: true,
+        receiverTeamId: true,
+        proposerGives: true,
+        receiverGives: true,
+        proposerDrops: true,
+      },
+    });
+    const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
+
+    const tradeTeamIds = new Set<string>();
+    relatedTrades.forEach((t) => {
+      tradeTeamIds.add(t.proposerTeamId);
+      tradeTeamIds.add(t.receiverTeamId);
+    });
+    const tradeFantasyTeams = await prisma.fantasyTeam.findMany({
+      where: { id: { in: [...tradeTeamIds] } },
       include: { owner: { select: { displayName: true } } },
     });
-    const partnerTeamById = new Map(partnerTeams.map((t) => [t.id, t]));
+    const tradeFantasyTeamById = new Map(tradeFantasyTeams.map((t) => [t.id, t]));
 
-    // Format transactions
-    const formattedTransactions = transactions.map((transaction) => {
-      if (transaction.type === "trade") {
-        const partner = transaction.tradePartnerTeamId
-          ? partnerTeamById.get(transaction.tradePartnerTeamId)
-          : undefined;
-        return {
-          id: transaction.id,
-          type: "trade",
-          fromTeam: transaction.fantasyTeam.displayName,
-          fromManager: transaction.fantasyTeam.owner.displayName,
-          toTeam: partner?.displayName ?? "Unknown Team",
-          toManager: partner?.owner.displayName ?? "Unknown Manager",
-          givingTeams: transaction.dropTeamId ? [transaction.dropTeamId] : [],
-          receivingTeams: transaction.addTeamId ? [transaction.addTeamId] : [],
-          status: transaction.status === "approved" ? "Accepted" : "Denied",
-          timestamp: transaction.processedAt,
-        };
-      } else {
-        // Determine the specific type
+    // Batch-resolve every real MLE team referenced below so the frontend can
+    // render real names/logos instead of bare IDs.
+    const mleTeamIds = new Set<string>();
+    transactions.forEach((t) => {
+      if (t.addTeamId) mleTeamIds.add(t.addTeamId);
+      if (t.dropTeamId) mleTeamIds.add(t.dropTeamId);
+    });
+    relatedTrades.forEach((t) => {
+      t.proposerGives.forEach((id) => mleTeamIds.add(id));
+      t.receiverGives.forEach((id) => mleTeamIds.add(id));
+      t.proposerDrops.forEach((id) => mleTeamIds.add(id));
+    });
+
+    const mleTeams = await prisma.mLETeam.findMany({
+      where: { id: { in: [...mleTeamIds] } },
+      select: {
+        id: true,
+        name: true,
+        leagueId: true,
+        slug: true,
+        logoPath: true,
+        primaryColor: true,
+        secondaryColor: true,
+      },
+    });
+    const mleTeamMap = new Map(mleTeams.map((t) => [t.id, t]));
+    const resolveTeams = (ids: string[]) =>
+      ids
+        .map((id) => mleTeamMap.get(id))
+        .filter((t): t is NonNullable<typeof t> => Boolean(t));
+
+    // Format non-trade transactions (waiver/pickup/drop) directly.
+    const nonTradeTransactions = transactions
+      .filter((transaction) => transaction.type !== "trade")
+      .map((transaction) => {
         let specificType = "pickup";
         if (transaction.type === "waiver") {
           specificType = "waiver";
@@ -106,8 +141,8 @@ export async function GET(
           type: specificType,
           teamName: transaction.fantasyTeam.displayName,
           username: transaction.fantasyTeam.owner.displayName,
-          addTeamId: transaction.addTeamId,
-          dropTeamId: transaction.dropTeamId,
+          addTeam: transaction.addTeamId ? mleTeamMap.get(transaction.addTeamId) ?? null : null,
+          dropTeam: transaction.dropTeamId ? mleTeamMap.get(transaction.dropTeamId) ?? null : null,
           faabBid: transaction.faabBid,
           status: transaction.status === "approved" ? "Successful" :
                   transaction.status === "denied" ? "Failed - Lower Priority" :
@@ -115,8 +150,42 @@ export async function GET(
                   "Pending",
           timestamp: transaction.processedAt,
         };
-      }
-    });
+      });
+
+    // Format trade transactions — one row per trade (dedupe the two
+    // per-side Transaction rows created at execution time).
+    const seenTradeIds = new Set<string>();
+    const tradeTransactions = transactions
+      .filter((transaction) => transaction.type === "trade" && transaction.tradeId)
+      .filter((transaction) => {
+        const tradeId = transaction.tradeId as string;
+        if (seenTradeIds.has(tradeId)) return false;
+        seenTradeIds.add(tradeId);
+        return true;
+      })
+      .map((transaction) => {
+        const trade = tradeMap.get(transaction.tradeId as string);
+        const proposerTeam = trade ? tradeFantasyTeamById.get(trade.proposerTeamId) : undefined;
+        const receiverTeam = trade ? tradeFantasyTeamById.get(trade.receiverTeamId) : undefined;
+
+        return {
+          id: transaction.id,
+          type: "trade" as const,
+          proposerTeam: proposerTeam?.displayName ?? "Unknown Team",
+          proposerManager: proposerTeam?.owner.displayName ?? "Unknown Manager",
+          receiverTeam: receiverTeam?.displayName ?? "Unknown Team",
+          receiverManager: receiverTeam?.owner.displayName ?? "Unknown Manager",
+          proposerGivesTeams: trade ? resolveTeams(trade.proposerGives) : [],
+          receiverGivesTeams: trade ? resolveTeams(trade.receiverGives) : [],
+          proposerDropsTeams: trade ? resolveTeams(trade.proposerDrops) : [],
+          status: transaction.status === "approved" ? "Accepted" : "Denied",
+          timestamp: transaction.processedAt,
+        };
+      });
+
+    const formattedTransactions = [...nonTradeTransactions, ...tradeTransactions].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
 
     return NextResponse.json({ transactions: formattedTransactions });
   } catch (error) {

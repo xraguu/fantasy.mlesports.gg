@@ -1,1 +1,10 @@
-export async function GET() { return new Response(JSON.stringify({ message: "Placeholder API" }), { headers: { "Content-Type": "application/json" } }); }
+import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "admin") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return NextResponse.json({ message: "Placeholder API" });
+}

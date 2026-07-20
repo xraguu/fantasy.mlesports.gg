@@ -7,6 +7,7 @@ import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import InfoGuideModal from "@/components/InfoGuideModal";
 import ManagerOverviewModal from "@/components/ManagerOverviewModal";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 // Mock leagues data removed - now fetched from /api/leagues based on user session
 
@@ -28,6 +29,7 @@ type SortDirection = "asc" | "desc";
 function SortableHeader({
   column,
   label,
+  full,
   align = "left",
   sortKey,
   sortDirection,
@@ -35,6 +37,7 @@ function SortableHeader({
 }: {
   column: SortKey;
   label: string;
+  full?: string;
   align?: "left" | "right" | "center";
   sortKey: SortKey;
   sortDirection: SortDirection;
@@ -72,7 +75,7 @@ function SortableHeader({
           gap: "0.25rem",
         }}
       >
-        {label}
+        {full ? <HeaderTooltip label={label} full={full} /> : label}
         {sortKey === column && (
           <span style={{ fontSize: "0.75rem" }}>
             {sortDirection === "asc" ? "▲" : "▼"}
@@ -728,7 +731,7 @@ export default function HomePage() {
                       fontWeight: 600,
                     }}
                   >
-                    W-L
+                    <HeaderTooltip label="W-L" full="Win-Loss Record" />
                   </th>
                   <th
                     style={{
@@ -750,7 +753,7 @@ export default function HomePage() {
                       fontWeight: 600,
                     }}
                   >
-                    Total Pts
+                    <HeaderTooltip label="Total Pts" full="Total Points" />
                   </th>
                   <th
                     style={{
@@ -761,7 +764,7 @@ export default function HomePage() {
                       fontWeight: 600,
                     }}
                   >
-                    Avg
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" />
                   </th>
                 </tr>
               </thead>
@@ -921,7 +924,7 @@ export default function HomePage() {
                     Team
                   </th>
                   <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
-                    W-L
+                    <HeaderTooltip label="W-L" full="Win-Loss Record" />
                   </th>
                   <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
                     Win %
@@ -930,10 +933,10 @@ export default function HomePage() {
                     Streak
                   </th>
                   <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
-                    Total Pts
+                    <HeaderTooltip label="Total Pts" full="Total Points" />
                   </th>
                   <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
-                    Avg
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" />
                   </th>
                 </tr>
               </thead>
@@ -1121,6 +1124,7 @@ export default function HomePage() {
                   <SortableHeader
                     column="fpts"
                     label="Fpts"
+                    full="Fantasy Points"
                     align="right"
                     sortKey={sortKey}
                     sortDirection={sortDirection}
@@ -1129,6 +1133,7 @@ export default function HomePage() {
                   <SortableHeader
                     column="last"
                     label="Last"
+                    full="Last Week's Fantasy Points"
                     align="right"
                     sortKey={sortKey}
                     sortDirection={sortDirection}
@@ -1137,6 +1142,7 @@ export default function HomePage() {
                   <SortableHeader
                     column="avg"
                     label="Avg"
+                    full="Average Fantasy Points"
                     align="right"
                     sortKey={sortKey}
                     sortDirection={sortDirection}
@@ -1177,6 +1183,7 @@ export default function HomePage() {
                   <SortableHeader
                     column="demos"
                     label="Demos"
+                    full="Demolitions"
                     align="right"
                     sortKey={sortKey}
                     sortDirection={sortDirection}

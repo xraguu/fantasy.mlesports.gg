@@ -1,5 +1,15 @@
 import { generateRosterSlotId } from "./id-generator";
 
+/** Total roster slots a league's config allows, across every position. */
+export function getRosterCapacity(rosterConfig: any): number {
+  return (
+    (rosterConfig?.["2s"] || 0) +
+    (rosterConfig?.["3s"] || 0) +
+    (rosterConfig?.flx || 0) +
+    (rosterConfig?.be || 0)
+  );
+}
+
 /**
  * Puts `mleTeamId` onto a fantasy team's roster for a week — the shared
  * logic behind every roster mutation that isn't the draft itself (waiver

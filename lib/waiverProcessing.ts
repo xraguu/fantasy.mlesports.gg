@@ -39,12 +39,28 @@ async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: stri
   });
 }
 
-async function cancelClaim(claim: ClaimWithTeam, reason: string): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await tx.waiverClaim.update({
-      where: { id: claim.id },
+/**
+ * Every claim-disposal function below (cancel/deny/execute) does its
+ * `WaiverClaim.status` write as an atomic `updateMany` gated on the row
+ * still being `"pending"`, as the FIRST write in its transaction — the same
+ * "atomic conditional claim" pattern used to fix the equivalent draft-pick
+ * race. `runWaiverProcessingSweep` has no mutex around it and is triggered
+ * from ordinary page-load GET requests, so two overlapping sweeps (or a
+ * manual admin "Run Waivers Now" overlapping the lazy sweep) can both reach
+ * the same pending claim — without this guard, both would proceed and
+ * duplicate the roster assignment / FAAB deduction. Whichever call's
+ * `updateMany` matches zero rows lost the race and backs off instead of
+ * re-executing.
+ */
+
+async function cancelClaim(claim: ClaimWithTeam, reason: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.waiverClaim.updateMany({
+      where: { id: claim.id, status: "pending" },
       data: { status: "cancelled", processedAt: new Date() },
     });
+    if (claimed.count === 0) return false;
+
     await tx.transaction.create({
       data: {
         fantasyLeagueId: claim.fantasyLeagueId,
@@ -60,15 +76,18 @@ async function cancelClaim(claim: ClaimWithTeam, reason: string): Promise<void> 
         processedAt: new Date(),
       },
     });
+    return true;
   });
 }
 
-async function denyClaim(claim: ClaimWithTeam, reason: string): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await tx.waiverClaim.update({
-      where: { id: claim.id },
+async function denyClaim(claim: ClaimWithTeam, reason: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.waiverClaim.updateMany({
+      where: { id: claim.id, status: "pending" },
       data: { status: "denied", processedAt: new Date() },
     });
+    if (claimed.count === 0) return false;
+
     await tx.transaction.create({
       data: {
         fantasyLeagueId: claim.fantasyLeagueId,
@@ -84,53 +103,84 @@ async function denyClaim(claim: ClaimWithTeam, reason: string): Promise<void> {
         processedAt: new Date(),
       },
     });
+    return true;
   });
 }
 
-/** Executes an approved claim's roster mutation, FAAB deduction, and history record. */
-async function executeClaim(claim: ClaimWithTeam): Promise<void> {
+/**
+ * Executes an approved claim's roster mutation, FAAB deduction, and history
+ * record. Returns false (having done nothing) if the claim lost the atomic
+ * race above, or if it lost a FAAB-sufficiency race (see below) — the
+ * caller should treat a false return the same as "someone/something else
+ * already resolved this."
+ */
+async function executeClaim(claim: ClaimWithTeam): Promise<boolean> {
   const week = claim.fantasyTeam.league.currentWeek;
 
-  await prisma.$transaction(async (tx) => {
-    await assignTeamToRosterSlot(tx, {
-      fantasyTeamId: claim.fantasyTeamId,
-      week,
-      mleTeamId: claim.addTeamId,
-      dropTeamId: claim.dropTeamId,
-      rosterConfig: claim.fantasyTeam.league.rosterConfig,
-    });
-
-    await tx.waiverClaim.update({
-      where: { id: claim.id },
-      data: { status: "approved", processedAt: new Date() },
-    });
-
-    if (claim.faabBid && claim.faabBid > 0) {
-      await tx.fantasyTeam.update({
-        where: { id: claim.fantasyTeamId },
-        data: { faabRemaining: { decrement: claim.faabBid } },
+  try {
+    const executed = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.waiverClaim.updateMany({
+        where: { id: claim.id, status: "pending" },
+        data: { status: "approved", processedAt: new Date() },
       });
-    }
+      if (claimed.count === 0) return false;
 
-    await tx.transaction.create({
-      data: {
-        fantasyLeagueId: claim.fantasyLeagueId,
+      // FAAB budget is only validated against the balance at submission
+      // time, so two claims by the same team that were each individually
+      // affordable can still be approved in the same sweep — gate the
+      // actual debit on the balance still being sufficient right now, and
+      // abort the whole transaction (rolling back the claim-status write
+      // above too) if it no longer is, rather than ever letting
+      // faabRemaining go negative.
+      if (claim.faabBid && claim.faabBid > 0) {
+        const debited = await tx.fantasyTeam.updateMany({
+          where: { id: claim.fantasyTeamId, faabRemaining: { gte: claim.faabBid } },
+          data: { faabRemaining: { decrement: claim.faabBid } },
+        });
+        if (debited.count === 0) {
+          throw new Error("INSUFFICIENT_FAAB");
+        }
+      }
+
+      await assignTeamToRosterSlot(tx, {
         fantasyTeamId: claim.fantasyTeamId,
-        userId: claim.userId,
-        type: "waiver",
-        addTeamId: claim.addTeamId,
+        week,
+        mleTeamId: claim.addTeamId,
         dropTeamId: claim.dropTeamId,
-        waiverClaimId: claim.id,
-        faabBid: claim.faabBid,
-        status: "approved",
-        processedAt: new Date(),
-      },
-    });
-  });
+        rosterConfig: claim.fantasyTeam.league.rosterConfig,
+      });
 
-  await clearWaiverPeriod(claim.fantasyLeagueId, claim.addTeamId);
-  if (claim.dropTeamId) {
-    await markTeamDroppedForWaivers(claim.fantasyLeagueId, claim.dropTeamId);
+      await tx.transaction.create({
+        data: {
+          fantasyLeagueId: claim.fantasyLeagueId,
+          fantasyTeamId: claim.fantasyTeamId,
+          userId: claim.userId,
+          type: "waiver",
+          addTeamId: claim.addTeamId,
+          dropTeamId: claim.dropTeamId,
+          waiverClaimId: claim.id,
+          faabBid: claim.faabBid,
+          status: "approved",
+          processedAt: new Date(),
+        },
+      });
+
+      return true;
+    });
+
+    if (!executed) return false;
+
+    await clearWaiverPeriod(claim.fantasyLeagueId, claim.addTeamId);
+    if (claim.dropTeamId) {
+      await markTeamDroppedForWaivers(claim.fantasyLeagueId, claim.dropTeamId);
+    }
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message === "INSUFFICIENT_FAAB") {
+      await denyClaim(claim, "Insufficient FAAB budget remaining");
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -141,8 +191,7 @@ async function executeClaim(claim: ClaimWithTeam): Promise<void> {
  */
 async function cancelIfIneligible(claim: ClaimWithTeam, results: ProcessWaiversResult): Promise<boolean> {
   if (claim.fantasyTeam.league.draftStatus !== "completed") {
-    await cancelClaim(claim, "League's draft is not complete");
-    results.cancelled++;
+    if (await cancelClaim(claim, "League's draft is not complete")) results.cancelled++;
     return true;
   }
 
@@ -153,8 +202,7 @@ async function cancelIfIneligible(claim: ClaimWithTeam, results: ProcessWaiversR
       claim.dropTeamId
     );
     if (lockedSlot) {
-      await cancelClaim(claim, lockedTeamErrorMessage(lockedSlot.mleTeam));
-      results.cancelled++;
+      if (await cancelClaim(claim, lockedTeamErrorMessage(lockedSlot.mleTeam))) results.cancelled++;
       return true;
     }
   }
@@ -180,14 +228,14 @@ async function processPriorityOrderedClaims(claims: ClaimWithTeam[], results: Pr
       if (await cancelIfIneligible(claim, results)) continue;
 
       if (await isTeamAlreadyRostered(claim)) {
-        await denyClaim(claim, "Team already rostered");
-        results.denied++;
+        if (await denyClaim(claim, "Team already rostered")) results.denied++;
         continue;
       }
 
-      await executeClaim(claim);
-      await moveTeamToBackOfWaiverLine(claim.fantasyLeagueId, claim.fantasyTeamId);
-      results.approved++;
+      if (await executeClaim(claim)) {
+        await moveTeamToBackOfWaiverLine(claim.fantasyLeagueId, claim.fantasyTeamId);
+        results.approved++;
+      }
     } catch (error) {
       console.error(`Error processing waiver claim ${claim.id}:`, error);
       results.errors.push(`Failed to process claim ${claim.id}`);
@@ -218,8 +266,7 @@ async function processFaabLeagueClaims(claims: ClaimWithTeam[], results: Process
     try {
       if (await isTeamAlreadyRostered(groupClaims[0])) {
         for (const claim of groupClaims) {
-          await denyClaim(claim, "Team already rostered");
-          results.denied++;
+          if (await denyClaim(claim, "Team already rostered")) results.denied++;
         }
         continue;
       }
@@ -233,12 +280,10 @@ async function processFaabLeagueClaims(claims: ClaimWithTeam[], results: Process
       });
 
       const [winner, ...losers] = ranked;
-      await executeClaim(winner);
-      results.approved++;
+      if (await executeClaim(winner)) results.approved++;
 
       for (const claim of losers) {
-        await denyClaim(claim, `Outbid — winning bid was $${winner.faabBid ?? 0}`);
-        results.denied++;
+        if (await denyClaim(claim, `Outbid — winning bid was $${winner.faabBid ?? 0}`)) results.denied++;
       }
     } catch (error) {
       console.error(`Error processing FAAB group for team ${groupClaims[0]?.addTeamId}:`, error);

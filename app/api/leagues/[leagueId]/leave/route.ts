@@ -25,7 +25,6 @@ export async function DELETE(
       include: {
         league: {
           select: {
-            createdByUserId: true,
             currentWeek: true,
           },
         },
@@ -52,14 +51,6 @@ export async function DELETE(
       return NextResponse.json(
         { error: "You are not a member of this league" },
         { status: 404 }
-      );
-    }
-
-    // Check if user is the league commissioner
-    if (fantasyTeam.league.createdByUserId === session.user.id) {
-      return NextResponse.json(
-        { error: "League commissioner cannot leave the league. Transfer ownership or delete the league instead." },
-        { status: 400 }
       );
     }
 

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { tradeVetoDeadline } from "@/lib/tradeExecution";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
+import { getTradeCutoff } from "@/lib/tradeCutoff";
 
 /**
  * PATCH /api/leagues/[leagueId]/trades/[tradeId]
@@ -99,6 +100,17 @@ export async function PATCH(
     if (league?.draftStatus !== "completed") {
       return NextResponse.json(
         { error: "Trades are not allowed until the draft is complete" },
+        { status: 403 }
+      );
+    }
+
+    // The cutoff is only checked at propose time elsewhere — a trade
+    // proposed before the deadline could otherwise still be accepted (and
+    // executed) after it. Re-check here too.
+    const tradeCutoff = await getTradeCutoff(leagueId);
+    if (tradeCutoff && new Date() > tradeCutoff) {
+      return NextResponse.json(
+        { error: "The trade deadline has passed for this league" },
         { status: 403 }
       );
     }

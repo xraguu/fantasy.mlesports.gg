@@ -11,8 +11,9 @@ interface WeekDateConfig {
 }
 
 /**
- * Auto-locks lineups at 3:00am ET on a week's start date, and auto-unlocks
- * them at 11:59pm ET on that week's end date. There's no cron in this app,
+ * Auto-locks lineups at 12:00am ET on a week's start date (the instant the
+ * calendar date becomes that week's start date), and auto-unlocks them at
+ * 11:59pm ET on that week's end date. There's no cron in this app,
  * so this runs lazily from the read/write paths that touch roster locks
  * (manager roster fetch/edit, admin Lock Lineups page).
  *
@@ -98,55 +99,94 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
     const sortedWeekDates = [...weekDates].sort((a, b) => a.week - b.week);
 
     for (const wd of sortedWeekDates) {
-      if (
-        wd.week > 1 &&
-        wd.startDate &&
-        !fired.has(`${wd.week}:roster_carry`)
-      ) {
-        const carryTrigger = etDateTime(wd.startDate, 3, 0);
+      // Carry-forward is a genuine one-shot event per (league, week): once
+      // it's happened, it must NEVER run again for that week, even if a
+      // manager later legitimately drops a team and that week's slot count
+      // drops below a "full roster." Judging "already done" from the
+      // CURRENT slot count (an earlier version of this fix did exactly
+      // that) is wrong for precisely that reason — a manager dropping a
+      // team makes their roster look "incomplete" by slot count alone, and
+      // re-triggering carry-forward in response silently un-drops it by
+      // copying the same slot back in from the previous week (pulling
+      // whatever team occupies that position there, which can be a
+      // DIFFERENT team already rostered elsewhere — surfacing as a
+      // duplicate team on the roster, and the drop never sticking).
+      //
+      // The real fix for the original race (several overlapping sweep
+      // calls, from ordinary page-load GETs with no mutex between them,
+      // all trying to carry-forward the same week at once — e.g. right
+      // after a draft finishes on a league whose whole schedule is already
+      // in the past) is to claim the WeekLockEvent marker ATOMICALLY and
+      // FIRST, via a plain `create` that throws on an existing row, before
+      // touching any roster data — not `upsert` it after copying, like the
+      // lock/unlock steps below still correctly do for their own concerns.
+      // A losing concurrent sweep's `create` throws immediately and it
+      // backs off having done nothing, instead of two invocations both
+      // reading/copying the same week and one of them corrupting the
+      // result. Once claimed, the copy is a single atomic multi-row
+      // INSERT — all-or-nothing — so there's no way for this to land a
+      // partial roster the way the pre-atomic-claim version could.
+      if (wd.week > 1 && wd.startDate && !fired.has(`${wd.week}:roster_carry`)) {
+        const carryTrigger = etDateTime(wd.startDate, 0, 0);
         if (now >= carryTrigger) {
-          for (const team of league.fantasyTeams) {
-            const alreadyHasSlots = await prisma.rosterSlot.count({
-              where: { fantasyTeamId: team.id, week: wd.week },
+          let claimed = true;
+          try {
+            await prisma.weekLockEvent.create({
+              data: { fantasyLeagueId: league.id, week: wd.week, type: "roster_carry" },
             });
-            if (alreadyHasSlots > 0) continue;
+          } catch {
+            claimed = false; // another sweep already claimed this (league, week)
+          }
 
-            const prevWeekSlots = await prisma.rosterSlot.findMany({
-              where: { fantasyTeamId: team.id, week: wd.week - 1 },
+          if (claimed) {
+            fired.add(`${wd.week}:roster_carry`);
+
+            // Batched across every team in the league — was 2-3 sequential
+            // queries PER TEAM (a count, a findMany, a createMany), which
+            // multiplies badly the moment several weeks become due in the
+            // same sweep pass (e.g. a draft finishing on a schedule that's
+            // already well underway). One findMany covering both the
+            // target and source week for every team, grouped in memory,
+            // then a single createMany for every team's missing rows.
+            const teamIds = league.fantasyTeams.map((t) => t.id);
+            const bothWeeksSlots = await prisma.rosterSlot.findMany({
+              where: { fantasyTeamId: { in: teamIds }, week: { in: [wd.week, wd.week - 1] } },
             });
-            if (prevWeekSlots.length === 0) continue;
 
-            await prisma.rosterSlot.createMany({
-              data: prevWeekSlots.map((s) => ({
-                id: generateRosterSlotId(team.id, wd.week, s.position, s.slotIndex),
-                fantasyTeamId: team.id,
+            const targetWeekTeamIds = new Set(
+              bothWeeksSlots.filter((s) => s.week === wd.week).map((s) => s.fantasyTeamId)
+            );
+            const prevWeekByTeam = new Map<string, typeof bothWeeksSlots>();
+            for (const s of bothWeeksSlots) {
+              if (s.week !== wd.week - 1) continue;
+              if (!prevWeekByTeam.has(s.fantasyTeamId)) prevWeekByTeam.set(s.fantasyTeamId, []);
+              prevWeekByTeam.get(s.fantasyTeamId)!.push(s);
+            }
+
+            const newRows = teamIds
+              .filter((id) => !targetWeekTeamIds.has(id))
+              .flatMap((teamId) => prevWeekByTeam.get(teamId) ?? [])
+              .map((s) => ({
+                id: generateRosterSlotId(s.fantasyTeamId, wd.week, s.position, s.slotIndex),
+                fantasyTeamId: s.fantasyTeamId,
                 mleTeamId: s.mleTeamId,
                 week: wd.week,
                 position: s.position,
                 slotIndex: s.slotIndex,
                 isLocked: false,
-              })),
-            });
-          }
+              }));
 
-          await prisma.weekLockEvent.upsert({
-            where: {
-              fantasyLeagueId_week_type: {
-                fantasyLeagueId: league.id,
-                week: wd.week,
-                type: "roster_carry",
-              },
-            },
-            update: {},
-            create: { fantasyLeagueId: league.id, week: wd.week, type: "roster_carry" },
-          });
+            if (newRows.length > 0) {
+              await prisma.rosterSlot.createMany({ data: newRows });
+            }
+          }
         }
       }
 
       if (wd.startDate && !fired.has(`${wd.week}:lock`)) {
-        const lockTrigger = etDateTime(wd.startDate, 3, 0);
+        const lockTrigger = etDateTime(wd.startDate, 0, 0);
         if (now >= lockTrigger) {
-          await prisma.rosterSlot.updateMany({
+          const locked = await prisma.rosterSlot.updateMany({
             where: {
               fantasyTeam: { fantasyLeagueId: league.id },
               week: wd.week,
@@ -155,24 +195,42 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
             },
             data: { isLocked: true },
           });
-          await prisma.weekLockEvent.upsert({
-            where: {
-              fantasyLeagueId_week_type: {
-                fantasyLeagueId: league.id,
-                week: wd.week,
-                type: "lock",
+          // Only mark this (league, week) as "done" once it's actually
+          // locked something — if this pass locked zero rows, the roster
+          // for that week doesn't exist yet (e.g. a draft that finishes
+          // after this week's own lock boundary has already passed, which
+          // is the norm for a late draft, or carry-forward hasn't reached
+          // this week yet). Marking it "done" anyway was the actual bug:
+          // this is a one-shot marker that never retries, so any roster
+          // rows that show up afterward (from that late draft, carry-
+          // forward, a trade, a waiver pickup) would never get locked at
+          // all, for the rest of the week. Leaving it unmarked here means
+          // the next sweep tries again — cheap when there's genuinely
+          // nothing yet, and correctly catches the real rows the moment
+          // they exist. Once it locks at least one real row, the marker
+          // sticks for good, still protecting an admin's deliberate
+          // mid-week unlock via the Lock Lineups page from being silently
+          // re-locked by this sweep.
+          if (locked.count > 0) {
+            await prisma.weekLockEvent.upsert({
+              where: {
+                fantasyLeagueId_week_type: {
+                  fantasyLeagueId: league.id,
+                  week: wd.week,
+                  type: "lock",
+                },
               },
-            },
-            update: {},
-            create: { fantasyLeagueId: league.id, week: wd.week, type: "lock" },
-          });
+              update: {},
+              create: { fantasyLeagueId: league.id, week: wd.week, type: "lock" },
+            });
+          }
         }
       }
 
       // "Fixed Order" waiver leagues reset priority to reverse standings the
-      // moment each new week begins (same 3am ET boundary as the lineup
-      // lock) — "Rolling" leagues deliberately never reset, so this is a
-      // no-op for them. Fires once per (league, week) via the same
+      // moment each new week begins (same midnight ET boundary as the
+      // lineup lock) — "Rolling" leagues deliberately never reset, so this
+      // is a no-op for them. Fires once per (league, week) via the same
       // WeekLockEvent dedup table, a new "waiver_reset" event type.
       if (
         league.waiverSystem === "fixed" &&
@@ -180,7 +238,7 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
         wd.week > 1 &&
         !fired.has(`${wd.week}:waiver_reset`)
       ) {
-        const resetTrigger = etDateTime(wd.startDate, 3, 0);
+        const resetTrigger = etDateTime(wd.startDate, 0, 0);
         if (now >= resetTrigger) {
           await resetWaiverPriorityToReverseStandings(league.id, wd.week - 1);
           await prisma.weekLockEvent.upsert({

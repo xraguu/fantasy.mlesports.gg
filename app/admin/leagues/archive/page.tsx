@@ -161,17 +161,6 @@ export default function LeagueArchivePage() {
               <th
                 style={{
                   padding: "0.75rem 0.5rem",
-                  textAlign: "center",
-                  fontSize: "0.85rem",
-                  color: "var(--text-muted)",
-                  fontWeight: 600,
-                }}
-              >
-                Commissioner
-              </th>
-              <th
-                style={{
-                  padding: "0.75rem 0.5rem",
                   textAlign: "right",
                   fontSize: "0.85rem",
                   color: "var(--text-muted)",
@@ -186,7 +175,7 @@ export default function LeagueArchivePage() {
             {archivedLeagues.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={4}
                   style={{
                     padding: "3rem",
                     textAlign: "center",
@@ -248,16 +237,6 @@ export default function LeagueArchivePage() {
                     }}
                   >
                     {league._count.fantasyTeams}/{league.maxTeams}
-                  </td>
-                  <td
-                    style={{
-                      padding: "0.75rem 0.5rem",
-                      textAlign: "center",
-                    }}
-                  >
-                    {league.fantasyTeams.length > 0
-                      ? league.fantasyTeams[0].owner.displayName
-                      : "None"}
                   </td>
                   <td
                     style={{

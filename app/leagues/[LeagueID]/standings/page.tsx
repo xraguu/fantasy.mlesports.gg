@@ -4,6 +4,7 @@ import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 interface TopTeam {
   id: string;
@@ -38,8 +39,14 @@ export default function StandingsPage() {
   const leagueId = params.LeagueID as string;
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [standings, setStandings] = useState<Standing[]>([]);
+  const [maxTeams, setMaxTeams] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Same cutoff every playoff-bracket-generating code path uses (see
+  // lib/scheduleGenerator.ts's moneySeedCount) — 12-team leagues send their
+  // top 6 to the money bracket, 8/10-team leagues send their top 4.
+  const playoffCutoff = maxTeams === 12 ? 6 : 4;
 
   // Fetch standings data
   useEffect(() => {
@@ -54,6 +61,7 @@ export default function StandingsPage() {
 
         const data = await response.json();
         setStandings(data.standings || []);
+        setMaxTeams(data.league?.maxTeams ?? null);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load standings");
@@ -124,9 +132,9 @@ export default function StandingsPage() {
                 <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Rank</th>
                 <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Manager</th>
                 <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
-                <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>W-L</th>
+                <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="W-L" full="Win-Loss Record" /></th>
                 <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Points</th>
-                <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Avg</th>
+                <th style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Against</th>
               </tr>
             </thead>
             <tbody>
@@ -134,14 +142,14 @@ export default function StandingsPage() {
                 <React.Fragment key={team.rank}>
                   <tr
                     style={{
-                      borderBottom: team.rank === 4 ? "2px dotted var(--accent)" : "1px solid rgba(255,255,255,0.05)",
+                      borderBottom: team.rank === playoffCutoff ? "2px dotted var(--accent)" : "1px solid rgba(255,255,255,0.05)",
                       backgroundColor: team.isYou ? "rgba(242, 182, 50, 0.08)" : "transparent",
                       borderLeft: team.isYou ? "3px solid var(--accent)" : "3px solid transparent",
                       cursor: "pointer"
                     }}
                     onClick={() => setExpandedRow(expandedRow === team.rank ? null : team.rank)}
                   >
-                    <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600, color: team.rank <= 4 ? "var(--accent)" : "inherit" }}>
+                    <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600, color: team.rank <= playoffCutoff ? "var(--accent)" : "inherit" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         <span style={{
                           fontSize: "0.85rem",
@@ -189,7 +197,7 @@ export default function StandingsPage() {
                     {team.points.toFixed(1)}
                   </td>
                   <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--text-muted)" }}>
-                    {team.avgPoints.toFixed(1)}
+                    {team.pointsAgainst.toFixed(1)}
                   </td>
                 </tr>
 

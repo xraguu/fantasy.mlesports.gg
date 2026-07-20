@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getFantasyStandings } from "@/lib/standings";
+import { getCalendarWeekForSeason } from "@/lib/currentWeek";
+import { generateRosterSlotId } from "@/lib/id-generator";
 
 export interface ScheduleMatchup {
   week: number;
@@ -35,11 +37,15 @@ export function shuffleTeams(teamIds: string[]): string[] {
 /**
  * Circle-method round robin. Pads with a "BYE" placeholder if the team
  * count is odd; alternates home/away by week parity to balance home-field
- * advantage.
+ * advantage. `startWeek` (default 1) offsets every generated week number —
+ * used when a draft finishes after the season's own week 1 has already
+ * passed, so the regular season's real matchups start at whatever week the
+ * draft actually completed in instead of always assuming week 1.
  */
 export function generateRoundRobinSchedule(
   teamIds: string[],
-  numWeeks: number
+  numWeeks: number,
+  startWeek: number = 1
 ): ScheduleMatchup[] {
   if (teamIds.length < 2) {
     throw new Error("Need at least 2 teams to generate a round robin schedule");
@@ -61,7 +67,7 @@ export function generateRoundRobinSchedule(
 
       const isEvenWeek = week % 2 === 0;
       matchups.push({
-        week: week + 1,
+        week: startWeek + week,
         homeTeamId: isEvenWeek ? teamA : teamB,
         awayTeamId: isEvenWeek ? teamB : teamA,
         isPlayoff: false,
@@ -73,12 +79,22 @@ export function generateRoundRobinSchedule(
   return matchups;
 }
 
-/** Regular season length depends on league size: 12-team leagues play 7 weeks (playoffs weeks 8-10), 8/10-team leagues play 8 weeks (playoffs weeks 9-10). */
+/**
+ * Regular season length depends on league size: 12-team leagues play weeks
+ * 1-7 (playoffs weeks 8-10), 8/10-team leagues play weeks 1-8 (playoffs
+ * weeks 9-10) — that end boundary never moves. `startWeek` shortens the
+ * regular season from the FRONT instead: a league whose draft finishes
+ * after week 1 (or later) has already passed plays fewer regular-season
+ * weeks total, ending at the same fixed playoff start either way.
+ */
 export function generateRegularSeasonSchedule(
   teamIds: string[],
-  leagueSize: number
+  leagueSize: number,
+  startWeek: number = 1
 ): ScheduleMatchup[] {
-  return generateRoundRobinSchedule(teamIds, leagueSize === 12 ? 7 : 8);
+  const regularSeasonWeeks = leagueSize === 12 ? 7 : 8;
+  const numWeeks = Math.max(0, regularSeasonWeeks - startWeek + 1);
+  return generateRoundRobinSchedule(teamIds, numWeeks, startWeek);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +138,13 @@ export function generateTop6BracketRound1(seeds: string[], week: number): Schedu
   ];
 }
 
-/** seeds[0]=1st, seeds[1]=2nd. round1Results = [3v6 result, 4v5 result]. */
+/**
+ * seeds[0]=1st, seeds[1]=2nd. round1Results = [3v6 result, 4v5 result].
+ * The two round-1 losers don't play this round — they skip it entirely (not
+ * a bracket "bye", just no game that week) and instead meet each other in
+ * the final week for 5th/6th, alongside the championship and 3rd-place games
+ * (see generateTop6BracketRound3).
+ */
 export function generateTop6BracketRound2(
   seeds: string[],
   round1Results: ResultInput[],
@@ -133,20 +155,28 @@ export function generateTop6BracketRound2(
   return [
     { week, homeTeamId: seeds[0], awayTeamId: winner(r36), isPlayoff: true },
     { week, homeTeamId: seeds[1], awayTeamId: winner(r45), isPlayoff: true },
-    { week, homeTeamId: loser(r36), awayTeamId: loser(r45), isPlayoff: true },
   ];
 }
 
-/** round2Results = [(1 vs W(3v6)) result, (2 vs W(4v5)) result] — the 5th/6th game isn't part of this round. */
+/**
+ * round1Results = [3v6 result, 4v5 result] (their losers, who skipped round
+ * 2, now play each other for 5th/6th). round2Results = [(1 vs W(3v6))
+ * result, (2 vs W(4v5)) result] (winners play for 1st/2nd, losers for
+ * 3rd/4th).
+ */
 export function generateTop6BracketRound3(
+  round1Results: ResultInput[],
   round2Results: ResultInput[],
   week: number
 ): ScheduleMatchup[] {
-  if (round2Results.length < 2) throw new Error("generateTop6BracketRound3 requires 2 results");
+  if (round1Results.length < 2) throw new Error("generateTop6BracketRound3 requires 2 round1 results");
+  if (round2Results.length < 2) throw new Error("generateTop6BracketRound3 requires 2 round2 results");
+  const [r36, r45] = round1Results;
   const [r1, r2] = round2Results;
   return [
     { week, homeTeamId: winner(r1), awayTeamId: winner(r2), isPlayoff: true },
     { week, homeTeamId: loser(r1), awayTeamId: loser(r2), isPlayoff: true },
+    { week, homeTeamId: loser(r36), awayTeamId: loser(r45), isPlayoff: true },
   ];
 }
 
@@ -233,9 +263,16 @@ export function generateLadderNextRound(
 /**
  * Generates and saves the regular-season round-robin schedule for a league,
  * replacing any existing regular-season matchups. Called both from the admin
- * generate-schedule route and automatically once a league fills up.
+ * generate-schedule route and automatically once a league fills up (always
+ * with the default startWeek of 1 at that point — nobody's drafted yet) —
+ * and again, with a later startWeek, once a draft that ran late actually
+ * completes (see adjustRegularSeasonForLateDraft below), replacing the
+ * week-1-assumed schedule generated back when the league first filled up.
  */
-export async function generateAndSaveRegularSeason(leagueId: string): Promise<number> {
+export async function generateAndSaveRegularSeason(
+  leagueId: string,
+  startWeek: number = 1
+): Promise<number> {
   const league = await prisma.fantasyLeague.findUnique({
     where: { id: leagueId },
     include: { fantasyTeams: { orderBy: { draftPosition: "asc" } } },
@@ -248,7 +285,7 @@ export async function generateAndSaveRegularSeason(leagueId: string): Promise<nu
 
   const regularSeasonWeeks = league.maxTeams === 12 ? 7 : 8;
   const teamIds = shuffleTeams(league.fantasyTeams.map((t) => t.id));
-  const matchups = generateRegularSeasonSchedule(teamIds, league.maxTeams);
+  const matchups = generateRegularSeasonSchedule(teamIds, league.maxTeams, startWeek);
 
   await prisma.matchup.deleteMany({
     where: { fantasyLeagueId: leagueId, week: { gte: 1, lte: regularSeasonWeeks } },
@@ -269,6 +306,67 @@ export async function generateAndSaveRegularSeason(leagueId: string): Promise<nu
   );
 
   return matchups.length;
+}
+
+/**
+ * Called once, right after a draft actually completes — the regular-season
+ * schedule normally gets generated the moment a league first fills up
+ * (always assuming a week-1 start, since nobody's drafted yet at that
+ * point), but a draft can finish much later than that, after the season's
+ * own week 1 (or more) has already come and gone. When that's happened,
+ * this: (1) moves every team's draft-day roster off week 1 onto the real
+ * current week — draft picks always land on week 1 (lib/draftPick.ts),
+ * since the draft itself has no way to know how late it'll finish until it
+ * actually does — and (2) regenerates the regular-season schedule starting
+ * from that week instead of week 1, so managers never see (or get scored
+ * against) matchups for weeks that were already over before they had a
+ * roster. The playoff start week never moves — the season just plays fewer
+ * regular-season weeks, same as the user asked for.
+ *
+ * A no-op if the league's week dates aren't configured, or if the draft
+ * actually did finish on time (current week is still 1) — the normal
+ * week-1-start schedule from league-fill time is already correct then.
+ */
+export async function adjustRegularSeasonForLateDraft(leagueId: string): Promise<void> {
+  const league = await prisma.fantasyLeague.findUnique({
+    where: { id: leagueId },
+    select: { id: true, season: true, maxTeams: true },
+  });
+  if (!league) return;
+
+  const currentWeek = await getCalendarWeekForSeason(league.season);
+  if (currentWeek === null || currentWeek <= 1) return;
+
+  const regularSeasonWeeks = league.maxTeams === 12 ? 7 : 8;
+  // The draft finished after the ENTIRE regular season's calendar window
+  // already elapsed — nothing sensible to schedule; leave week 1's roster
+  // and the existing (now-moot) schedule alone rather than generate a
+  // zero-week season.
+  if (currentWeek > regularSeasonWeeks) return;
+
+  const week1Slots = await prisma.rosterSlot.findMany({
+    where: { fantasyTeam: { fantasyLeagueId: leagueId }, week: 1 },
+  });
+  if (week1Slots.length > 0) {
+    await prisma.$transaction([
+      prisma.rosterSlot.deleteMany({
+        where: { fantasyTeam: { fantasyLeagueId: leagueId }, week: 1 },
+      }),
+      prisma.rosterSlot.createMany({
+        data: week1Slots.map((s) => ({
+          id: generateRosterSlotId(s.fantasyTeamId, currentWeek, s.position, s.slotIndex),
+          fantasyTeamId: s.fantasyTeamId,
+          mleTeamId: s.mleTeamId,
+          week: currentWeek,
+          position: s.position,
+          slotIndex: s.slotIndex,
+          isLocked: false,
+        })),
+      }),
+    ]);
+  }
+
+  await generateAndSaveRegularSeason(leagueId, currentWeek);
 }
 
 interface MatchupResultRow {
@@ -413,7 +511,7 @@ async function generateTwelveTeamPlayoffRound(args: {
       findResultByTeams(round2Matchups, moneyRound2Expected[0].homeTeamId, moneyRound2Expected[0].awayTeamId),
       findResultByTeams(round2Matchups, moneyRound2Expected[1].homeTeamId, moneyRound2Expected[1].awayTeamId),
     ];
-    const money = generateTop6BracketRound3(moneyRound2Results, week);
+    const money = generateTop6BracketRound3(moneyRound1Results, moneyRound2Results, week);
 
     const ladderRound1: { top: ResultInput; mid: ResultInput; bottom: ResultInput } = {
       top: findResultByTeams(round1Matchups, consolationSeeds[0], consolationSeeds[1]),

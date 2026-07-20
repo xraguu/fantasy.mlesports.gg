@@ -4,11 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { generateFantasyTeamId } from "@/lib/id-generator";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
+import { uniqueShortCode, uniqueTeamName } from "@/lib/teamNaming";
 
 interface BulkTeamInput {
   userId: string;
-  teamName: string;
-  shortCode: string;
 }
 
 // POST /api/admin/leagues/[leagueId]/teams/bulk - Add multiple users to the league at once (admin only)
@@ -65,18 +64,11 @@ export async function POST(
     }[] = [];
 
     for (let i = 0; i < teams.length; i++) {
-      const { userId, teamName, shortCode } = teams[i];
+      const { userId } = teams[i];
 
-      if (!userId || !teamName || !shortCode) {
+      if (!userId) {
         return NextResponse.json(
-          { error: `Row ${i + 1}: userId, teamName, and shortCode are required` },
-          { status: 400 }
-        );
-      }
-
-      if (shortCode.length < 1 || shortCode.length > 3) {
-        return NextResponse.json(
-          { error: `Row ${i + 1}: short code must be 1-3 characters` },
+          { error: `Row ${i + 1}: userId is required` },
           { status: 400 }
         );
       }
@@ -95,23 +87,9 @@ export async function POST(
         );
       }
 
-      if (takenShortCodes.has(shortCode.toLowerCase())) {
-        return NextResponse.json(
-          { error: `Row ${i + 1}: short code "${shortCode}" is already taken in this league (or duplicated in this batch)` },
-          { status: 400 }
-        );
-      }
-
-      if (takenNames.has(teamName.trim().toLowerCase())) {
-        return NextResponse.json(
-          { error: `Row ${i + 1}: team name "${teamName}" is already taken in this league (or duplicated in this batch)` },
-          { status: 400 }
-        );
-      }
-
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true },
+        select: { id: true, displayName: true },
       });
       if (!user) {
         return NextResponse.json(
@@ -120,17 +98,20 @@ export async function POST(
         );
       }
 
+      const teamName = uniqueTeamName(user.displayName, takenNames);
+      const shortCode = uniqueShortCode(user.displayName, takenShortCodes);
+
       teamCount++;
       takenUserIds.add(userId);
       takenShortCodes.add(shortCode.toLowerCase());
-      takenNames.add(teamName.trim().toLowerCase());
+      takenNames.add(teamName.toLowerCase());
 
       createData.push({
         id: generateFantasyTeamId(leagueId, userId),
         fantasyLeagueId: leagueId,
         ownerUserId: userId,
         displayName: teamName,
-        shortCode: shortCode.toUpperCase(),
+        shortCode,
         draftPosition: teamCount,
         faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
         waiverPriority: league.waiverSystem !== "faab" ? teamCount : null,

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyLeagueId } from "@/lib/id-generator";
 import { logAdminActivity } from "@/lib/adminActivity";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
 // GET /api/admin/leagues - List all fantasy leagues (admin only)
 export async function GET(request: NextRequest) {
@@ -37,7 +38,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ leagues });
+    const currentSeason = await getCurrentSeason();
+
+    return NextResponse.json({ leagues, currentSeason });
   } catch (error) {
     console.error("Error fetching leagues:", error);
     return NextResponse.json(

@@ -62,12 +62,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/leagues - Create a new fantasy league
+// POST /api/leagues - Create a new fantasy league (admin only — leagues are
+// always created from the admin panel; this route had no role check at all
+// before, letting any logged-in, non-suspended user create one directly)
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
 
     if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -125,6 +131,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Playoff bracket generation only supports these three sizes
+    // (lib/scheduleGenerator.ts) — anything else completes a full regular
+    // season and then can never get a playoff bracket generated.
+    const parsedMaxTeams = parseInt(maxTeams);
+    if (![8, 10, 12].includes(parsedMaxTeams)) {
+      return NextResponse.json(
+        { error: "maxTeams must be 8, 10, or 12" },
+        { status: 400 }
+      );
+    }
+
     // Default roster configuration
     const defaultRosterConfig = {
       "2s": 2,
@@ -140,7 +157,7 @@ export async function POST(request: NextRequest) {
         id: leagueId,
         name,
         season,
-        maxTeams,
+        maxTeams: parsedMaxTeams,
         draftType,
         waiverSystem,
         faabBudget: waiverSystem === "faab" ? faabBudget : null,

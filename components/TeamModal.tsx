@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useEffect } from "react";
 import PlayerModal from "./PlayerModal";
 import MLEMatchDetailsModal, { MLEMatchDetailsData } from "./MLEMatchDetailsModal";
+import HeaderTooltip from "./HeaderTooltip";
 
 interface PlayerWithStats {
   id: string;
@@ -824,7 +825,7 @@ export default function TeamModal({
                       userSelect: "none",
                     }}
                   >
-                    Demos
+                    <HeaderTooltip label="Demos" full="Demolitions" />
                     <PlayerSortIcon column="demos" />
                   </th>
                   <th
@@ -1032,7 +1033,7 @@ export default function TeamModal({
                         userSelect: "none",
                       }}
                     >
-                      Fpts
+                      <HeaderTooltip label="Fpts" full="Fantasy Points" />
                       <WeeklySortIcon column="fpts" />
                     </th>
                     <th

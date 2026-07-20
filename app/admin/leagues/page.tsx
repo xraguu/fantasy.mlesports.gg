@@ -30,6 +30,7 @@ export default function ManageLeaguesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [leagues, setLeagues] = useState<FantasyLeague[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentSeason, setCurrentSeason] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     season: new Date().getFullYear(),
@@ -51,6 +52,10 @@ export default function ManageLeaguesPage() {
       if (!response.ok) throw new Error("Failed to fetch leagues");
       const data = await response.json();
       setLeagues(data.leagues || []);
+      if (data.currentSeason != null) {
+        setCurrentSeason(data.currentSeason);
+        setFormData((prev) => ({ ...prev, season: data.currentSeason }));
+      }
     } catch (error) {
       console.error("Error fetching leagues:", error);
       showAlert("Failed to load leagues", "error");
@@ -80,7 +85,7 @@ export default function ManageLeaguesPage() {
       // Reset form
       setFormData({
         name: "",
-        season: new Date().getFullYear(),
+        season: currentSeason ?? new Date().getFullYear(),
         maxTeams: 12,
         draftType: "snake",
         waiverSystem: "rolling",
@@ -220,16 +225,13 @@ export default function ManageLeaguesPage() {
                       color: "var(--text-muted)",
                     }}
                   >
-                    Max Teams
+                    Number of Managers
                   </label>
-                  <input
-                    type="number"
+                  <select
                     value={formData.maxTeams}
                     onChange={(e) =>
                       setFormData({ ...formData, maxTeams: parseInt(e.target.value) })
                     }
-                    min={2}
-                    max={16}
                     style={{
                       width: "100%",
                       padding: "0.75rem",
@@ -240,7 +242,11 @@ export default function ManageLeaguesPage() {
                       fontSize: "0.95rem",
                     }}
                     required
-                  />
+                  >
+                    <option value={8}>8</option>
+                    <option value={10}>10</option>
+                    <option value={12}>12</option>
+                  </select>
                 </div>
                 <div style={{ marginBottom: "1rem" }}>
                   <label
@@ -442,17 +448,6 @@ export default function ManageLeaguesPage() {
                   fontWeight: 600,
                 }}
               >
-                Commissioner
-              </th>
-              <th
-                style={{
-                  padding: "0.75rem 0.5rem",
-                  textAlign: "center",
-                  fontSize: "0.85rem",
-                  color: "var(--text-muted)",
-                  fontWeight: 600,
-                }}
-              >
                 Status
               </th>
               <th
@@ -472,7 +467,7 @@ export default function ManageLeaguesPage() {
             {filteredLeagues.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={4}
                   style={{
                     padding: "3rem",
                     textAlign: "center",
@@ -520,16 +515,6 @@ export default function ManageLeaguesPage() {
                     }}
                   >
                     {league._count.fantasyTeams}/{league.maxTeams}
-                  </td>
-                  <td
-                    style={{
-                      padding: "0.75rem 0.5rem",
-                      textAlign: "center",
-                    }}
-                  >
-                    {league.fantasyTeams.length > 0
-                      ? league.fantasyTeams[0].owner.displayName
-                      : "None"}
                   </td>
                   <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                     <span

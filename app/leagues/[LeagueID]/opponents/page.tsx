@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { TEAMS } from "@/lib/teams";
 import TeamModal from "@/components/TeamModal";
+import HeaderTooltip from "@/components/HeaderTooltip";
 
 // Helper function to get fantasy rank color
 const getFantasyRankColor = (rank: number): string => {
@@ -115,6 +116,13 @@ export default function OpponentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(teamIdParam);
   const [currentWeek, setCurrentWeek] = useState(1);
+  // Whether the one-time "snap to the league's real current week" has
+  // already happened — tracked separately from `currentWeek === 1`, which
+  // used to stand in for "this is the initial load." That's wrong: it's
+  // ALSO true every time the user manually navigates back to week 1 later,
+  // so the snap kept re-firing and immediately bouncing them back to the
+  // current week the moment they tried to look at week 1.
+  const hasSnappedToCurrent = useRef(false);
   const [activeTab, setActiveTab] = useState<"lineup" | "stats">("lineup");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -150,7 +158,8 @@ export default function OpponentsPage() {
 
         // Snap to the league's real current week on first load only — once
         // the user has navigated weeks manually, leave their choice alone.
-        if (currentWeek === 1 && data.league?.currentWeek && data.league.currentWeek !== 1) {
+        if (!hasSnappedToCurrent.current && data.league?.currentWeek && data.league.currentWeek !== 1) {
+          hasSnappedToCurrent.current = true;
           setCurrentWeek(data.league.currentWeek);
         }
 
@@ -572,12 +581,12 @@ export default function OpponentsPage() {
                   <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Slot</th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Score</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Opp</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Oprk</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Fprk</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Fpts</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Avg</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Last</th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Opp" full="Opponent" /></th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Oprk" full="Opponent Rank" /></th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Fprk" full="Fantasy Points Rank" /></th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Fpts" full="Fantasy Points" /></th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Avg" full="Average Fantasy Points" /></th>
+                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Last" full="Last Week's Fantasy Points" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -874,7 +883,7 @@ export default function OpponentsPage() {
                       userSelect: "none"
                     }}
                   >
-                    Fprk {statsSortColumn === "fprk" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Fprk" full="Fantasy Points Rank" /> {statsSortColumn === "fprk" && (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("fpts")}
@@ -888,7 +897,7 @@ export default function OpponentsPage() {
                       userSelect: "none"
                     }}
                   >
-                    Fpts {statsSortColumn === "fpts" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Fpts" full="Fantasy Points" /> {statsSortColumn === "fpts" && (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("avg")}
@@ -902,7 +911,7 @@ export default function OpponentsPage() {
                       userSelect: "none"
                     }}
                   >
-                    Avg {statsSortColumn === "avg" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" /> {statsSortColumn === "avg" && (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("last")}
@@ -916,7 +925,7 @@ export default function OpponentsPage() {
                       userSelect: "none"
                     }}
                   >
-                    Last {statsSortColumn === "last" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Last" full="Last Week's Fantasy Points" /> {statsSortColumn === "last" && (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("goals")}
@@ -986,7 +995,7 @@ export default function OpponentsPage() {
                       userSelect: "none"
                     }}
                   >
-                    Demos {statsSortColumn === "demos" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Demos" full="Demolitions" /> {statsSortColumn === "demos" && (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Record</th>
                 </tr>

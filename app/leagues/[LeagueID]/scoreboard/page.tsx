@@ -30,6 +30,7 @@ type RosterSlot = {
   position: string;
   slotIndex: number;
   fantasyPoints: number;
+  played: boolean;
   isLocked: boolean;
   mleTeam: MLETeam | null;
 };
@@ -63,6 +64,14 @@ export default function ScoreboardPage() {
   // that choice is respected and never overridden by the current-week sync
   // below.
   const hasWeekParam = useRef(searchParams.get("week") !== null);
+
+  // Whether the one-time "snap to the league's real current week" has
+  // already happened — tracked separately from `currentWeek === 1`, which
+  // used to stand in for "this is the initial load." That's wrong: it's
+  // ALSO true every time the user manually navigates back to week 1 later,
+  // so the snap kept re-firing and immediately bouncing them back to the
+  // current week the moment they tried to look at week 1.
+  const hasSnappedToCurrent = useRef(false);
 
   const [currentWeek, setCurrentWeek] = useState(() => {
     const weekParam = searchParams.get("week");
@@ -100,16 +109,6 @@ export default function ScoreboardPage() {
   const [selectedTeamRosteredBy, setSelectedTeamRosteredBy] = useState<
     { rosterName: string; managerName: string } | undefined
   >(undefined);
-  const [moveMode, setMoveMode] = useState(false);
-  const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(
-    null
-  );
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
 
   // Fetch matchups for current week
   useEffect(() => {
@@ -129,10 +128,11 @@ export default function ScoreboardPage() {
         // only when the URL didn't explicitly request a week.
         if (
           !hasWeekParam.current &&
-          currentWeek === 1 &&
+          !hasSnappedToCurrent.current &&
           data.league?.currentWeek &&
           data.league.currentWeek !== 1
         ) {
+          hasSnappedToCurrent.current = true;
           setCurrentWeek(data.league.currentWeek);
         }
       } catch (err) {
@@ -148,85 +148,8 @@ export default function ScoreboardPage() {
 
   const selectedMatch = matchups.find((m) => m.id === selectedMatchup);
 
-  // Type for roster team - this matches the slot structure from API
-  type RosterTeam = RosterSlot;
-
-  // Keep rosters in their original positions - team1 on left, team2 on right
-  const [team1Roster, setTeam1Roster] = useState<RosterTeam[]>([]);
-  const [team2Roster, setTeam2Roster] = useState<RosterTeam[]>([]);
-
-  // Update rosters when selectedMatch changes
-  useEffect(() => {
-    if (selectedMatch) {
-      setTeam1Roster([...selectedMatch.team1.roster]);
-      setTeam2Roster([...selectedMatch.team2.roster]);
-    } else {
-      setTeam1Roster([]);
-      setTeam2Roster([]);
-    }
-    // Reset unsaved changes when switching matchups
-    setHasUnsavedChanges(false);
-    setSaveMessage(null);
-  }, [selectedMatch?.id]); // Only re-run when the match ID changes
-
   const handleManagerClick = (teamId: string) => {
     router.push(`/leagues/${leagueId}/opponents?teamId=${teamId}`);
-  };
-
-  const handleMoveToggle = async () => {
-    if (moveMode && hasUnsavedChanges) {
-      // Save changes when exiting move mode
-      await handleSaveRoster();
-    }
-    setMoveMode(!moveMode);
-    setSelectedTeamIndex(null);
-  };
-
-  const handleTeamClick = (index: number, isTeam1Side: boolean) => {
-    if (!moveMode) return;
-    if (!selectedMatch || !session?.user?.id) return;
-
-    // Check if user can edit this side
-    const isUserTeam1 = session.user.id === selectedMatch.team1.managerId;
-    const canEdit = (isTeam1Side && isUserTeam1) || (!isTeam1Side && !isUserTeam1);
-    if (!canEdit) return;
-
-    // Get the correct roster
-    const currentRoster = isTeam1Side ? team1Roster : team2Roster;
-    const setRoster = isTeam1Side ? setTeam1Roster : setTeam2Roster;
-
-    const slot = currentRoster[index];
-    if (!slot.mleTeam) return; // Can't select empty slots
-
-    if (selectedTeamIndex === null) {
-      // First click - select the team
-      setSelectedTeamIndex(index);
-    } else if (selectedTeamIndex === index) {
-      // Clicking the same team - deselect
-      setSelectedTeamIndex(null);
-    } else {
-      // Second click - swap the teams but keep slots static
-      const newRoster = [...currentRoster];
-      const team1Slot = newRoster[selectedTeamIndex].position;
-      const team2Slot = newRoster[index].position;
-
-      // Swap the entire team objects
-      const temp = newRoster[selectedTeamIndex];
-      newRoster[selectedTeamIndex] = newRoster[index];
-      newRoster[index] = temp;
-
-      // Restore the original slots
-      newRoster[selectedTeamIndex] = {
-        ...newRoster[selectedTeamIndex],
-        position: team1Slot,
-      };
-      newRoster[index] = { ...newRoster[index], position: team2Slot };
-
-      setRoster(newRoster);
-      setSelectedTeamIndex(null);
-      setHasUnsavedChanges(true);
-      setSaveMessage(null); // Clear any previous save messages
-    }
   };
 
   const openTeamModal = (
@@ -239,67 +162,22 @@ export default function ScoreboardPage() {
     setShowModal(true);
   };
 
-  const handleSaveRoster = async () => {
-    if (!selectedMatch || !session?.user?.id) return;
-
-    // Determine which team is the user's
-    const isUserTeam1 = session.user.id === selectedMatch.team1.managerId;
-    const userFantasyTeamId = isUserTeam1
-      ? selectedMatch.team1.id
-      : selectedMatch.team2.id;
-    const userRoster = isUserTeam1 ? team1Roster : team2Roster;
-
-    try {
-      setIsSaving(true);
-      setSaveMessage(null);
-
-      const response = await fetch(
-        `/api/leagues/${leagueId}/roster/update`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fantasyTeamId: userFantasyTeamId,
-            week: currentWeek,
-            roster: userRoster,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to save roster");
-      }
-
-      setSaveMessage({ type: "success", text: "Lineup saved successfully!" });
-      setHasUnsavedChanges(false);
-
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setSaveMessage(null);
-      }, 3000);
-    } catch (error) {
-      console.error("Error saving roster:", error);
-      setSaveMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Failed to save lineup",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const getTopPerformers = (roster: RosterSlot[]) => {
     return roster
-      .filter((p) => p.mleTeam && p.fantasyPoints > 0)
+      .filter((p) => p.mleTeam && p.position !== "be" && p.fantasyPoints > 0)
       .sort((a, b) => b.fantasyPoints - a.fantasyPoints)
       .slice(0, 2);
   };
 
+  // Only active (non-bench) slots with a team assigned count toward the
+  // "to play" total — bench doesn't score, and an empty slot has no team
+  // that could ever play.
+  const getActiveSlotCount = (roster: RosterSlot[]) => {
+    return roster.filter((p) => p.position !== "be" && p.mleTeam).length;
+  };
+
   const getToPlayCount = (roster: RosterSlot[]) => {
-    return roster.filter((p) => !p.isLocked || p.fantasyPoints === 0).length;
+    return roster.filter((p) => p.position !== "be" && p.mleTeam && !p.played).length;
   };
 
   const getTeamColor = (
@@ -317,16 +195,17 @@ export default function ScoreboardPage() {
 
   if (selectedMatch) {
     // Matchup Detail View
+    const team1Roster = selectedMatch.team1.roster;
+    const team2Roster = selectedMatch.team2.roster;
     const toPlay1 = getToPlayCount(team1Roster);
     const toPlay2 = getToPlayCount(team2Roster);
-    const total1 = team1Roster.length;
-    const total2 = team2Roster.length;
+    const total1 = getActiveSlotCount(team1Roster);
+    const total2 = getActiveSlotCount(team2Roster);
 
     // Check if current user is in this matchup
     const currentUserId = session?.user?.id;
     const isUserTeam1 = currentUserId === selectedMatch.team1.managerId;
     const isUserTeam2 = currentUserId === selectedMatch.team2.managerId;
-    const isUserInMatchup = isUserTeam1 || isUserTeam2;
 
     return (
       <div style={{ position: "relative", zIndex: 1 }}>
@@ -461,7 +340,7 @@ export default function ScoreboardPage() {
                 >
                   <div
                     style={{
-                      width: `${((total1 - toPlay1) / total1) * 100}%`,
+                      width: `${total1 > 0 ? ((total1 - toPlay1) / total1) * 100 : 0}%`,
                       height: "100%",
                       background:
                         "linear-gradient(90deg, #4CAF50 0%, #45a049 100%)",
@@ -618,7 +497,7 @@ export default function ScoreboardPage() {
                 >
                   <div
                     style={{
-                      width: `${((total2 - toPlay2) / total2) * 100}%`,
+                      width: `${total2 > 0 ? ((total2 - toPlay2) / total2) * 100 : 0}%`,
                       height: "100%",
                       background:
                         "linear-gradient(90deg, #4CAF50 0%, #45a049 100%)",
@@ -643,138 +522,47 @@ export default function ScoreboardPage() {
             </div>
           </div>
 
-          {/* Edit Lineup Button - Only show if user is in this matchup */}
-          {isUserInMatchup && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "1rem",
-                marginTop: "1.5rem",
-                marginBottom: "1rem",
-              }}
-            >
-              <button
-                onClick={handleMoveToggle}
-                disabled={isSaving}
-                className={moveMode ? "btn btn-primary" : "btn btn-ghost"}
-                style={{
-                  fontSize: "0.9rem",
-                  border: "2px solid var(--accent)",
-                  boxShadow: moveMode
-                    ? "0 0 12px rgba(242, 182, 50, 0.4)"
-                    : "0 0 8px rgba(242, 182, 50, 0.3)",
-                  opacity: isSaving ? 0.6 : 1,
-                  cursor: isSaving ? "not-allowed" : "pointer",
-                }}
-              >
-                {isSaving
-                  ? "Saving..."
-                  : moveMode
-                  ? "✓ Done Editing"
-                  : "Edit My Lineup"}
-              </button>
-
-              {/* Save Message */}
-              {saveMessage && (
-                <div
-                  style={{
-                    padding: "0.75rem 1.5rem",
-                    backgroundColor:
-                      saveMessage.type === "success"
-                        ? "rgba(76, 175, 80, 0.2)"
-                        : "rgba(239, 68, 68, 0.2)",
-                    border: `1px solid ${
-                      saveMessage.type === "success"
-                        ? "rgba(76, 175, 80, 0.4)"
-                        : "rgba(239, 68, 68, 0.4)"
-                    }`,
-                    borderRadius: "8px",
-                    color:
-                      saveMessage.type === "success" ? "#4CAF50" : "#ef4444",
-                    fontSize: "0.9rem",
-                    fontWeight: 600,
-                  }}
-                >
-                  {saveMessage.text}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Move Mode Instructions */}
-          {moveMode && (
-            <div
-              style={{
-                padding: "0.75rem 1.5rem",
-                backgroundColor: "rgba(242, 182, 50, 0.1)",
-                border: "1px solid rgba(242, 182, 50, 0.3)",
-                borderRadius: "8px",
-                color: "var(--accent)",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-                textAlign: "center",
-                marginBottom: "1rem",
-              }}
-            >
-              {selectedTeamIndex === null
-                ? "Click on a team in your roster to select it, then click on another team to swap positions"
-                : "Click on another team to swap positions, or click the selected team to deselect"}
-            </div>
-          )}
-
           {/* Roster Breakdown */}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {team1Roster.map((slot1, idx) => {
               const slot2 = team2Roster[idx];
-              const isSelected = selectedTeamIndex === idx;
               const baseBackground =
                 idx % 2 === 0 ? "rgba(255,255,255,0.05)" : "transparent";
-
-              // Determine if each side is clickable
-              const canEditTeam1 = isUserTeam1 && moveMode;
-              const canEditTeam2 = isUserTeam2 && moveMode;
+              // First bench row — bench doesn't count toward the weekly
+              // score, so a gold divider marks the line between scoring
+              // (2s/3s/flx) and non-scoring (bench) slots.
+              const isFirstBenchRow =
+                slot1.position === "be" && team1Roster[idx - 1]?.position !== "be";
 
               return (
-                <div
-                  key={idx}
-                  className="matchup-row-grid"
-                  style={{
-                    alignItems: "center",
-                    padding: "0.75rem 1rem",
-                    background: baseBackground,
-                    borderRadius: "6px",
-                  }}
-                >
-                  {/* Team 1 Player - Clickable if user owns team1 */}
+                <div key={idx}>
+                  {isFirstBenchRow && (
+                    <div
+                      style={{
+                        height: "2px",
+                        background: "#d4af37",
+                        margin: "0.5rem 0",
+                        borderRadius: "1px",
+                      }}
+                    />
+                  )}
                   <div
-                    onClick={() => canEditTeam1 && handleTeamClick(idx, true)}
+                    className="matchup-row-grid"
+                    style={{
+                      alignItems: "center",
+                      padding: "0.75rem 1rem",
+                      background: baseBackground,
+                      borderRadius: "6px",
+                    }}
+                  >
+                  {/* Team 1 Player */}
+                  <div
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: "0.75rem",
-                      cursor: canEditTeam1 && slot1.mleTeam ? "pointer" : "default",
                       padding: "0.5rem",
                       borderRadius: "6px",
-                      background: isSelected && canEditTeam1
-                        ? "rgba(242, 182, 50, 0.2)"
-                        : "transparent",
-                      borderLeft: isSelected && canEditTeam1
-                        ? "3px solid var(--accent)"
-                        : "3px solid transparent",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (canEditTeam1 && !isSelected && slot1.mleTeam) {
-                        e.currentTarget.style.background =
-                          "rgba(242, 182, 50, 0.1)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (canEditTeam1 && !isSelected) {
-                        e.currentTarget.style.background = "transparent";
-                      }
                     }}
                   >
                     {slot1.mleTeam ? (
@@ -788,32 +576,22 @@ export default function ScoreboardPage() {
                         />
                         <div style={{ flex: 1 }}>
                           <div
-                            onClick={(e) => {
-                              if (!canEditTeam1) {
-                                e.stopPropagation();
-                                openTeamModal(
-                                  slot1.mleTeam,
-                                  selectedMatch
-                                    ? {
-                                        rosterName: selectedMatch.team1.teamName,
-                                        managerName: selectedMatch.team1.managerName,
-                                      }
-                                    : undefined
-                                );
-                              }
-                            }}
+                            onClick={() =>
+                              openTeamModal(slot1.mleTeam, {
+                                rosterName: selectedMatch.team1.teamName,
+                                managerName: selectedMatch.team1.managerName,
+                              })
+                            }
                             style={{
                               color: "#ffffff",
                               fontSize: "0.95rem",
                               fontWeight: 500,
-                              cursor: canEditTeam1 ? "default" : "pointer",
+                              cursor: "pointer",
                               transition: "color 0.2s",
                             }}
-                            onMouseEnter={(e) => {
-                              if (!canEditTeam1) {
-                                e.currentTarget.style.color = "var(--accent)";
-                              }
-                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.color = "var(--accent)")
+                            }
                             onMouseLeave={(e) =>
                               (e.currentTarget.style.color = "#ffffff")
                             }
@@ -872,67 +650,37 @@ export default function ScoreboardPage() {
                     {slot2.mleTeam ? slot2.fantasyPoints.toFixed(1) : "-"}
                   </div>
 
-                  {/* Team 2 Player - Clickable if user owns team2 */}
+                  {/* Team 2 Player */}
                   <div
-                    onClick={() => canEditTeam2 && handleTeamClick(idx, false)}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: "0.75rem",
                       justifyContent: "flex-end",
-                      cursor: canEditTeam2 && slot2.mleTeam ? "pointer" : "default",
                       padding: "0.5rem",
                       borderRadius: "6px",
-                      background: isSelected && canEditTeam2
-                        ? "rgba(242, 182, 50, 0.2)"
-                        : "transparent",
-                      borderRight: isSelected && canEditTeam2
-                        ? "3px solid var(--accent)"
-                        : "3px solid transparent",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (canEditTeam2 && !isSelected && slot2.mleTeam) {
-                        e.currentTarget.style.background =
-                          "rgba(242, 182, 50, 0.1)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (canEditTeam2 && !isSelected) {
-                        e.currentTarget.style.background = "transparent";
-                      }
                     }}
                   >
                     {slot2.mleTeam ? (
                       <>
                         <div style={{ flex: 1, textAlign: "right" }}>
                           <div
-                            onClick={(e) => {
-                              if (!canEditTeam2) {
-                                e.stopPropagation();
-                                openTeamModal(
-                                  slot2.mleTeam,
-                                  selectedMatch
-                                    ? {
-                                        rosterName: selectedMatch.team2.teamName,
-                                        managerName: selectedMatch.team2.managerName,
-                                      }
-                                    : undefined
-                                );
-                              }
-                            }}
+                            onClick={() =>
+                              openTeamModal(slot2.mleTeam, {
+                                rosterName: selectedMatch.team2.teamName,
+                                managerName: selectedMatch.team2.managerName,
+                              })
+                            }
                             style={{
                               color: "#ffffff",
                               fontSize: "0.95rem",
                               fontWeight: 500,
-                              cursor: canEditTeam2 ? "default" : "pointer",
+                              cursor: "pointer",
                               transition: "color 0.2s",
                             }}
-                            onMouseEnter={(e) => {
-                              if (!canEditTeam2) {
-                                e.currentTarget.style.color = "var(--accent)";
-                              }
-                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.color = "var(--accent)")
+                            }
                             onMouseLeave={(e) =>
                               (e.currentTarget.style.color = "#ffffff")
                             }
@@ -959,6 +707,7 @@ export default function ScoreboardPage() {
                         Empty
                       </div>
                     )}
+                  </div>
                   </div>
                 </div>
               );
@@ -1106,36 +855,58 @@ export default function ScoreboardPage() {
                 }}
               >
                 {/* Left Side - Teams and Scores */}
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "1rem",
-                    minWidth: "250px",
-                  }}
-                >
-                  {/* Team 1 */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <h2
-                        style={{
-                          fontSize: "1.2rem",
-                          fontWeight: 700,
-                          color: getTeamColor(
-                            matchup.team1.score,
-                            matchup.team2.score,
-                            true
-                          ),
-                          marginBottom: "0.25rem",
-                          cursor: isUserTeam1 ? "default" : "pointer",
-                          transition: "color 0.2s",
-                        }}
+                <div className="scoreboard-teams-grid">
+                  {/* Team 1 name/manager */}
+                  <div>
+                    <h2
+                      style={{
+                        fontSize: "1.2rem",
+                        fontWeight: 700,
+                        color: getTeamColor(
+                          matchup.team1.score,
+                          matchup.team2.score,
+                          true
+                        ),
+                        marginBottom: "0.25rem",
+                        cursor: isUserTeam1 ? "default" : "pointer",
+                        transition: "color 0.2s",
+                      }}
+                      onClick={!isUserTeam1 ? () =>
+                        handleManagerClick(matchup.team1.id) : undefined
+                      }
+                      onMouseEnter={!isUserTeam1 ? (e) =>
+                        (e.currentTarget.style.color = "var(--accent)") : undefined
+                      }
+                      onMouseLeave={!isUserTeam1 ? (e) =>
+                        (e.currentTarget.style.color = getTeamColor(
+                          matchup.team1.score,
+                          matchup.team2.score,
+                          true
+                        )) : undefined
+                      }
+                    >
+                      {matchup.team1.teamName}
+                      {isUserTeam1 && (
+                        <span
+                          style={{
+                            fontSize: "0.7rem",
+                            color: "var(--accent)",
+                            marginLeft: "0.5rem",
+                            fontWeight: 500,
+                          }}
+                        >
+                          (You)
+                        </span>
+                      )}
+                    </h2>
+                    <p
+                      style={{
+                        color: "rgba(255,255,255,0.6)",
+                        fontSize: "0.8rem",
+                        margin: 0,
+                      }}
+                    >
+                      <span
                         onClick={!isUserTeam1 ? () =>
                           handleManagerClick(matchup.team1.id) : undefined
                         }
@@ -1143,73 +914,22 @@ export default function ScoreboardPage() {
                           (e.currentTarget.style.color = "var(--accent)") : undefined
                         }
                         onMouseLeave={!isUserTeam1 ? (e) =>
-                          (e.currentTarget.style.color = getTeamColor(
-                            matchup.team1.score,
-                            matchup.team2.score,
-                            true
-                          )) : undefined
+                          (e.currentTarget.style.color =
+                            "rgba(255,255,255,0.6)") : undefined
                         }
-                      >
-                        {matchup.team1.teamName}
-                        {isUserTeam1 && (
-                          <span
-                            style={{
-                              fontSize: "0.7rem",
-                              color: "var(--accent)",
-                              marginLeft: "0.5rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            (You)
-                          </span>
-                        )}
-                      </h2>
-                      <p
                         style={{
+                          cursor: isUserTeam1 ? "default" : "pointer",
                           color: "rgba(255,255,255,0.6)",
-                          fontSize: "0.8rem",
-                          margin: 0,
+                          transition: "color 0.2s",
                         }}
                       >
-                        <span
-                          onClick={!isUserTeam1 ? () =>
-                            handleManagerClick(matchup.team1.id) : undefined
-                          }
-                          onMouseEnter={!isUserTeam1 ? (e) =>
-                            (e.currentTarget.style.color = "var(--accent)") : undefined
-                          }
-                          onMouseLeave={!isUserTeam1 ? (e) =>
-                            (e.currentTarget.style.color =
-                              "rgba(255,255,255,0.6)") : undefined
-                          }
-                          style={{
-                            cursor: isUserTeam1 ? "default" : "pointer",
-                            color: "rgba(255,255,255,0.6)",
-                            transition: "color 0.2s",
-                          }}
-                        >
-                          {matchup.team1.managerName}
-                        </span>{" "}
-                        {matchup.team1.record} {matchup.team1.standing}
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "clamp(1.6rem, 8vw, 2.5rem)",
-                        fontWeight: 700,
-                        color: getTeamColor(
-                          matchup.team1.score,
-                          matchup.team2.score,
-                          true
-                        ),
-                        marginLeft: "2rem",
-                      }}
-                    >
-                      {matchup.team1.score.toFixed(1)}
-                    </div>
+                        {matchup.team1.managerName}
+                      </span>{" "}
+                      {matchup.team1.record} {matchup.team1.standing}
+                    </p>
                   </div>
                   {/* Team 1 Top Performers */}
-                  <div>
+                  <div className="scoreboard-top-performers">
                     <div
                       style={{
                         color: "rgba(255,255,255,0.7)",
@@ -1270,7 +990,7 @@ export default function ScoreboardPage() {
                                     fontSize: "0.7rem",
                                   }}
                                 >
-                                  {slot.position.toUpperCase()}
+                                  {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position}
                                 </span>
                                 <span
                                   style={{
@@ -1304,28 +1024,73 @@ export default function ScoreboardPage() {
                       )}
                     </div>
                   </div>
-                  {/* Team 2 */}
+                  {/* Team 1 Score */}
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
+                      fontSize: "clamp(1.6rem, 8vw, 2.5rem)",
+                      fontWeight: 700,
+                      color: getTeamColor(
+                        matchup.team1.score,
+                        matchup.team2.score,
+                        true
+                      ),
+                      textAlign: "right",
                     }}
                   >
-                    <div>
-                      <h2
-                        style={{
-                          fontSize: "1.2rem",
-                          fontWeight: 700,
-                          color: getTeamColor(
-                            matchup.team1.score,
-                            matchup.team2.score,
-                            false
-                          ),
-                          marginBottom: "0.25rem",
-                          cursor: isUserTeam2 ? "default" : "pointer",
-                          transition: "color 0.2s",
-                        }}
+                    {matchup.team1.score.toFixed(1)}
+                  </div>
+
+                  {/* Team 2 name/manager */}
+                  <div>
+                    <h2
+                      style={{
+                        fontSize: "1.2rem",
+                        fontWeight: 700,
+                        color: getTeamColor(
+                          matchup.team1.score,
+                          matchup.team2.score,
+                          false
+                        ),
+                        marginBottom: "0.25rem",
+                        cursor: isUserTeam2 ? "default" : "pointer",
+                        transition: "color 0.2s",
+                      }}
+                      onClick={!isUserTeam2 ? () =>
+                        handleManagerClick(matchup.team2.id) : undefined
+                      }
+                      onMouseEnter={!isUserTeam2 ? (e) =>
+                        (e.currentTarget.style.color = "var(--accent)") : undefined
+                      }
+                      onMouseLeave={!isUserTeam2 ? (e) =>
+                        (e.currentTarget.style.color = getTeamColor(
+                          matchup.team1.score,
+                          matchup.team2.score,
+                          false
+                        )) : undefined
+                      }
+                    >
+                      {matchup.team2.teamName}
+                      {isUserTeam2 && (
+                        <span
+                          style={{
+                            fontSize: "0.7rem",
+                            color: "var(--accent)",
+                            marginLeft: "0.5rem",
+                            fontWeight: 500,
+                          }}
+                        >
+                          (You)
+                        </span>
+                      )}
+                    </h2>
+                    <p
+                      style={{
+                        color: "rgba(255,255,255,0.6)",
+                        fontSize: "0.8rem",
+                        margin: 0,
+                      }}
+                    >
+                      <span
                         onClick={!isUserTeam2 ? () =>
                           handleManagerClick(matchup.team2.id) : undefined
                         }
@@ -1333,73 +1098,22 @@ export default function ScoreboardPage() {
                           (e.currentTarget.style.color = "var(--accent)") : undefined
                         }
                         onMouseLeave={!isUserTeam2 ? (e) =>
-                          (e.currentTarget.style.color = getTeamColor(
-                            matchup.team1.score,
-                            matchup.team2.score,
-                            false
-                          )) : undefined
+                          (e.currentTarget.style.color =
+                            "rgba(255,255,255,0.6)") : undefined
                         }
-                      >
-                        {matchup.team2.teamName}
-                        {isUserTeam2 && (
-                          <span
-                            style={{
-                              fontSize: "0.7rem",
-                              color: "var(--accent)",
-                              marginLeft: "0.5rem",
-                              fontWeight: 500,
-                            }}
-                          >
-                            (You)
-                          </span>
-                        )}
-                      </h2>
-                      <p
                         style={{
+                          cursor: isUserTeam2 ? "default" : "pointer",
                           color: "rgba(255,255,255,0.6)",
-                          fontSize: "0.8rem",
-                          margin: 0,
+                          transition: "color 0.2s",
                         }}
                       >
-                        <span
-                          onClick={!isUserTeam2 ? () =>
-                            handleManagerClick(matchup.team2.id) : undefined
-                          }
-                          onMouseEnter={!isUserTeam2 ? (e) =>
-                            (e.currentTarget.style.color = "var(--accent)") : undefined
-                          }
-                          onMouseLeave={!isUserTeam2 ? (e) =>
-                            (e.currentTarget.style.color =
-                              "rgba(255,255,255,0.6)") : undefined
-                          }
-                          style={{
-                            cursor: isUserTeam2 ? "default" : "pointer",
-                            color: "rgba(255,255,255,0.6)",
-                            transition: "color 0.2s",
-                          }}
-                        >
-                          {matchup.team2.managerName}
-                        </span>{" "}
-                        {matchup.team2.record} {matchup.team2.standing}
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "clamp(1.6rem, 8vw, 2.5rem)",
-                        fontWeight: 700,
-                        color: getTeamColor(
-                          matchup.team1.score,
-                          matchup.team2.score,
-                          false
-                        ),
-                        marginLeft: "2rem",
-                      }}
-                    >
-                      {matchup.team2.score.toFixed(1)}
-                    </div>
+                        {matchup.team2.managerName}
+                      </span>{" "}
+                      {matchup.team2.record} {matchup.team2.standing}
+                    </p>
                   </div>
                   {/* Team 2 Top Performers */}
-                  <div>
+                  <div className="scoreboard-top-performers">
                     <div
                       style={{
                         color: "rgba(255,255,255,0.7)",
@@ -1460,7 +1174,7 @@ export default function ScoreboardPage() {
                                     fontSize: "0.7rem",
                                   }}
                                 >
-                                  {slot.position.toUpperCase()}
+                                  {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position}
                                 </span>
                                 <span
                                   style={{
@@ -1493,6 +1207,21 @@ export default function ScoreboardPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+                  {/* Team 2 Score */}
+                  <div
+                    style={{
+                      fontSize: "clamp(1.6rem, 8vw, 2.5rem)",
+                      fontWeight: 700,
+                      color: getTeamColor(
+                        matchup.team1.score,
+                        matchup.team2.score,
+                        false
+                      ),
+                      textAlign: "right",
+                    }}
+                  >
+                    {matchup.team2.score.toFixed(1)}
                   </div>
                 </div>
 

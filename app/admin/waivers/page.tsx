@@ -3,6 +3,23 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
+import HeaderTooltip from "@/components/HeaderTooltip";
+
+// Transaction.type is stored distinctly ("trade" / "waiver" / "pickup" /
+// "drop") — this just maps each to its display label/color instead of
+// collapsing every non-trade type into "Waiver".
+function transactionTypeDisplay(type: string): { label: string; bg: string; color: string } {
+  switch (type) {
+    case "trade":
+      return { label: "Trade", bg: "rgba(245, 158, 11, 0.2)", color: "#f59e0b" };
+    case "waiver":
+      return { label: "Waiver", bg: "rgba(59, 130, 246, 0.2)", color: "#3b82f6" };
+    case "drop":
+      return { label: "Drop", bg: "rgba(239, 68, 68, 0.2)", color: "#ef4444" };
+    default:
+      return { label: "Pick Up", bg: "rgba(34, 197, 94, 0.2)", color: "#22c55e" };
+  }
+}
 
 export default function TransactionsPage() {
   const showAlert = useAlert();
@@ -294,23 +311,6 @@ export default function TransactionsPage() {
         </>
       )}
 
-      {/* Page Header */}
-      <div style={{ marginBottom: "2rem" }}>
-        <h1
-          style={{
-            fontSize: "clamp(1.6rem, 6.5vw, 2.5rem)",
-            color: "var(--accent)",
-            fontWeight: 700,
-            marginBottom: "0.5rem",
-          }}
-        >
-          Transactions
-        </h1>
-        <p style={{ fontSize: "1rem", color: "var(--text-muted)" }}>
-          Manage waivers, trades, and view transaction history
-        </p>
-      </div>
-
       {/* Filter Bar */}
       <div
         style={{
@@ -596,7 +596,7 @@ export default function TransactionsPage() {
                       fontWeight: 600,
                     }}
                   >
-                    FAAB Bid
+                    <HeaderTooltip label="FAAB Bid" full="Free Agent Acquisition Budget Bid" />
                   </th>
                   <th
                     style={{
@@ -939,6 +939,44 @@ export default function TransactionsPage() {
                           </span>
                         </div>
                       ))}
+
+                      {(trade.proposerDropsTeams ?? []).length > 0 && (
+                        <>
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "rgba(255,255,255,0.5)",
+                              marginTop: "0.75rem",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            Dropping (to make room):
+                          </div>
+                          {trade.proposerDropsTeams.map((team: any, idx: number) => (
+                            <div
+                              key={`drop-${idx}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              <span style={{ fontSize: "1rem", color: "#ef4444", fontWeight: 700 }}>−</span>
+                              <Image
+                                src={team.logoPath}
+                                alt={team.name}
+                                width={28}
+                                height={28}
+                                style={{ borderRadius: "4px", opacity: 0.7 }}
+                              />
+                              <span style={{ fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>
+                                {team.leagueId} {team.name}
+                              </span>
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
 
                     {/* Arrow */}
@@ -1034,21 +1072,38 @@ export default function TransactionsPage() {
                           textTransform: "uppercase",
                           padding: "0.2rem 0.6rem",
                           borderRadius: "4px",
-                          background:
-                            transaction.type === "trade"
-                              ? "rgba(245, 158, 11, 0.2)"
-                              : "rgba(59, 130, 246, 0.2)",
-                          color: transaction.type === "trade" ? "#f59e0b" : "#3b82f6",
+                          background: transactionTypeDisplay(transaction.type).bg,
+                          color: transactionTypeDisplay(transaction.type).color,
                         }}
                       >
-                        {transaction.type === "trade" ? "Trade" : "Waiver"}
+                        {transactionTypeDisplay(transaction.type).label}
                       </span>
-                      <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "white" }}>
-                        {transaction.teamName}
-                      </span>
-                      <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.5)" }}>
-                        {transaction.manager}
-                      </span>
+                      {transaction.type === "trade" ? (
+                        <>
+                          <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "white" }}>
+                            {transaction.proposerTeam}
+                          </span>
+                          <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.5)" }}>
+                            {transaction.proposer}
+                          </span>
+                          <span style={{ fontSize: "1.1rem", color: "#f59e0b" }}>⇄</span>
+                          <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "white" }}>
+                            {transaction.receiverTeam}
+                          </span>
+                          <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.5)" }}>
+                            {transaction.receiver}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontSize: "1.1rem", fontWeight: 700, color: "white" }}>
+                            {transaction.teamName}
+                          </span>
+                          <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.5)" }}>
+                            {transaction.manager}
+                          </span>
+                        </>
+                      )}
                       <span
                         style={{
                           fontSize: "0.75rem",
@@ -1080,8 +1135,8 @@ export default function TransactionsPage() {
                   </div>
 
                   {transaction.type === "trade" ? (
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1.5rem" }}>
-                      <div style={{ flex: 1, minWidth: "140px" }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem" }}>
+                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                         <div
                           style={{
                             fontSize: "0.75rem",
@@ -1090,11 +1145,12 @@ export default function TransactionsPage() {
                             marginBottom: "0.4rem",
                           }}
                         >
-                          Gave
+                          {transaction.proposerTeam} received
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                          {(transaction.tradeGaveTeams || []).map((team: any) => (
-                            <div key={team.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          {(transaction.receiverGivesTeams || []).map((team: any) => (
+                            <div key={`prop-recv-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span style={{ fontSize: "0.9rem", color: "#22c55e", fontWeight: 700 }}>+</span>
                               <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px" }} />
                               <span style={{ fontSize: "0.9rem", color: "white" }}>
                                 {team.leagueId} {team.name}
@@ -1102,9 +1158,24 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.proposerDropsTeams ?? []).length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
+                            {transaction.proposerDropsTeams.map((team: any) => (
+                              <div key={`prop-drop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span style={{ fontSize: "0.7rem", color: "#ef4444", fontWeight: 700, textTransform: "uppercase" }}>
+                                  Dropped
+                                </span>
+                                <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px", opacity: 0.7 }} />
+                                <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>
+                                  {team.leagueId} {team.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div style={{ fontSize: "1.5rem", color: "#f59e0b" }}>⇄</div>
-                      <div style={{ flex: 1 }}>
+                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                         <div
                           style={{
                             fontSize: "0.75rem",
@@ -1113,11 +1184,12 @@ export default function TransactionsPage() {
                             marginBottom: "0.4rem",
                           }}
                         >
-                          Received
+                          {transaction.receiverTeam} received
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                          {(transaction.tradeReceivedTeams || []).map((team: any) => (
-                            <div key={team.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          {(transaction.proposerGivesTeams || []).map((team: any) => (
+                            <div key={`recv-recv-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <span style={{ fontSize: "0.9rem", color: "#22c55e", fontWeight: 700 }}>+</span>
                               <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px" }} />
                               <span style={{ fontSize: "0.9rem", color: "white" }}>
                                 {team.leagueId} {team.name}

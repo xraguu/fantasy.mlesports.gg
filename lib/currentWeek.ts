@@ -30,10 +30,21 @@ export function computeCalendarWeek(weekDates: WeekDateConfig[]): number {
 }
 
 /**
- * The current season: whichever is most recent (a season only exists once a
- * league for it has been created). Returns null if no league exists yet.
+ * The current season — an explicit admin setting (AppSettings.currentSeason,
+ * editable from Admin > Settings), not derived. It used to be "whichever
+ * league has the highest season number," which broke the moment ANY league
+ * anywhere (e.g. a one-off test league) had a higher season than the
+ * leagues actually in play that season, since it silently became "current"
+ * for the whole platform. Falls back to the newest league's season if no
+ * admin has set one yet (e.g. right after this setting was introduced), and
+ * to null if there are no leagues at all.
  */
 export async function getCurrentSeason(): Promise<number | null> {
+  const appSettings = await prisma.appSettings.findUnique({ where: { id: "global" } });
+  if (appSettings?.currentSeason != null) {
+    return appSettings.currentSeason;
+  }
+
   const latestLeague = await prisma.fantasyLeague.findFirst({
     orderBy: { season: "desc" },
     select: { season: true },

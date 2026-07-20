@@ -50,12 +50,12 @@ export function getPlayoffBracketShape(maxTeams: number): PlayoffRoundShape[] {
   if (maxTeams === 12) {
     return [
       { roundNumber: 1, moneyMatches: 2, moneyByes: 2, consolationMatches: 3 },
-      { roundNumber: 2, moneyMatches: 3, moneyByes: 0, consolationMatches: 3 },
+      { roundNumber: 2, moneyMatches: 2, moneyByes: 0, consolationMatches: 3 },
       {
         roundNumber: 3,
-        moneyMatches: 2,
+        moneyMatches: 3,
         moneyByes: 0,
-        moneyMatchLabels: ["Championship", "3rd Place Game"],
+        moneyMatchLabels: ["Championship", "3rd Place Game", "5th Place Game"],
         consolationMatches: 3,
         consolationMatchLabels: ["7th Place Game", "9th Place Game", "11th Place Game"],
       },

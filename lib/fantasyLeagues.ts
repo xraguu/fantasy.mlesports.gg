@@ -4,5 +4,5 @@ export interface FantasyLeague {
   season: number; // 2025
   maxTeams: number; // usually 12
   createdAt: Date;
-  createdByUserId: string; // commissioner
+  createdByUserId: string;
 }

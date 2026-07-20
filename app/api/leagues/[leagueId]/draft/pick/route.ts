@@ -125,6 +125,18 @@ export async function POST(
     });
   } catch (error) {
     console.error("Error making draft pick:", error);
+    // executeDraftPick throws plain Errors with a user-facing message for
+    // expected conflicts (pick already claimed, team already drafted by a
+    // race with another pick) — surface those as a 409 so the client can
+    // just refetch and let the manager pick again, instead of a generic
+    // 500 that reads like the server broke.
+    if (
+      error instanceof Error &&
+      (error.message === "Pick is not available to be made" ||
+        error.message === "This team has already been drafted")
+    ) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return NextResponse.json(
       { error: "Failed to make draft pick" },
       { status: 500 }

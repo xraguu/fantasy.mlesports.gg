@@ -40,6 +40,31 @@ export async function DELETE(
       );
     }
 
+    // A Matchup row belongs to BOTH teams in it — unconditionally deleting
+    // every matchup this team was ever part of (the old behavior) also
+    // erases that week's result for whichever opponent it played, silently
+    // shrinking the opponent's win/loss record and points for/against for
+    // weeks that already happened, even though the opponent isn't the one
+    // being removed. Once any of this team's matchups actually has a
+    // recorded score, this route refuses to proceed rather than corrupt
+    // that history — there's no way to remove just this team's side of an
+    // already-played matchup without a schema change to make homeTeamId/
+    // awayTeamId nullable. Matchups that haven't been played yet (no score
+    // on either side) are unaffected by this and still get cleaned up
+    // below, same as before.
+    const hasPlayedMatchup = [...team.homeMatchups, ...team.awayMatchups].some(
+      (m) => m.homeScore !== null || m.awayScore !== null
+    );
+    if (hasPlayedMatchup) {
+      return NextResponse.json(
+        {
+          error:
+            "This team has already-played matchups. Removing it would delete those results and corrupt its opponents' win/loss records and points for/against for weeks that already happened. Remove it before its season starts, or leave it in the league instead.",
+        },
+        { status: 400 }
+      );
+    }
+
     // Delete all related data first (due to foreign key constraints)
     await prisma.$transaction([
       // Delete roster slots
@@ -56,7 +81,8 @@ export async function DELETE(
           OR: [{ proposerTeamId: teamId }, { receiverTeamId: teamId }],
         },
       }),
-      // Delete matchups (both home and away)
+      // Delete matchups (both home and away) — only ever unplayed ones by
+      // the time we get here, per the guard above.
       prisma.matchup.deleteMany({
         where: {
           OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],

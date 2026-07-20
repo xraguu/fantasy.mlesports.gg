@@ -3,7 +3,7 @@ import { parse } from "csv-parse/sync";
 import { prisma } from "@/lib/prisma";
 import { SPROCKET_BASE_URL, fetchCsvText } from "@/lib/sprocketStats";
 import { parseSprocketSeasonNumber } from "@/lib/sprocketSeason";
-import { getWeekMatchRange } from "@/lib/weekMatchRange";
+import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
 
 interface RoundRow {
   match_id: string;
@@ -68,10 +68,10 @@ function aggregateTeamStats(rows: PlayerStatRow[]) {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ teamId: string }> }
+  { params }: { params: Promise<{ leagueId: string; teamId: string }> }
 ) {
   try {
-    const { teamId } = await params;
+    const { leagueId, teamId } = await params;
     const { searchParams } = new URL(request.url);
     const weekParam = searchParams.get("week");
 
@@ -79,6 +79,22 @@ export async function GET(
       return NextResponse.json({ error: "week is required" }, { status: 400 });
     }
     const week = parseInt(weekParam);
+
+    // Real MLE match data already exists for every week of the season
+    // (it's already over), but this app still paces fantasy stats one week
+    // at a time — reject a request for a week beyond this league's own
+    // current week, same as weekly-breakdown (the only real caller of this
+    // route, which no longer surfaces a row to click for a future week).
+    const league = await prisma.fantasyLeague.findUnique({
+      where: { id: leagueId },
+      select: { currentWeek: true },
+    });
+    if (league && week > league.currentWeek) {
+      return NextResponse.json(
+        { error: `Week ${week} hasn't happened yet for this league.` },
+        { status: 400 }
+      );
+    }
 
     const settings = await prisma.seasonSettings.findFirst({
       orderBy: { season: "desc" },
@@ -103,7 +119,7 @@ export async function GET(
       );
     }
 
-    const { start, end } = getWeekMatchRange(weekDates, week)!;
+    const { start, end } = (await getEffectiveWeekMatchRange(weekDates, week))!;
 
     const match = await prisma.match.findFirst({
       where: {

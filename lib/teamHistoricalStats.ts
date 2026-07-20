@@ -161,9 +161,27 @@ export async function getAvailableHistoricalSeasons(): Promise<string[]> {
  * available (already Playoffs-excluded) season if nothing's configured yet.
  * Shared by every place that needs this "what season" answer, so it can't
  * drift between the draft state endpoint and a single team's stats lookup.
+ *
+ * Reads the SAME SeasonSettings row the admin Settings page writes
+ * draftStatsSeason to: the one keyed by the most recently created league's
+ * season (see app/api/admin/settings/route.ts's POST) — NOT just whichever
+ * SeasonSettings row happens to have the numerically highest `season`
+ * column. Those can disagree: a leftover row from an old test season with a
+ * larger season number (e.g. a stale "2026" row from early testing, with
+ * real leagues now on season 20) would otherwise keep winning a bare
+ * `findFirst({ orderBy: { season: "desc" } })` forever, silently reading
+ * back a different, unrelated row than the one an admin's edit just saved
+ * to — exactly the bug class Settings' own GET handler already guards
+ * against for the same reason.
  */
 export async function resolveDraftStatsSeason(): Promise<string | null> {
-  const settings = await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
+  const latestLeague = await prisma.fantasyLeague.findFirst({
+    orderBy: { season: "desc" },
+    select: { season: true },
+  });
+  const settings = latestLeague
+    ? await prisma.seasonSettings.findUnique({ where: { season: latestLeague.season } })
+    : await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
   if (settings?.draftStatsSeason) return settings.draftStatsSeason;
   const seasons = await getAvailableHistoricalSeasons();
   return seasons[0] ?? null;
