@@ -87,17 +87,27 @@ export async function GET(
     // route, which no longer surfaces a row to click for a future week).
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { currentWeek: true },
+      select: { currentWeek: true, season: true },
     });
-    if (league && week > league.currentWeek) {
+    if (!league) {
+      return NextResponse.json({ error: "League not found" }, { status: 404 });
+    }
+    if (week > league.currentWeek) {
       return NextResponse.json(
         { error: `Week ${week} hasn't happened yet for this league.` },
         { status: 400 }
       );
     }
 
+    // Scoped to THIS league's own season — an unscoped "whichever
+    // SeasonSettings row has the highest season number" previously picked
+    // an arbitrary, possibly unrelated row (confirmed live: a different
+    // league's settings, configured for a completely different Sprocket
+    // season, made every match in this league look like it had no
+    // round-by-round data, since the wrong season's rounds_sXX.csv was
+    // being fetched every time).
     const settings = await prisma.seasonSettings.findFirst({
-      orderBy: { season: "desc" },
+      where: { season: league.season },
     });
     if (!settings) {
       return NextResponse.json(
@@ -108,13 +118,14 @@ export async function GET(
 
     const weekDates = settings.weekDates as Array<{
       week: number;
-      startDate: string;
-      endDate: string;
+      weekStart: string;
+      matchStart: string;
+      weekEnd: string;
     }>;
     const weekConfig = weekDates.find((w) => w.week === week);
-    if (!weekConfig?.startDate || !weekConfig?.endDate) {
+    if (!weekConfig?.matchStart || !weekConfig?.weekEnd) {
       return NextResponse.json(
-        { error: `No date range configured for week ${week}` },
+        { error: `No match date range configured for week ${week}` },
         { status: 404 }
       );
     }

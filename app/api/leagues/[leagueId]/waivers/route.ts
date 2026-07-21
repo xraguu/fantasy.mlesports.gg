@@ -171,6 +171,20 @@ export async function POST(
       }
     }
 
+    // A team can't have two pending claims on the same MLE team at once —
+    // pick a different drop target/bid by cancelling the existing claim
+    // first (My Roster → Waivers tab) rather than stacking a second one
+    // that would just compete against itself once claims process.
+    const existingClaim = await prisma.waiverClaim.findFirst({
+      where: { fantasyTeamId, addTeamId, status: "pending" },
+    });
+    if (existingClaim) {
+      return NextResponse.json(
+        { error: "You already have a pending claim for this team — cancel it first if you want to change it" },
+        { status: 400 }
+      );
+    }
+
     // Note: unlike trades/direct drops, a waiver claim can be submitted even
     // if dropTeamId is currently in a locked slot — managers can queue
     // claims up over the weekend while games are locking in, ready to run

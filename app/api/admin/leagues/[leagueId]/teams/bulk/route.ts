@@ -52,6 +52,28 @@ export async function POST(
       league.fantasyTeams.map((t) => t.displayName.toLowerCase())
     );
 
+    // Track occupied draftPosition/waiverPriority values directly rather
+    // than deriving the next one from teamCount — a league that's had a
+    // manager removed (its draftPosition/waiverPriority never gets
+    // reassigned to the teams around it) has GAPS in that sequence, and
+    // `teamCount + 1` can land on a position an existing team still
+    // occupies, violating the (league, draftPosition) unique constraint and
+    // failing the whole add. Filling the lowest open slot instead avoids
+    // that collision and naturally slots a replacement manager into the
+    // vacated spot.
+    const usedDraftPositions = new Set(
+      league.fantasyTeams.map((t) => t.draftPosition).filter((p): p is number => p != null)
+    );
+    const usedWaiverPriorities = new Set(
+      league.fantasyTeams.map((t) => t.waiverPriority).filter((p): p is number => p != null)
+    );
+    function nextOpenSlot(used: Set<number>): number {
+      let pos = 1;
+      while (used.has(pos)) pos++;
+      used.add(pos);
+      return pos;
+    }
+
     const createData: {
       id: string;
       fantasyLeagueId: string;
@@ -112,9 +134,12 @@ export async function POST(
         ownerUserId: userId,
         displayName: teamName,
         shortCode,
-        draftPosition: teamCount,
+        draftPosition: nextOpenSlot(usedDraftPositions),
         faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
-        waiverPriority: league.waiverSystem !== "faab" ? teamCount : null,
+        // Every waiver system uses this now — for rolling/fixed it's the
+        // real claim order, for FAAB it's the tiebreaker between equal bids
+        // (see resetWaiverPriorityToReverseStandings in lib/waiverPriority.ts).
+        waiverPriority: nextOpenSlot(usedWaiverPriorities),
       });
     }
 

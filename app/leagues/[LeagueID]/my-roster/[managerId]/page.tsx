@@ -227,7 +227,7 @@ export default function MyRosterPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<MLETeam | null>(null);
   const [selectedTeamRosteredBy, setSelectedTeamRosteredBy] = useState<
-    { rosterName: string; managerName: string } | undefined
+    { rosterName: string; managerName: string; fantasyTeamId?: string } | undefined
   >(undefined);
 
   const startEditingTeamName = () => {
@@ -1510,6 +1510,7 @@ export default function MyRosterPage() {
                                         ? {
                                             rosterName: rosterData.fantasyTeam.displayName,
                                             managerName: rosterData.fantasyTeam.ownerDisplayName,
+                                            fantasyTeamId: teamId,
                                           }
                                         : undefined
                                     );
@@ -2013,6 +2014,7 @@ export default function MyRosterPage() {
                                   ? {
                                       rosterName: rosterData.fantasyTeam.displayName,
                                       managerName: rosterData.fantasyTeam.ownerDisplayName,
+                                      fantasyTeamId: teamId,
                                     }
                                   : undefined
                               );
@@ -2247,6 +2249,11 @@ export default function MyRosterPage() {
                           <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
                             {claim.addTeam.leagueId} {claim.addTeam.name}
                           </span>
+                          {claim.faabBid != null && (
+                            <span style={{ fontWeight: 700, color: "var(--accent)", fontSize: "0.9rem" }}>
+                              ${claim.faabBid} bid
+                            </span>
+                          )}
                         </>
                       ) : (
                         <span style={{ color: "var(--text-muted)" }}>Unknown team</span>
@@ -2278,6 +2285,47 @@ export default function MyRosterPage() {
                     <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                       Submitted {new Date(claim.createdAt).toLocaleString()}
                     </div>
+
+                    <button
+                      onClick={async () => {
+                        if (!confirm("Cancel this waiver claim?")) return;
+                        try {
+                          const response = await fetch(
+                            `/api/leagues/${leagueId}/waivers/${claim.id}`,
+                            { method: "DELETE" }
+                          );
+
+                          if (response.ok) {
+                            const claimsResponse = await fetch(
+                              `/api/leagues/${leagueId}/waivers?mine=true`
+                            );
+                            if (claimsResponse.ok) {
+                              const data = await claimsResponse.json();
+                              setWaiverClaims(data.waiverClaims || []);
+                            }
+                          } else {
+                            const error = await response.json();
+                            showAlert(error.error || "Failed to cancel waiver claim", "error");
+                          }
+                        } catch (error) {
+                          console.error("Error cancelling waiver claim:", error);
+                          showAlert("Failed to cancel waiver claim. Please try again.", "error");
+                        }
+                      }}
+                      style={{
+                        background: "rgba(239, 68, 68, 0.2)",
+                        border: "1px solid #ef4444",
+                        color: "#ef4444",
+                        padding: "0.5rem 1.25rem",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 ))}
               </div>
@@ -2439,6 +2487,7 @@ export default function MyRosterPage() {
                                   setSelectedTeamRosteredBy({
                                     rosterName: trade.proposer.teamName,
                                     managerName: trade.proposer.managerName,
+                                    fantasyTeamId: trade.proposer.teamId,
                                   });
                                   setShowModal(true);
                                 }}
@@ -2574,6 +2623,7 @@ export default function MyRosterPage() {
                                   setSelectedTeamRosteredBy({
                                     rosterName: trade.receiver.teamName,
                                     managerName: trade.receiver.managerName,
+                                    fantasyTeamId: trade.receiver.teamId,
                                   });
                                   setShowModal(true);
                                 }}
@@ -2629,9 +2679,13 @@ export default function MyRosterPage() {
                                   const data = await tradesResponse.json();
                                   setTrades(data.trades || []);
                                 }
+                              } else {
+                                const error = await response.json();
+                                showAlert(error.error || "Failed to reject trade", "error");
                               }
                             } catch (error) {
                               console.error("Error rejecting trade:", error);
+                              showAlert("Failed to reject trade. Please try again.", "error");
                             }
                           }}
                           style={{
@@ -2691,9 +2745,13 @@ export default function MyRosterPage() {
                                   const data = await tradesResponse.json();
                                   setTrades(data.trades || []);
                                 }
+                              } else {
+                                const errorData = await response.json();
+                                showAlert(errorData.error || "Failed to accept trade", "error");
                               }
                             } catch (error) {
                               console.error("Error accepting trade:", error);
+                              showAlert("Failed to accept trade. Please try again.", "error");
                             }
                           }}
                           style={{
@@ -2739,9 +2797,13 @@ export default function MyRosterPage() {
                                   const data = await tradesResponse.json();
                                   setTrades(data.trades || []);
                                 }
+                              } else {
+                                const error = await response.json();
+                                showAlert(error.error || "Failed to cancel trade", "error");
                               }
                             } catch (error) {
                               console.error("Error cancelling trade:", error);
+                              showAlert("Failed to cancel trade. Please try again.", "error");
                             }
                           }}
                           style={{
@@ -2929,20 +2991,17 @@ export default function MyRosterPage() {
                           >
                             {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
                           </div>
-                          <div
-                            style={{
-                              fontSize: "0.85rem",
-                              color: "var(--text-muted)",
-                              marginTop: "0.25rem",
-                            }}
-                          >
-                            {slot.fantasyPoints?.toFixed(1) || 0} pts
-                            {slot.isLocked && (
-                              <span style={{ color: "#ef4444", marginLeft: "0.5rem" }}>
-                                🔒 Locked — cannot be dropped
-                              </span>
-                            )}
-                          </div>
+                          {slot.isLocked && (
+                            <div
+                              style={{
+                                fontSize: "0.85rem",
+                                color: "#ef4444",
+                                marginTop: "0.25rem",
+                              }}
+                            >
+                              🔒 Locked — cannot be dropped
+                            </div>
+                          )}
                         </div>
                         <div
                           style={{
@@ -3007,14 +3066,15 @@ export default function MyRosterPage() {
                         method: "DELETE",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
-                          rosterSlotId: selectedDropSlot.id,
+                          mleTeamId: selectedDropSlot.mleTeam!.id,
+                          week: currentWeek,
                         }),
                       }
                     );
 
                     if (response.ok) {
                       showAlert(
-                        `${
+                        `${selectedDropSlot.mleTeam!.leagueId} ${
                           selectedDropSlot.mleTeam!.name
                         } has been dropped from your roster`,
                         "success"
@@ -3075,6 +3135,8 @@ export default function MyRosterPage() {
             status: "rostered",
             rosteredBy: selectedTeamRosteredBy,
           }}
+          fantasyLeagueId={leagueId}
+          currentUserFantasyTeamId={rosterData?.fantasyTeam.isOwner ? teamId : null}
           onClose={() => {
             setShowModal(false);
             setSelectedTeam(null);

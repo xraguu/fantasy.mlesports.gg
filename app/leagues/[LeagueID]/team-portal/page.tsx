@@ -30,7 +30,7 @@ interface TeamWithStats extends MLETeam {
   demos: number;
   record: string;
   status: "free-agent" | "waiver" | "rostered";
-  rosteredBy?: { rosterName: string; managerName: string };
+  rosteredBy?: { rosterName: string; managerName: string; fantasyTeamId: string };
 }
 
 type SortColumn = "rank" | "fpts" | "avg" | "last" | "goals" | "shots" | "saves" | "assists" | "demos";
@@ -116,6 +116,7 @@ export default function TeamPortalPage() {
   // Real roster data
   const [rosterData, setRosterData] = useState<RosterData | null>(null);
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
+  const [leagueCurrentWeek, setLeagueCurrentWeek] = useState<number | null>(null);
   const [loadingRoster, setLoadingRoster] = useState(true);
   const [draftStatus, setDraftStatus] = useState<string | null>(null);
   const draftIncomplete = draftStatus !== null && draftStatus !== "completed";
@@ -161,6 +162,7 @@ export default function TeamPortalPage() {
           if (myTeam) {
             setMyTeamId(myTeam.id);
           }
+          setLeagueCurrentWeek(data.league?.currentWeek ?? null);
           setDraftStatus(data.league?.draftStatus ?? null);
         }
       } catch (error) {
@@ -171,16 +173,19 @@ export default function TeamPortalPage() {
     fetchMyTeam();
   }, [session?.user?.id, leagueId]);
 
-  // Fetch roster data when we have myTeamId
+  // Fetch roster data when we have myTeamId — waits on leagueCurrentWeek too
+  // so this never falls back to the roster route's own default (week 1),
+  // which would show this whole page working off the draft-day roster
+  // instead of whatever it actually looks like now.
   useEffect(() => {
     const fetchRoster = async () => {
-      if (!myTeamId || !leagueId) {
+      if (!myTeamId || !leagueId || leagueCurrentWeek === null) {
         setLoadingRoster(false);
         return;
       }
 
       try {
-        const response = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}`);
+        const response = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}?week=${leagueCurrentWeek}`);
         if (response.ok) {
           const data = await response.json();
           setRosterData(data);
@@ -193,7 +198,7 @@ export default function TeamPortalPage() {
     };
 
     fetchRoster();
-  }, [myTeamId, leagueId]);
+  }, [myTeamId, leagueId, leagueCurrentWeek]);
 
   // Fetch all MLE teams and check roster status
   useEffect(() => {
@@ -215,12 +220,17 @@ export default function TeamPortalPage() {
         const leagueResponse = await fetch(`/api/leagues/${leagueId}`);
         const leagueData = leagueResponse.ok ? await leagueResponse.json() : null;
 
-        // Build a map of rostered team IDs -> who rosters them
-        const rosteredByMap = new Map<string, { rosterName: string; managerName: string }>();
-        if (leagueData?.league?.fantasyTeams) {
+        // Build a map of rostered team IDs -> who rosters them. Scoped to
+        // the league's actual current week — without an explicit `week`,
+        // the roster route defaults to week 1, which would keep showing a
+        // team as "rostered by" whoever drafted it on day one even after
+        // it's been dropped/traded away since.
+        const rosteredByMap = new Map<string, { rosterName: string; managerName: string; fantasyTeamId: string }>();
+        const currentWeekForRosterLookup = leagueData?.league?.currentWeek;
+        if (leagueData?.league?.fantasyTeams && currentWeekForRosterLookup) {
           for (const fantasyTeam of leagueData.league.fantasyTeams) {
             try {
-              const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${fantasyTeam.id}`);
+              const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${fantasyTeam.id}?week=${currentWeekForRosterLookup}`);
               if (rosterResponse.ok) {
                 const rosterData = await rosterResponse.json();
                 rosterData.rosterSlots.forEach((slot: any) => {
@@ -228,6 +238,7 @@ export default function TeamPortalPage() {
                     rosteredByMap.set(slot.mleTeam.id, {
                       rosterName: fantasyTeam.displayName,
                       managerName: fantasyTeam.owner?.displayName ?? "Unknown",
+                      fantasyTeamId: fantasyTeam.id,
                     });
                   }
                 });
@@ -345,6 +356,8 @@ export default function TeamPortalPage() {
       {/* Team Stats Modal */}
       <TeamModal
         team={showModal && selectedTeam ? selectedTeam : null}
+        fantasyLeagueId={leagueId}
+        currentUserFantasyTeamId={myTeamId}
         onClose={() => setShowModal(false)}
       />
 
@@ -484,7 +497,7 @@ export default function TeamPortalPage() {
                         if (response.ok) {
                           showAlert(`${selectedFATeam.name} successfully added to your roster!`, "success");
                           // Refetch roster to update UI
-                          const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}`);
+                          const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}?week=${rosterData.league.currentWeek}`);
                           if (rosterResponse.ok) {
                             const updatedRoster = await rosterResponse.json();
                             setRosterData(updatedRoster);
@@ -659,7 +672,7 @@ export default function TeamPortalPage() {
                   setSelectedDropTeam(null);
 
                   if (isFreeAgentPickup) {
-                    const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}`);
+                    const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}?week=${rosterData.league.currentWeek}`);
                     if (rosterResponse.ok) setRosterData(await rosterResponse.json());
                   }
                 } catch (error) {
@@ -816,7 +829,6 @@ export default function TeamPortalPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ borderBottom: "2px solid rgba(255, 255, 255, 0.2)" }}>
-                        <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Slot</th>
                         <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
                         <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Score</th>
                         <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}></th>
@@ -845,9 +857,6 @@ export default function TeamPortalPage() {
                               opacity: rowBlockedByLock ? 0.6 : 1,
                             }}
                           >
-                            <td style={{ padding: "0.75rem 0.5rem", fontSize: "0.9rem", color: "var(--accent)", fontWeight: 700 }}>
-                              {slot.position.toUpperCase()}
-                            </td>
                             <td style={{ padding: "0.75rem 0.5rem" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                                 <Image

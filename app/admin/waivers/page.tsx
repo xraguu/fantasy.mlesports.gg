@@ -21,6 +21,18 @@ function transactionTypeDisplay(type: string): { label: string; bg: string; colo
   }
 }
 
+const HISTORY_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "pickup", label: "Pick Ups" },
+  { value: "drop", label: "Drops" },
+  { value: "trade", label: "Trades" },
+  { value: "waiver", label: "Waivers" },
+];
+
+// "denied" (a waiver claim that lost to a competing claim) and "vetoed" (a
+// trade an admin blocked) both bucket under "cancelled" here — the filter
+// only distinguishes "this actually took effect" from "this didn't."
+const statusBucket = (status: string) => (status === "approved" ? "approved" : "cancelled");
+
 export default function TransactionsPage() {
   const showAlert = useAlert();
   const [claims, setClaims] = useState<any[]>([]);
@@ -35,6 +47,22 @@ export default function TransactionsPage() {
   const [activeTab, setActiveTab] = useState<"waivers" | "trades" | "history">(
     "waivers"
   );
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<string[]>(
+    HISTORY_TYPE_OPTIONS.map((o) => o.value)
+  );
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<string[]>(["approved", "cancelled"]);
+
+  const toggleHistoryTypeFilter = (value: string) => {
+    setHistoryTypeFilter((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
+
+  const toggleHistoryStatusFilter = (value: string) => {
+    setHistoryStatusFilter((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
 
   // Fetch data from API
   useEffect(() => {
@@ -88,8 +116,11 @@ export default function TransactionsPage() {
   const filteredTrades = pendingTrades.filter((t) =>
     selectedLeagues.includes(t.fantasyLeague)
   );
-  const filteredHistory = transactionHistory.filter((t) =>
-    selectedLeagues.includes(t.fantasyLeague)
+  const filteredHistory = transactionHistory.filter(
+    (t) =>
+      selectedLeagues.includes(t.fantasyLeague) &&
+      historyTypeFilter.includes(t.type) &&
+      historyStatusFilter.includes(statusBucket(t.status))
   );
 
   // Waiver processing functions
@@ -125,7 +156,14 @@ export default function TransactionsPage() {
     }
   };
 
-  const approveClaim = async (id: string) => {
+  // Waiver claims are resolved automatically (priority/FAAB bid, run on the
+  // league's scheduled waiver day) — there's no admin "approve" or "deny"
+  // judgment call to make. This just forces that same automatic resolution
+  // to run right now for one specific claim instead of waiting for the
+  // schedule, e.g. to unblock a manager. If the claimed team already got
+  // taken by a higher-priority claim, processing naturally resolves it as
+  // lost — there's no separate "deny" action distinct from this.
+  const processClaimNow = async (id: string) => {
     try {
       const response = await fetch("/api/admin/waivers/process", {
         method: "POST",
@@ -136,7 +174,7 @@ export default function TransactionsPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to approve waiver claim");
+        throw new Error("Failed to process waiver claim");
       }
 
       // Refresh data
@@ -145,17 +183,11 @@ export default function TransactionsPage() {
       setClaims(data.pendingWaivers || []);
       setTransactionHistory(data.transactionHistory || []);
 
-      showAlert("Waiver claim approved!", "success");
+      showAlert("Waiver claim processed!", "success");
     } catch (error) {
-      console.error("Error approving waiver:", error);
-      showAlert("Failed to approve waiver claim. Please try again.", "error");
+      console.error("Error processing waiver claim:", error);
+      showAlert("Failed to process waiver claim. Please try again.", "error");
     }
-  };
-
-  const denyClaim = async (id: string) => {
-    // For now, we'll just process it (which will deny it if the team is already rostered)
-    // You may want to add a specific deny endpoint later
-    await approveClaim(id);
   };
 
   // Trade processing functions
@@ -359,7 +391,7 @@ export default function TransactionsPage() {
                   top: "calc(100% + 0.5rem)",
                   left: 0,
                   right: 0,
-                  background: "var(--bg-elevated)",
+                  background: "rgba(15, 23, 42, 0.98)",
                   border: "1px solid rgba(255,255,255,0.2)",
                   borderRadius: "8px",
                   padding: "1rem",
@@ -747,19 +779,10 @@ export default function TransactionsPage() {
                             padding: "0.4rem 1rem",
                             fontSize: "0.85rem",
                           }}
-                          onClick={() => approveClaim(claim.id)}
+                          onClick={() => processClaimNow(claim.id)}
+                          title="Run this claim's normal automatic resolution now instead of waiting for the scheduled waiver day"
                         >
-                          Approve
-                        </button>
-                        <button
-                          className="btn btn-ghost"
-                          style={{
-                            padding: "0.4rem 1rem",
-                            fontSize: "0.85rem",
-                          }}
-                          onClick={() => denyClaim(claim.id)}
-                        >
-                          Deny
+                          Process Now
                         </button>
                       </div>
                     </td>
@@ -1036,9 +1059,88 @@ export default function TransactionsPage() {
           padding: "2rem",
           border: "1px solid rgba(255,255,255,0.1)"
         }}>
-          {filteredHistory.length === 0 ? (
+          {/* Type + Status filters */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "1.5rem",
+              marginBottom: "1.5rem",
+              paddingBottom: "1.5rem",
+              borderBottom: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                Type
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                {HISTORY_TYPE_OPTIONS.map((opt) => {
+                  const active = historyTypeFilter.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => toggleHistoryTypeFilter(opt.value)}
+                      style={{
+                        padding: "0.4rem 0.9rem",
+                        borderRadius: "999px",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        border: active ? "1px solid var(--accent)" : "1px solid rgba(255,255,255,0.2)",
+                        background: active ? "rgba(242, 182, 50, 0.2)" : "rgba(255,255,255,0.05)",
+                        color: active ? "var(--accent)" : "rgba(255,255,255,0.6)",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                Status
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                {[
+                  { value: "approved", label: "Approved" },
+                  { value: "cancelled", label: "Cancelled" },
+                ].map((opt) => {
+                  const active = historyStatusFilter.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => toggleHistoryStatusFilter(opt.value)}
+                      style={{
+                        padding: "0.4rem 0.9rem",
+                        borderRadius: "999px",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        border: active ? "1px solid var(--accent)" : "1px solid rgba(255,255,255,0.2)",
+                        background: active ? "rgba(242, 182, 50, 0.2)" : "rgba(255,255,255,0.05)",
+                        color: active ? "var(--accent)" : "rgba(255,255,255,0.6)",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {transactionHistory.filter((t) => selectedLeagues.includes(t.fantasyLeague)).length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "rgba(255,255,255,0.5)" }}>
               No transaction history for selected leagues
+            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "3rem", color: "rgba(255,255,255,0.5)" }}>
+              No transactions match the selected filters
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>

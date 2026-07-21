@@ -3,19 +3,24 @@
 import { useState, useEffect } from "react";
 import { useAlert } from "@/components/AlertProvider";
 
-// Week date structure
+// Week date structure — a week's calendar boundary (weekStart), when its
+// real matches actually begin (matchStart, which can fall several days
+// later — this is when lineups lock and the trade blackout starts), and
+// when both the matches and the week are over (weekEnd).
 interface WeekDate {
   week: number;
-  startDate: string;
-  endDate: string;
+  weekStart: string;
+  matchStart: string;
+  weekEnd: string;
 }
 
 // Settings structure matching requirements
 const defaultSettings = {
   weekDates: Array.from({ length: 10 }, (_, i) => ({
     week: i + 1,
-    startDate: "",
-    endDate: "",
+    weekStart: "",
+    matchStart: "",
+    weekEnd: "",
   })) as WeekDate[],
   draftStatsSeason: null as string | null,
   scoring: {
@@ -141,7 +146,7 @@ export default function SettingsPage() {
     setHasChanges(true);
   };
 
-  const updateWeekDate = (week: number, field: 'startDate' | 'endDate', value: string) => {
+  const updateWeekDate = (week: number, field: 'weekStart' | 'matchStart' | 'weekEnd', value: string) => {
     setSettings((prev) => ({
       ...prev,
       weekDates: prev.weekDates.map(w =>
@@ -375,12 +380,12 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    Start Date
+                    Week Start
                   </label>
                   <input
                     type="date"
-                    value={weekData.startDate}
-                    onChange={(e) => updateWeekDate(weekData.week, 'startDate', e.target.value)}
+                    value={weekData.weekStart}
+                    onChange={(e) => updateWeekDate(weekData.week, 'weekStart', e.target.value)}
                     style={{
                       width: "100%",
                       padding: "0.5rem",
@@ -394,12 +399,31 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                    End Date
+                    Match Start
                   </label>
                   <input
                     type="date"
-                    value={weekData.endDate}
-                    onChange={(e) => updateWeekDate(weekData.week, 'endDate', e.target.value)}
+                    value={weekData.matchStart}
+                    onChange={(e) => updateWeekDate(weekData.week, 'matchStart', e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      background: "rgba(255,255,255,0.1)",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      borderRadius: "4px",
+                      color: "var(--text-main)",
+                      fontSize: "0.85rem",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", marginBottom: "0.25rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    Week End
+                  </label>
+                  <input
+                    type="date"
+                    value={weekData.weekEnd}
+                    onChange={(e) => updateWeekDate(weekData.week, 'weekEnd', e.target.value)}
                     style={{
                       width: "100%",
                       padding: "0.5rem",
@@ -414,6 +438,9 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+          <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.75rem" }}>
+            <strong style={{ color: "var(--text-main)" }}>Week Start</strong> is when the new fantasy week begins (rosters carry forward, waivers reset/release) — <strong style={{ color: "var(--text-main)" }}>Match Start</strong> is when that week&apos;s real matches begin and lineups lock/trades stop — <strong style={{ color: "var(--text-main)" }}>Week End</strong> is when matches and the week are both over and lineups unlock.
+          </p>
         </div>
       </div>
 

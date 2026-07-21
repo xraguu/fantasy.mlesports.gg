@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { TEAMS, getTeamById } from "@/lib/teams";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
 
@@ -68,6 +67,33 @@ export default function ManualStatsPage() {
   const [recalculateResult, setRecalculateResult] = useState<RecalculateResult | null>(null);
   const [recalculateError, setRecalculateError] = useState<string | null>(null);
 
+  // The current season/week scoring is paced at, and whether that week's
+  // real matches have actually started (Match Start date) — mirrors the
+  // same rule calculateScoresForWeek enforces server-side, so the button
+  // can't even be clicked for a week that's still ahead of it.
+  const [scoringWindow, setScoringWindow] = useState<{
+    season: number | null;
+    week: number | null;
+    matchesStarted: boolean;
+    matchStart: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/stats/scoring-window")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data && setScoringWindow(data))
+      .catch((error) => console.error("Failed to fetch scoring window:", error));
+  }, []);
+
+  // A week strictly before the current one is settled history, always safe
+  // to recalculate. The current week itself is only safe once its matches
+  // have actually started. A week strictly after the current one hasn't
+  // happened at all yet (calculateScoresForWeek would reject it outright).
+  const recalculateWeekAllowed =
+    scoringWindow?.week != null &&
+    (recalculateWeek < scoringWindow.week ||
+      (recalculateWeek === scoringWindow.week && scoringWindow.matchesStarted));
+
   // Manual stats override state
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualOverrides, setManualOverrides] = useState<ManualOverride[]>([]);
@@ -86,10 +112,16 @@ export default function ManualStatsPage() {
     saveRate: 0,
     gameRecord: "0-0",
   });
+  const [mleTeams, setMleTeams] = useState<{ id: string; name: string; leagueId: string }[]>([]);
 
-  // Fetch manual overrides on component mount
+  // Fetch manual overrides + the real MLE team list (for the team picker
+  // and to resolve existing overrides' teamId to a display name) on mount.
   useEffect(() => {
     fetchManualOverrides();
+    fetch("/api/mle-teams")
+      .then((res) => (res.ok ? res.json() : { teams: [] }))
+      .then((data) => setMleTeams(data.teams ?? []))
+      .catch((err) => console.error("Failed to fetch MLE teams:", err));
   }, []);
 
   const fetchManualOverrides = async () => {
@@ -308,12 +340,20 @@ export default function ManualStatsPage() {
           <button
             className="btn btn-primary"
             onClick={runRecalculate}
-            disabled={recalculating}
+            disabled={recalculating || !recalculateWeekAllowed}
             style={{ padding: "0.75rem 2rem", fontWeight: 700, alignSelf: "flex-end" }}
           >
             {recalculating ? "Recalculating..." : "Recalculate Now"}
           </button>
         </div>
+
+        {!recalculateWeekAllowed && scoringWindow?.week != null && (
+          <div style={{ padding: "0.85rem 1rem", background: "rgba(242, 182, 50, 0.1)", border: "1px solid rgba(242, 182, 50, 0.3)", borderRadius: "8px", color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            {recalculateWeek > scoringWindow.week
+              ? `Week ${recalculateWeek} hasn't happened yet — the season is currently on week ${scoringWindow.week}.`
+              : `Week ${recalculateWeek}'s matches haven't started yet${scoringWindow.matchStart ? ` (Match Start is ${scoringWindow.matchStart})` : ""} — scores can't be calculated ahead of that.`}
+          </div>
+        )}
 
         {recalculateError && (
           <div style={{ padding: "1rem", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: "8px", color: "#f87171", marginBottom: "1rem" }}>
@@ -400,7 +440,7 @@ export default function ManualStatsPage() {
                   }}
                 >
                   <option value="">Select Team</option>
-                  {TEAMS.map((team) => (
+                  {mleTeams.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.leagueId} - {team.name}
                     </option>
@@ -667,7 +707,7 @@ export default function ManualStatsPage() {
                 </thead>
                 <tbody>
                   {manualOverrides.map((override) => {
-                    const team = getTeamById(override.teamId);
+                    const team = mleTeams.find((t) => t.id === override.teamId);
                     return (
                       <tr key={override.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                         <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>

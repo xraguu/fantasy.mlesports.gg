@@ -1,5 +1,5 @@
 "use client";
-//hi
+
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
@@ -8,8 +8,6 @@ import TeamModal from "@/components/TeamModal";
 import InfoGuideModal from "@/components/InfoGuideModal";
 import ManagerOverviewModal from "@/components/ManagerOverviewModal";
 import HeaderTooltip from "@/components/HeaderTooltip";
-
-// Mock leagues data removed - now fetched from /api/leagues based on user session
 
 type SortKey =
   | "rank"
@@ -322,19 +320,15 @@ export default function HomePage() {
 
   return (
     <>
-      {/* Team Stats Modal */}
+      {/* Team Stats Modal — this leaderboard is a global, cross-league MLE
+          team ranking (GET /api/teams/top), not scoped to any one fantasy
+          league, so there's no single well-defined "rostered by" answer for
+          a team here (it can be rostered differently in every league the
+          viewer belongs to). No rosteredBy is set; the modal simply omits
+          that status pill in that case. */}
       <TeamModal
-        team={
-          showModal && selectedTeam
-            ? {
-                ...selectedTeam,
-                rosteredBy:
-                  (selectedTeam.rank ?? 0) % 2 === 0
-                    ? { rosterName: "Fantastic Ballers", managerName: "xenn" }
-                    : undefined,
-              }
-            : null
-        }
+        team={showModal && selectedTeam ? selectedTeam : null}
+        fantasyLeagueId={standingsLeagueId}
         onClose={() => setShowModal(false)}
       />
 
@@ -1058,7 +1052,7 @@ export default function HomePage() {
                   transition: "all 0.2s ease",
                 }}
               >
-                All
+                Both
               </button>
               <button
                 onClick={() => setGameMode("2s")}

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getRosterCapacity } from "@/lib/rosterSlotAssignment";
+import { isWeekLocked } from "@/lib/autoLock";
 
 /**
  * POST /api/leagues/[leagueId]/trades/propose
@@ -35,7 +36,7 @@ export async function POST(
 
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { draftStatus: true, currentWeek: true, rosterConfig: true },
+      select: { draftStatus: true, currentWeek: true, rosterConfig: true, season: true },
     });
     if (league?.draftStatus !== "completed") {
       return NextResponse.json(
@@ -48,6 +49,17 @@ export async function POST(
     if (tradeCutoff && new Date() > tradeCutoff) {
       return NextResponse.json(
         { error: "The trade deadline has passed for this league" },
+        { status: 403 }
+      );
+    }
+
+    // Blocked for the same live window a manager's active lineup is locked
+    // in (the current week's configured match-weekend dates) — a trade
+    // shouldn't be able to be negotiated or locked in while that weekend's
+    // real results are already playing out.
+    if (league && (await isWeekLocked(league.season, league.currentWeek))) {
+      return NextResponse.json(
+        { error: "Trades can't be proposed during the match weekend — try again once this week's matches are over." },
         { status: 403 }
       );
     }

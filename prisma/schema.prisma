@@ -243,7 +243,7 @@ model WeekLockEvent {
   id              String        @id @default(cuid())
   fantasyLeagueId String
   week            Int
-  type            String // "lock" | "unlock"
+  type            String // "lock" | "unlock" | "roster_carry" | "waiver_reset"
   firedAt         DateTime      @default(now())
   league          FantasyLeague @relation(fields: [fantasyLeagueId], references: [id])
 
@@ -253,8 +253,9 @@ model WeekLockEvent {
 // Tracks an MLE team that was just dropped by a manager and is in the
 // waiver-clearance window (visible to other managers as "on waivers" rather
 // than free agent). Cleared when someone picks it up via a waiver claim, or
-// released back to free agency the next time waivers are processed for this
-// league if nobody claimed it.
+// released back to free agency once the admin-configured waiver processing
+// schedule has passed it by (see lib/waiverProcessing.ts's
+// releaseExpiredWaiverPeriods, gated on droppedAt).
 model TeamWaiverPeriod {
   id              String        @id @default(cuid())
   fantasyLeagueId String

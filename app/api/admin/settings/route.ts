@@ -75,8 +75,9 @@ export async function GET(request: NextRequest) {
           lineupLockTime: "03:00",
           weekDates: Array.from({ length: 10 }, (_, i) => ({
             week: i + 1,
-            startDate: "",
-            endDate: "",
+            weekStart: "",
+            matchStart: "",
+            weekEnd: "",
           })),
           scoringRules: {
             goals: 2,

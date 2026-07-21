@@ -772,6 +772,20 @@ main {
   }
 }
 
+/* Round-by-round stat rows: two 7-column stat grids either side of a score
+   box. These never reflow well into a single mobile column (7 abbreviated
+   stat columns squeezed to ~40px each reads as noise) — instead they keep
+   their natural width and the row scrolls horizontally on narrow screens. */
+.match-modal-round-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  min-width: 560px;
+}
+
+.match-modal-rounds-scroll {
+  overflow-x: auto;
+}
+
 /* ---------- Trade builder page ---------- */
 .trade-builder-grid {
   display: grid;
@@ -930,7 +944,7 @@ main {
 /* ---------- Admin: settings page row layouts ---------- */
 .admin-week-schedule-grid {
   display: grid;
-  grid-template-columns: 100px 1fr 1fr;
+  grid-template-columns: 100px 1fr 1fr 1fr;
   gap: 1rem;
 }
 

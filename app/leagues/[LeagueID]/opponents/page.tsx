@@ -2,10 +2,12 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Image from "next/image";
-import { TEAMS } from "@/lib/teams";
 import TeamModal from "@/components/TeamModal";
 import HeaderTooltip from "@/components/HeaderTooltip";
+import TransactionHistoryModal from "@/components/TransactionHistoryModal";
+import { isAdminViewingLeague } from "@/lib/adminLeagueView";
 
 // Helper function to get fantasy rank color
 const getFantasyRankColor = (rank: number): string => {
@@ -32,7 +34,13 @@ interface OpponentTeamInfo {
 
 interface OpponentRoster {
   slot: string;
+  id: string;
   name: string;
+  leagueId: string;
+  slug: string;
+  logoPath: string;
+  primaryColor: string;
+  secondaryColor: string;
   score: number;
   opponent: string;
   opponentTeam: OpponentTeamInfo | null;
@@ -84,6 +92,10 @@ interface OpponentData {
   totalPoints: number;
   avgPoints: number;
   currentWeek: number;
+  waiverPriority: number | null;
+  faabRemaining: number | null;
+  completedTransactionCount: number;
+  pendingTransactionCount: number;
   lastMatchup?: {
     id: string;
     week: number;
@@ -107,9 +119,27 @@ export default function OpponentsPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const leagueId = params.LeagueID as string;
   const teamIdParam = searchParams.get("teamId");
   const managerParam = searchParams.get("manager");
+
+  // An admin browsing this league via the admin panel's "View League" button
+  // reaches this same page/route whenever they click into a specific team
+  // from Scoreboard/Standings, or via the "Managers" nav link (a thin
+  // re-export of this same route, see app/leagues/[LeagueID]/managers/page.tsx).
+  // Detected the same way as LeagueNavbar and deliberately ONLY that way —
+  // the explicit sessionStorage flag that button set — not inferred from
+  // team ownership: an admin can genuinely also be a manager here (this
+  // app's own test leagues are a real example), and visiting normally must
+  // still show the real Opponents page with Propose Trade, not silently
+  // switch to the read-only admin view just because they're an admin.
+  const [isAdminViewing, setIsAdminViewing] = useState(false);
+  useEffect(() => {
+    if (!session?.user?.id || !leagueId) return;
+    if (session.user.role !== "admin") return;
+    setIsAdminViewing(isAdminViewingLeague(leagueId));
+  }, [session?.user?.id, session?.user?.role, leagueId]);
 
   const [opponents, setOpponents] = useState<OpponentData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,14 +156,21 @@ export default function OpponentsPage() {
   const [activeTab, setActiveTab] = useState<"lineup" | "stats">("lineup");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<(typeof TEAMS[0] & {
+  const [selectedTeam, setSelectedTeam] = useState<({
+    id: string;
+    name: string;
+    leagueId: string;
+    slug: string;
+    logoPath: string;
+    primaryColor: string;
+    secondaryColor: string;
     fpts?: number;
     avg?: number;
     last?: number;
     rank?: number;
     record?: string;
     status?: string;
-    rosteredBy?: { rosterName: string; managerName: string };
+    rosteredBy?: { rosterName: string; managerName: string; fantasyTeamId?: string };
   }) | null>(null);
 
   // Track game mode for stats tab (2s or 3s)
@@ -142,12 +179,20 @@ export default function OpponentsPage() {
   // Track game modes for each slot
   const [slotModes, setSlotModes] = useState<string[]>([]);
 
+  // League's waiver system (admin-view overview card shows waiver priority
+  // or FAAB budget depending on it) and the transactions modal's open/mode
+  // state (shared between the "N transactions" and "N pending" clickables).
+  const [waiverSystem, setWaiverSystem] = useState<string | null>(null);
+  const [transactionsModal, setTransactionsModal] = useState<"completed" | "pending" | null>(null);
+
   // Fetch opponents data
   useEffect(() => {
     const fetchOpponents = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/leagues/${leagueId}/opponents?week=${currentWeek}`);
+        const response = await fetch(
+          `/api/leagues/${leagueId}/opponents?week=${currentWeek}${isAdminViewing ? "&adminView=true" : ""}`
+        );
 
         if (!response.ok) {
           throw new Error("Failed to fetch opponents");
@@ -155,6 +200,7 @@ export default function OpponentsPage() {
 
         const data = await response.json();
         setOpponents(data.opponents || []);
+        if (data.league?.waiverSystem) setWaiverSystem(data.league.waiverSystem);
 
         // Snap to the league's real current week on first load only — once
         // the user has navigated weeks manually, leave their choice alone.
@@ -196,7 +242,7 @@ export default function OpponentsPage() {
     if (leagueId) {
       fetchOpponents();
     }
-  }, [leagueId, currentWeek, selectedManagerId, teamIdParam, managerParam]);
+  }, [leagueId, currentWeek, selectedManagerId, teamIdParam, managerParam, isAdminViewing]);
 
   // Derived values
   const selectedManager = opponents.find(m => m.id === selectedManagerId);
@@ -247,21 +293,24 @@ export default function OpponentsPage() {
     });
   }, [statsSortColumn, statsSortDirection, roster]);
 
-  const handleTeamClick = (teamName: string) => {
-    // Team names come from the API as "LEAGUEID Name", e.g. "CL Flames"
-    // (see app/api/leagues/[leagueId]/opponents/route.ts).
-    const parts = teamName.split(" ");
-    const leagueId = parts[0];
-    const name = parts.slice(1).join(" ");
-    const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
-    const team = TEAMS.find(t => t.id === teamId);
+  const handleTeamClick = (rosterTeam: OpponentRoster) => {
     // This is only reachable from within the currently selected opponent's roster,
-    // so the clicked team is by definition rostered by that opponent.
-    if (team && roster) {
+    // so the clicked team is by definition rostered by that opponent. All the
+    // team's real identity/display data (id, logo, its own primary/secondary
+    // colors) now comes straight from the API (app/api/leagues/[leagueId]/opponents/route.ts),
+    // not the old static lib/teams.ts registry — that file's colors were the
+    // MLE competition tier's branding color, not the individual team's.
+    if (roster) {
       setSelectedTeam({
-        ...team,
+        id: rosterTeam.id,
+        name: rosterTeam.name.split(" ").slice(1).join(" "),
+        leagueId: rosterTeam.leagueId,
+        slug: rosterTeam.slug,
+        logoPath: rosterTeam.logoPath,
+        primaryColor: rosterTeam.primaryColor,
+        secondaryColor: rosterTeam.secondaryColor,
         status: "rostered",
-        rosteredBy: { rosterName: roster.teamName, managerName: roster.name },
+        rosteredBy: { rosterName: roster.teamName, managerName: roster.name, fantasyTeamId: roster.id },
       });
       setShowModal(true);
     }
@@ -307,12 +356,28 @@ export default function OpponentsPage() {
       {/* Team Modal */}
       <TeamModal
         team={showModal && selectedTeam ? selectedTeam : null}
+        fantasyLeagueId={leagueId}
         onClose={() => setShowModal(false)}
       />
 
+      {/* Transactions Modal (admin view only) */}
+      {isAdminViewing && (
+        <TransactionHistoryModal
+          open={transactionsModal !== null}
+          onClose={() => setTransactionsModal(null)}
+          title={transactionsModal === "pending" ? "Pending Transactions" : "Transaction History"}
+          leagueId={leagueId}
+          teamId={roster.id}
+          managerName={roster.name}
+          mode={transactionsModal ?? "completed"}
+        />
+      )}
+
       {/* Page Header with Dropdown */}
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Opponents</h1>
+        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>
+          {isAdminViewing ? "Managers" : "Opponents"}
+        </h1>
 
         {/* Manager Dropdown */}
         <div style={{ position: "relative" }}>
@@ -419,6 +484,27 @@ export default function OpponentsPage() {
               <span style={{ whiteSpace: "nowrap", fontWeight: 600, color: "var(--text-main)" }}>{roster.totalPoints} Fantasy Points</span>
               <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>{roster.avgPoints} Avg Fantasy Points</span>
             </div>
+            {isAdminViewing && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 1.5rem", marginTop: "0.5rem", fontSize: "0.9rem" }}>
+                <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+                  {waiverSystem === "faab"
+                    ? `$${roster.faabRemaining ?? 0} FAAB Remaining`
+                    : `Waiver Priority: #${roster.waiverPriority ?? "—"}`}
+                </span>
+                <span
+                  onClick={() => setTransactionsModal("completed")}
+                  style={{ whiteSpace: "nowrap", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+                >
+                  {roster.completedTransactionCount} Transaction{roster.completedTransactionCount === 1 ? "" : "s"}
+                </span>
+                <span
+                  onClick={() => setTransactionsModal("pending")}
+                  style={{ whiteSpace: "nowrap", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+                >
+                  {roster.pendingTransactionCount} Pending
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Matchup Info */}
@@ -502,13 +588,15 @@ export default function OpponentsPage() {
             Stats
           </button>
         </div>
-        <a
-          href={`/leagues/${leagueId}/opponents/${selectedManagerId}/trade`}
-          className="btn btn-primary"
-          style={{ fontSize: "0.9rem" }}
-        >
-          Propose Trade
-        </a>
+        {!isAdminViewing && (
+          <a
+            href={`/leagues/${leagueId}/opponents/${selectedManagerId}/trade`}
+            className="btn btn-primary"
+            style={{ fontSize: "0.9rem" }}
+          >
+            Propose Trade
+          </a>
+        )}
       </div>
 
       {/* Lineup Tab */}
@@ -654,25 +742,18 @@ export default function OpponentsPage() {
                         ) : (
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                             {/* Team Logo */}
-                            {(() => {
-                              const parts = team.name.split(" ");
-                              const leagueId = parts[0];
-                              const name = parts.slice(1).join(" ");
-                              const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
-                              const teamData = TEAMS.find(t => t.id === teamId);
-                              return teamData ? (
-                                <Image
-                                  src={teamData.logoPath}
-                                  alt={team.name}
-                                  width={32}
-                                  height={32}
-                                  style={{ borderRadius: "4px" }}
-                                />
-                              ) : null;
-                            })()}
+                            {team.logoPath && (
+                              <Image
+                                src={team.logoPath}
+                                alt={team.name}
+                                width={32}
+                                height={32}
+                                style={{ borderRadius: "4px" }}
+                              />
+                            )}
                             <div>
                               <div
-                                onClick={() => handleTeamClick(team.name)}
+                                onClick={() => handleTeamClick(team)}
                                 style={{
                                   fontWeight: 600,
                                   fontSize: "1rem",
@@ -1027,25 +1108,18 @@ export default function OpponentsPage() {
                         ) : (
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                             {/* Team Logo (smaller for stats tab) */}
-                            {(() => {
-                              const parts = team.name.split(" ");
-                              const leagueId = parts[0];
-                              const name = parts.slice(1).join(" ");
-                              const teamId = `${leagueId}${name.replace(/\s+/g, "")}`;
-                              const teamData = TEAMS.find(t => t.id === teamId);
-                              return teamData ? (
-                                <Image
-                                  src={teamData.logoPath}
-                                  alt={team.name}
-                                  width={24}
-                                  height={24}
-                                  style={{ borderRadius: "4px" }}
-                                />
-                              ) : null;
-                            })()}
+                            {team.logoPath && (
+                              <Image
+                                src={team.logoPath}
+                                alt={team.name}
+                                width={24}
+                                height={24}
+                                style={{ borderRadius: "4px" }}
+                              />
+                            )}
                             <div>
                               <div
-                                onClick={() => handleTeamClick(team.name)}
+                                onClick={() => handleTeamClick(team)}
                                 style={{
                                   fontWeight: 600,
                                   fontSize: "0.95rem",

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Image from "next/image";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { LEAGUE_COLORS } from "@/lib/teams";
+import { isAdminViewingLeague } from "@/lib/adminLeagueView";
 import TeamModal from "@/components/TeamModal";
 
 // Helper function to get fantasy rank color
@@ -88,6 +89,18 @@ export default function ScoreboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // An admin browsing this league via the admin panel's "View League" button
+  // reaches this same route — detected the same explicit, sessionStorage-only
+  // way as the Opponents/Managers page (see lib/adminLeagueView.ts): never
+  // inferred from team ownership, since an admin can genuinely also be a
+  // manager here.
+  const [isAdminViewing, setIsAdminViewing] = useState(false);
+  useEffect(() => {
+    if (!session?.user?.id || !leagueId) return;
+    if (session.user.role !== "admin") return;
+    setIsAdminViewing(isAdminViewingLeague(leagueId));
+  }, [session?.user?.id, session?.user?.role, leagueId]);
+
   // Helper functions for week navigation (weeks 1-10)
   const getNextWeek = (week: number) => {
     if (week >= 10) return 10;
@@ -107,8 +120,25 @@ export default function ScoreboardPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<MLETeam | null>(null);
   const [selectedTeamRosteredBy, setSelectedTeamRosteredBy] = useState<
-    { rosterName: string; managerName: string } | undefined
+    { rosterName: string; managerName: string; fantasyTeamId?: string } | undefined
   >(undefined);
+
+  // The viewer's own fantasy team id in this league, if they have one —
+  // found by scanning the fetched matchups for a side whose managerId
+  // matches the session user, since a manager only ever has one team here.
+  // Used solely to route the TeamModal's "Rostered by" link to My Roster
+  // instead of the Opponents tab when it's the viewer's own team. Forced to
+  // null while admin-viewing: an admin browsing in that read-only mode
+  // should land on the Managers/Opponents page for their own team too, the
+  // same as clicking through to any other manager, not their real My Roster.
+  const myTeamId = useMemo(() => {
+    if (isAdminViewing) return null;
+    for (const m of matchups) {
+      if (m.team1.managerId === session?.user?.id) return m.team1.id;
+      if (m.team2.managerId === session?.user?.id) return m.team2.id;
+    }
+    return null;
+  }, [matchups, session?.user?.id, isAdminViewing]);
 
   // Fetch matchups for current week
   useEffect(() => {
@@ -154,7 +184,7 @@ export default function ScoreboardPage() {
 
   const openTeamModal = (
     team: MLETeam | null,
-    rosteredBy?: { rosterName: string; managerName: string }
+    rosteredBy?: { rosterName: string; managerName: string; fantasyTeamId?: string }
   ) => {
     if (!team) return;
     setSelectedTeam(team);
@@ -202,10 +232,12 @@ export default function ScoreboardPage() {
     const total1 = getActiveSlotCount(team1Roster);
     const total2 = getActiveSlotCount(team2Roster);
 
-    // Check if current user is in this matchup
+    // Check if current user is in this matchup — never true while admin-viewing,
+    // so their own name/team stays clickable through to the Managers page
+    // instead of being treated as "this is just me" and disabled.
     const currentUserId = session?.user?.id;
-    const isUserTeam1 = currentUserId === selectedMatch.team1.managerId;
-    const isUserTeam2 = currentUserId === selectedMatch.team2.managerId;
+    const isUserTeam1 = !isAdminViewing && currentUserId === selectedMatch.team1.managerId;
+    const isUserTeam2 = !isAdminViewing && currentUserId === selectedMatch.team2.managerId;
 
     return (
       <div style={{ position: "relative", zIndex: 1 }}>
@@ -220,6 +252,8 @@ export default function ScoreboardPage() {
                 }
               : null
           }
+          fantasyLeagueId={leagueId}
+          currentUserFantasyTeamId={myTeamId}
           onClose={() => setShowModal(false)}
         />
 
@@ -580,6 +614,7 @@ export default function ScoreboardPage() {
                               openTeamModal(slot1.mleTeam, {
                                 rosterName: selectedMatch.team1.teamName,
                                 managerName: selectedMatch.team1.managerName,
+                                fantasyTeamId: selectedMatch.team1.id,
                               })
                             }
                             style={{
@@ -669,6 +704,7 @@ export default function ScoreboardPage() {
                               openTeamModal(slot2.mleTeam, {
                                 rosterName: selectedMatch.team2.teamName,
                                 managerName: selectedMatch.team2.managerName,
+                                fantasyTeamId: selectedMatch.team2.id,
                               })
                             }
                             style={{
@@ -732,6 +768,8 @@ export default function ScoreboardPage() {
               }
             : null
         }
+        fantasyLeagueId={leagueId}
+        currentUserFantasyTeamId={myTeamId}
         onClose={() => setShowModal(false)}
       />
 
@@ -835,10 +873,11 @@ export default function ScoreboardPage() {
             const team1TopPerformers = getTopPerformers(matchup.team1.roster);
             const team2TopPerformers = getTopPerformers(matchup.team2.roster);
 
-            // Check if current user is in this matchup
+            // Check if current user is in this matchup — never true while
+            // admin-viewing (see the matching comment above).
             const currentUserId = session?.user?.id;
-            const isUserTeam1 = currentUserId === matchup.team1.managerId;
-            const isUserTeam2 = currentUserId === matchup.team2.managerId;
+            const isUserTeam1 = !isAdminViewing && currentUserId === matchup.team1.managerId;
+            const isUserTeam2 = !isAdminViewing && currentUserId === matchup.team2.managerId;
 
             return (
               <section
@@ -966,6 +1005,7 @@ export default function ScoreboardPage() {
                                     openTeamModal(slot.mleTeam, {
                                       rosterName: matchup.team1.teamName,
                                       managerName: matchup.team1.managerName,
+                                      fantasyTeamId: matchup.team1.id,
                                     })
                                   }
                                   style={{
@@ -1150,6 +1190,7 @@ export default function ScoreboardPage() {
                                     openTeamModal(slot.mleTeam, {
                                       rosterName: matchup.team2.teamName,
                                       managerName: matchup.team2.managerName,
+                                      fantasyTeamId: matchup.team2.id,
                                     })
                                   }
                                   style={{

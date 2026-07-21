@@ -1,18 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { etDateTime } from "@/lib/timezone";
-
-interface WeekDateConfig {
-  week: number;
-  startDate: string;
-  endDate: string;
-}
+import { WeekDateConfig } from "@/lib/weekMatchRange";
 
 /**
- * The latest configured week whose start date (midnight ET) has already
- * passed, given a season's weekDates — falls back to the first configured
- * week if none have started yet. Pure/no I/O so both callers below (global
- * "latest season" lookup and per-league lookup) share one definition of
- * "what week is it."
+ * The latest configured week whose calendar boundary (weekStart, midnight
+ * ET) has already passed, given a season's weekDates — falls back to the
+ * first configured week if none have started yet. Deliberately keyed off
+ * `weekStart`, not `matchStart` — "what week is it" is a pure calendar
+ * question, independent of whether that week's matches have actually
+ * started yet. Pure/no I/O so both callers below (global "latest season"
+ * lookup and per-league lookup) share one definition of "what week is it."
  */
 export function computeCalendarWeek(weekDates: WeekDateConfig[]): number {
   const now = new Date();
@@ -20,8 +17,8 @@ export function computeCalendarWeek(weekDates: WeekDateConfig[]): number {
 
   let currentWeek = sorted[0].week;
   for (const wd of sorted) {
-    if (!wd.startDate) continue;
-    if (now >= etDateTime(wd.startDate, 0, 0)) {
+    if (!wd.weekStart) continue;
+    if (now >= etDateTime(wd.weekStart, 0, 0)) {
       currentWeek = wd.week;
     }
   }

@@ -3,17 +3,88 @@ import { etDateTime } from "@/lib/timezone";
 import { computeCalendarWeek } from "@/lib/currentWeek";
 import { resetWaiverPriorityToReverseStandings } from "@/lib/waiverPriority";
 import { generateRosterSlotId } from "@/lib/id-generator";
+import { WeekDateConfig } from "@/lib/weekMatchRange";
 
-interface WeekDateConfig {
-  week: number;
-  startDate: string;
-  endDate: string;
+/**
+ * Whether a week is CURRENTLY inside its locked window — real matches
+ * actually being played right now (`matchStart` through `weekEnd`), NOT the
+ * broader calendar week (`weekStart` can fall days before matches actually
+ * begin) — independent of any actual RosterSlot's isLocked flag. A
+ * genuinely empty active slot has no row at all, so runAutoLockSweep has
+ * nothing to set isLocked on — without this check, a manager could leave an
+ * active slot empty on purpose and fill it in mid-week once results start
+ * coming in, which the lock rule exists to prevent in the first place.
+ * Every place that creates a new (non-carry-forward) RosterSlot row for a
+ * non-bench position needs to check this before allowing it.
+ */
+export async function isWeekLocked(season: number, week: number): Promise<boolean> {
+  const settings = await prisma.seasonSettings.findFirst({ where: { season } });
+  const weekDates = (settings?.weekDates as WeekDateConfig[] | undefined) ?? [];
+  const wd = weekDates.find((w) => w.week === week);
+  if (!wd?.matchStart || !wd?.weekEnd) return false;
+
+  const now = new Date();
+  return now >= etDateTime(wd.matchStart, 0, 0) && now < etDateTime(wd.weekEnd, 23, 59);
 }
 
 /**
- * Auto-locks lineups at 12:00am ET on a week's start date (the instant the
- * calendar date becomes that week's start date), and auto-unlocks them at
- * 11:59pm ET on that week's end date. There's no cron in this app,
+ * Whether a week's real matches have started yet — `now >= matchStart`,
+ * with no upper bound (unlike isWeekLocked, which stops being true once the
+ * week ends). Used to gate anything that should never run AHEAD of real
+ * matches actually being played but still needs to work normally after the
+ * week is over (e.g. recalculating a past week's scores after a stat
+ * correction) — isWeekLocked's own bounded window is the wrong tool for
+ * that, since it would incorrectly say "not locked" once the week ends too.
+ */
+export async function haveMatchesStarted(season: number, week: number): Promise<boolean> {
+  const settings = await prisma.seasonSettings.findFirst({ where: { season } });
+  const weekDates = (settings?.weekDates as WeekDateConfig[] | undefined) ?? [];
+  const wd = weekDates.find((w) => w.week === week);
+  if (!wd?.matchStart) return false;
+
+  return new Date() >= etDateTime(wd.matchStart, 0, 0);
+}
+
+/**
+ * Whether a week is permanently settled — already over, or the one whose
+ * matches have started — and so can never be edited or dropped from again,
+ * full stop, regardless of any RosterSlot's isLocked flag. This is
+ * deliberately NOT the same question as isWeekLocked: runAutoLockSweep's
+ * own "unlock" step flips isLocked back to false once a week's end date
+ * passes (that flag was only ever about "is this week's active window
+ * happening right now"), which would otherwise leave a past week looking
+ * editable again — a completed match week is history, not something that
+ * temporarily unlocks once it's over.
+ *
+ * A strictly past week (`week < currentWeek`) is always frozen. A strictly
+ * future week (`week > currentWeek`) is never frozen — it's still just a
+ * live, unmaterialized preview, safe to change. The current week is the
+ * subtle case: `FantasyLeague.currentWeek` advances the moment its
+ * `weekStart` arrives (roster carry-forward, waiver reset — see
+ * runAutoLockSweep), which now happens BEFORE that week's matches actually
+ * begin at `matchStart`. That gap between `weekStart` and `matchStart` is
+ * deliberately a real editing window — the whole reason weekStart and
+ * matchStart were split apart — so the current week is only frozen once
+ * `now` has actually reached its `matchStart` (same boundary isWeekLocked's
+ * lower bound uses), not merely because the calendar week began.
+ */
+export async function isWeekFrozen(season: number, week: number, currentWeek: number): Promise<boolean> {
+  if (week < currentWeek) return true;
+  if (week > currentWeek) return false;
+
+  const settings = await prisma.seasonSettings.findFirst({ where: { season } });
+  const weekDates = (settings?.weekDates as WeekDateConfig[] | undefined) ?? [];
+  const wd = weekDates.find((w) => w.week === week);
+  if (!wd?.matchStart) return false;
+
+  return new Date() >= etDateTime(wd.matchStart, 0, 0);
+}
+
+/**
+ * Auto-locks lineups at 12:00am ET on a week's `matchStart` (when that
+ * week's real matches actually begin, which can fall several days after
+ * `weekStart` — see lib/weekMatchRange.ts), and auto-unlocks them at
+ * 11:59pm ET on that week's `weekEnd`. There's no cron in this app,
  * so this runs lazily from the read/write paths that touch roster locks
  * (manager roster fetch/edit, admin Lock Lineups page).
  *
@@ -126,8 +197,8 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
       // result. Once claimed, the copy is a single atomic multi-row
       // INSERT — all-or-nothing — so there's no way for this to land a
       // partial roster the way the pre-atomic-claim version could.
-      if (wd.week > 1 && wd.startDate && !fired.has(`${wd.week}:roster_carry`)) {
-        const carryTrigger = etDateTime(wd.startDate, 0, 0);
+      if (wd.week > 1 && wd.weekStart && !fired.has(`${wd.week}:roster_carry`)) {
+        const carryTrigger = etDateTime(wd.weekStart, 0, 0);
         if (now >= carryTrigger) {
           let claimed = true;
           try {
@@ -140,6 +211,25 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
 
           if (claimed) {
             fired.add(`${wd.week}:roster_carry`);
+
+            // Carry-forward now fires at weekStart, which — unlike before
+            // this week was split into weekStart/matchStart/weekEnd — is
+            // NOT the same instant the lock step below fires (that's
+            // matchStart, typically several days later). So these rows
+            // must be created reflecting whatever the real lock state is
+            // RIGHT NOW, not just "unlocked": normally that's unlocked
+            // (matches haven't started yet), but a sweep running unusually
+            // late — after matchStart has already passed for this week, or
+            // even after the whole week is already over — needs rows that
+            // come in already locked, or already-history-and-unlocked,
+            // respectively, rather than trusting a separate later step to
+            // ever catch up and fix it (the lock step is one-shot, dedup'd
+            // via WeekLockEvent, and won't re-fire once it's marked done).
+            const isCurrentlyMatchLocked =
+              !!wd.matchStart &&
+              !!wd.weekEnd &&
+              now >= etDateTime(wd.matchStart, 0, 0) &&
+              now < etDateTime(wd.weekEnd, 23, 59);
 
             // Batched across every team in the league — was 2-3 sequential
             // queries PER TEAM (a count, a findMany, a createMany), which
@@ -173,7 +263,7 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
                 week: wd.week,
                 position: s.position,
                 slotIndex: s.slotIndex,
-                isLocked: false,
+                isLocked: s.position !== "be" && isCurrentlyMatchLocked,
               }));
 
             if (newRows.length > 0) {
@@ -183,8 +273,8 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
         }
       }
 
-      if (wd.startDate && !fired.has(`${wd.week}:lock`)) {
-        const lockTrigger = etDateTime(wd.startDate, 0, 0);
+      if (wd.matchStart && !fired.has(`${wd.week}:lock`)) {
+        const lockTrigger = etDateTime(wd.matchStart, 0, 0);
         if (now >= lockTrigger) {
           const locked = await prisma.rosterSlot.updateMany({
             where: {
@@ -227,18 +317,24 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
         }
       }
 
-      // "Fixed Order" waiver leagues reset priority to reverse standings the
-      // moment each new week begins (same midnight ET boundary as the
-      // lineup lock) — "Rolling" leagues deliberately never reset, so this
-      // is a no-op for them. Fires once per (league, week) via the same
-      // WeekLockEvent dedup table, a new "waiver_reset" event type.
+      // "Fixed Order" and "FAAB" waiver leagues reset priority to reverse
+      // standings the moment each new week begins (same calendar boundary
+      // as roster carry-forward — a new week starting, not matches
+      // starting) — for Fixed this is the real claim order, for FAAB it's
+      // only the tiebreaker between equal bids. "Rolling" leagues
+      // deliberately never reset, so this is a no-op for them. Fires once
+      // per (league, week) via the same WeekLockEvent dedup table, a new
+      // "waiver_reset" event type. (Post-drop waiver clearance itself is
+      // NOT tied to week transitions — it expires against the admin-
+      // configured waiver processing schedule instead, see
+      // lib/waiverProcessing.ts's releaseExpiredWaiverPeriods.)
       if (
-        league.waiverSystem === "fixed" &&
-        wd.startDate &&
+        league.waiverSystem !== "rolling" &&
+        wd.weekStart &&
         wd.week > 1 &&
         !fired.has(`${wd.week}:waiver_reset`)
       ) {
-        const resetTrigger = etDateTime(wd.startDate, 0, 0);
+        const resetTrigger = etDateTime(wd.weekStart, 0, 0);
         if (now >= resetTrigger) {
           await resetWaiverPriorityToReverseStandings(league.id, wd.week - 1);
           await prisma.weekLockEvent.upsert({
@@ -255,8 +351,8 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
         }
       }
 
-      if (wd.endDate && !fired.has(`${wd.week}:unlock`)) {
-        const unlockTrigger = etDateTime(wd.endDate, 23, 59);
+      if (wd.weekEnd && !fired.has(`${wd.week}:unlock`)) {
+        const unlockTrigger = etDateTime(wd.weekEnd, 23, 59);
         if (now >= unlockTrigger) {
           await prisma.rosterSlot.updateMany({
             where: {

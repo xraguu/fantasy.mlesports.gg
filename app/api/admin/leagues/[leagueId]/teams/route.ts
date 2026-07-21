@@ -83,6 +83,23 @@ export async function POST(
     // Generate custom team ID
     const teamId = generateFantasyTeamId(leagueId, user.id);
 
+    // Lowest open draftPosition/waiverPriority, not just count + 1 — a
+    // league that's had a manager removed has a GAP in that sequence (the
+    // remaining teams never get renumbered), and count + 1 can land on a
+    // position an existing team still occupies, violating the (league,
+    // draftPosition) unique constraint and failing the add outright.
+    const usedDraftPositions = new Set(
+      league.fantasyTeams.map((t) => t.draftPosition).filter((p): p is number => p != null)
+    );
+    const usedWaiverPriorities = new Set(
+      league.fantasyTeams.map((t) => t.waiverPriority).filter((p): p is number => p != null)
+    );
+    function nextOpenSlot(used: Set<number>): number {
+      let pos = 1;
+      while (used.has(pos)) pos++;
+      return pos;
+    }
+
     // Create the fantasy team
     const fantasyTeam = await prisma.fantasyTeam.create({
       data: {
@@ -91,10 +108,12 @@ export async function POST(
         ownerUserId: userId,
         displayName: teamName,
         shortCode,
-        draftPosition: league.fantasyTeams.length + 1,
+        draftPosition: nextOpenSlot(usedDraftPositions),
         faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
-        waiverPriority:
-          league.waiverSystem !== "faab" ? league.fantasyTeams.length + 1 : null,
+        // Every waiver system uses this now — for rolling/fixed it's the
+        // real claim order, for FAAB it's the tiebreaker between equal bids
+        // (see resetWaiverPriorityToReverseStandings in lib/waiverPriority.ts).
+        waiverPriority: nextOpenSlot(usedWaiverPriorities),
       },
       include: {
         owner: {

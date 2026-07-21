@@ -59,19 +59,25 @@ export default function TradePage() {
       try {
         setLoading(true);
 
-        // First, get the current user's team ID
+        // First, get the current user's team ID and the league's actual
+        // current week — a trade has to be built from what's ACTUALLY on
+        // each roster right now, not the roster route's own week-1 default
+        // (which would show the draft-day roster, letting a manager try to
+        // offer a team they already dropped/traded away, or miss one they
+        // picked up since).
         const userResponse = await fetch(`/api/leagues/${leagueId}/user`);
         if (!userResponse.ok) throw new Error("Failed to fetch user team");
         const userData = await userResponse.json();
         const myTeamId = userData.fantasyTeam.id;
+        const currentWeek = userData.league.currentWeek;
 
         // Fetch my roster
-        const myRosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}?week=1`);
+        const myRosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${myTeamId}?week=${currentWeek}`);
         if (!myRosterResponse.ok) throw new Error("Failed to fetch your roster");
         const myRosterData = await myRosterResponse.json();
 
         // Fetch opponent roster
-        const opponentRosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${opponentTeamId}?week=1`);
+        const opponentRosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${opponentTeamId}?week=${currentWeek}`);
         if (!opponentRosterResponse.ok) throw new Error("Failed to fetch opponent roster");
         const opponentRosterData = await opponentRosterResponse.json();
 
@@ -90,10 +96,20 @@ export default function TradePage() {
     }
   }, [leagueId, opponentTeamId]);
 
-  // A drop is only ever needed when this side is receiving more teams than
-  // it's sending — giving 2 for 1 (or an even trade) never requires making
-  // room, regardless of how full the roster already is.
-  const neededDropCount = Math.max(0, selectedOpponentTeams.length - selectedMyTeams.length);
+  // A drop is only needed if the roster would actually OVERFLOW its real
+  // capacity after the trade — not just whenever more teams are coming in
+  // than going out. `rosterSlots` only ever contains FILLED slots (a
+  // genuinely empty slot has no RosterSlot row at all — see lib/rosterSlotAssignment.ts),
+  // so its length is "teams currently rostered," which can already be below
+  // capacity. E.g. 2 empty slots, giving 1 for 2: current count is already
+  // 2 under capacity, so the post-trade count still fits with room to
+  // spare — no drop required, even though incoming (2) > outgoing (1).
+  const myRosterConfig = myRoster?.league.rosterConfig;
+  const myCapacity = myRosterConfig
+    ? myRosterConfig["2s"] + myRosterConfig["3s"] + myRosterConfig.flx + myRosterConfig.be
+    : 0;
+  const myCountAfterTrade = (myRoster?.rosterSlots.length ?? 0) - selectedMyTeams.length + selectedOpponentTeams.length;
+  const neededDropCount = Math.max(0, myCountAfterTrade - myCapacity);
   const needsToDrop = neededDropCount > 0;
 
   const toggleDropTeam = (index: number) => {
@@ -418,7 +434,7 @@ export default function TradePage() {
                 {myRoster.fantasyTeam.ownerDisplayName}
               </div>
               <div style={{ fontSize: "0.9rem", color: "var(--accent)", marginTop: "1rem", fontWeight: 600 }}>
-                Select {neededDropCount} team{neededDropCount === 1 ? "" : "s"} to drop ({selectedDropTeamIndices.length}/{neededDropCount} selected) — you&apos;re receiving more teams than you&apos;re sending
+                Select {neededDropCount} team{neededDropCount === 1 ? "" : "s"} to drop ({selectedDropTeamIndices.length}/{neededDropCount} selected)
               </div>
             </div>
 

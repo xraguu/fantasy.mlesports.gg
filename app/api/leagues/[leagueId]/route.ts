@@ -63,16 +63,20 @@ export async function GET(
       );
     }
 
-    // Whether the real season calendar has actually reached week 1's start
-    // date — distinct from draftStatus, since the draft can finish well
-    // before the season itself begins. Defaults to false (not started) if
+    // Whether the real season calendar has actually reached week 1's start —
+    // distinct from draftStatus, since the draft can finish well before the
+    // season itself begins. Keyed off `weekStart` (the calendar boundary),
+    // consistent with computeCalendarWeek/FantasyLeague.currentWeek — not
+    // `matchStart`, since this is meant to track the same "what week is it"
+    // transition the rest of the app already uses, not specifically whether
+    // week 1's matches have started. Defaults to false (not started) if
     // there's no week-dates configuration to check against yet.
     const settings = await prisma.seasonSettings.findFirst({
       where: { season: league.season },
       select: { weekDates: true },
     });
-    const weekDates = settings?.weekDates as Array<{ week: number; startDate: string }> | undefined;
-    const week1Start = weekDates?.find((w) => w.week === 1)?.startDate;
+    const weekDates = settings?.weekDates as Array<{ week: number; weekStart: string }> | undefined;
+    const week1Start = weekDates?.find((w) => w.week === 1)?.weekStart;
     const seasonStarted = !!week1Start && new Date() >= etDateTime(week1Start, 0, 0);
 
     return NextResponse.json({ league: { ...league, seasonStarted } });

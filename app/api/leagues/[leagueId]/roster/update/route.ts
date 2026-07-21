@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { runAutoLockSweep } from "@/lib/autoLock";
+import { runAutoLockSweep, isWeekLocked, isWeekFrozen } from "@/lib/autoLock";
 import { generateRosterSlotId } from "@/lib/id-generator";
-
-// Every week date config in this app is exactly 10 weeks long (see
-// app/admin/settings/page.tsx's weekDates array) — the last week a lineup
-// edit's forward cascade (below) can reach.
-const TOTAL_WEEKS = 10;
+import { cascadeRosterForward, TOTAL_WEEKS } from "@/lib/rosterCascade";
 
 // Distinguish expected validation failures (thrown inside the transaction
 // below) from genuinely unexpected errors, so the catch block can map each
@@ -60,7 +56,7 @@ export async function PUT(
         id: true,
         ownerUserId: true,
         fantasyLeagueId: true,
-        league: { select: { draftStatus: true } },
+        league: { select: { draftStatus: true, season: true, currentWeek: true } },
       },
     });
 
@@ -88,6 +84,20 @@ export async function PUT(
       return NextResponse.json(
         { error: "Roster changes are not allowed until the draft is complete" },
         { status: 403 }
+      );
+    }
+
+    // A week that's already over, or whose matches have started, is settled
+    // — permanently, regardless of any slot's isLocked flag (which flips
+    // back to false once a week ends, since that flag is only ever about
+    // "is this week's own active window happening right now," not "is this
+    // week done and historical"). The current week specifically stays
+    // editable until its matchStart arrives — see isWeekFrozen's own doc
+    // comment for why that's not just "week <= currentWeek."
+    if (await isWeekFrozen(fantasyTeam.league.season, week, fantasyTeam.league.currentWeek)) {
+      return NextResponse.json(
+        { error: "This week's matches have already started and its lineup can't be changed" },
+        { status: 423 }
       );
     }
 
@@ -123,6 +133,14 @@ export async function PUT(
     // the same transaction as the writes, and each write is gated on the
     // exact prior state just read, so a losing concurrent save fails
     // cleanly instead of silently interleaving its writes with this one.
+    // A genuinely empty active (non-bench) slot has no RosterSlot row, so
+    // there's nothing for runAutoLockSweep to have locked — without this
+    // check, a manager could drag a team into an empty active slot mid-week
+    // once results start coming in, exactly what the lock rule exists to
+    // prevent. Only applies to the week actually being edited — future
+    // weeks (the cascade below) are never locked yet.
+    const activeSlotsLockedThisWeek = await isWeekLocked(fantasyTeam.league.season, week);
+
     try {
       await prisma.$transaction(async (tx) => {
         const existingSlots = await tx.rosterSlot.findMany({
@@ -219,9 +237,15 @@ export async function PUT(
               );
             }
           } else {
-            // Create new slot if it doesn't exist (can't already be locked
-            // — it didn't exist yet, so lock state is always server-decided
-            // as false).
+            // A brand-new slot (no prior row) can't be rejected via the
+            // isLocked checks above — those only look at rows that already
+            // exist — so a currently-empty active slot needs its own check
+            // here instead.
+            if (slot.position !== "be" && activeSlotsLockedThisWeek) {
+              throw new LockedSlotError(
+                `Slot ${slot.position} #${slot.slotIndex + 1} is locked for this week and can't be filled until it unlocks`
+              );
+            }
             await tx.rosterSlot.create({
               data: {
                 id: generateRosterSlotId(fantasyTeamId, week, slot.position, slot.slotIndex),
@@ -260,25 +284,7 @@ export async function PUT(
           const finalWeekSlots = await tx.rosterSlot.findMany({
             where: { fantasyTeamId, week },
           });
-
-          for (let futureWeek = week + 1; futureWeek <= TOTAL_WEEKS; futureWeek++) {
-            await tx.rosterSlot.deleteMany({
-              where: { fantasyTeamId, week: futureWeek },
-            });
-            if (finalWeekSlots.length > 0) {
-              await tx.rosterSlot.createMany({
-                data: finalWeekSlots.map((s) => ({
-                  id: generateRosterSlotId(fantasyTeamId, futureWeek, s.position, s.slotIndex),
-                  fantasyTeamId,
-                  mleTeamId: s.mleTeamId,
-                  week: futureWeek,
-                  position: s.position,
-                  slotIndex: s.slotIndex,
-                  isLocked: false,
-                })),
-              });
-            }
-          }
+          await cascadeRosterForward(tx, fantasyTeamId, week + 1, finalWeekSlots);
         }
       });
     } catch (error) {

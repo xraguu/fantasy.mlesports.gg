@@ -23,7 +23,7 @@ export async function GET(
     // fantasy-wise, even though the underlying data is already there.
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { currentWeek: true },
+      select: { currentWeek: true, season: true },
     });
 
     const weeklyStats = await prisma.teamWeeklyStats.findMany({
@@ -38,14 +38,19 @@ export async function GET(
       return NextResponse.json({ weeks: [] });
     }
 
+    // Scoped to THIS league's own season — an unscoped "whichever
+    // SeasonSettings row has the highest season number" could silently pick
+    // an unrelated league's settings (a different Sprocket season, or a
+    // week-dates config that doesn't match this league's real schedule).
     const settings = await prisma.seasonSettings.findFirst({
-      orderBy: { season: "desc" },
+      where: { season: league?.season },
     });
     const weekDates =
       (settings?.weekDates as Array<{
         week: number;
-        startDate: string;
-        endDate: string;
+        weekStart: string;
+        matchStart: string;
+        weekEnd: string;
       }>) ?? [];
     const rules = await getActiveScoringRules();
 

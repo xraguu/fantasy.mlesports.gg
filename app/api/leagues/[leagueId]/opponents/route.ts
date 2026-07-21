@@ -27,14 +27,31 @@ export async function GET(
     const url = new URL(req.url);
     const week = parseInt(url.searchParams.get("week") || "1");
 
+    // Admin View League mode: an admin who's ALSO a manager in this league
+    // wants to browse every team, including their own, the same way a pure
+    // admin (not a manager here) would. Only trusted when the caller is
+    // actually an admin — never take the client's word for it — so a normal
+    // manager can never see themselves in their own opponents list.
+    const adminViewRequested = url.searchParams.get("adminView") === "true";
+    let excludeSelf = true;
+    if (adminViewRequested) {
+      const requester = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { role: true },
+      });
+      if (requester?.role === "admin") excludeSelf = false;
+    }
+
     // Get the league with roster config
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
       select: {
         id: true,
         name: true,
+        season: true,
         currentWeek: true,
         rosterConfig: true,
+        waiverSystem: true,
       },
     });
 
@@ -52,13 +69,12 @@ export async function GET(
       ...Array(rosterConfig.be || 0).fill("be"),
     ];
 
-    // Get all fantasy teams in the league (excluding current user's team)
+    // Get all fantasy teams in the league (excluding current user's team,
+    // unless this is a verified admin browsing in Admin View mode)
     const allTeams = await prisma.fantasyTeam.findMany({
       where: {
         fantasyLeagueId: leagueId,
-        ownerUserId: {
-          not: session.user.id,
-        },
+        ...(excludeSelf ? { ownerUserId: { not: session.user.id } } : {}),
       },
       include: {
         owner: {
@@ -73,6 +89,53 @@ export async function GET(
         displayName: "asc",
       },
     });
+
+    // Completed (resolved) transaction counts and currently-pending waiver
+    // claim/trade counts, batched for every opponent at once rather than
+    // per-team — "completed" is the full Transaction history log (approved,
+    // denied, cancelled, vetoed all included, matching what the My Roster
+    // Transactions tab already shows), "pending" is whatever hasn't been
+    // resolved yet and so has no Transaction row at all yet (a pending
+    // WaiverClaim, or a Trade still awaiting response or in its veto
+    // window) — the two live in entirely different tables.
+    const teamIds = allTeams.map((t) => t.id);
+
+    const completedCounts = await prisma.transaction.groupBy({
+      by: ["fantasyTeamId"],
+      where: { fantasyTeamId: { in: teamIds } },
+      _count: { _all: true },
+    });
+    const completedCountByTeam = new Map(
+      completedCounts.map((c) => [c.fantasyTeamId, c._count._all])
+    );
+
+    const pendingWaiverCounts = await prisma.waiverClaim.groupBy({
+      by: ["fantasyTeamId"],
+      where: { fantasyTeamId: { in: teamIds }, status: "pending" },
+      _count: { _all: true },
+    });
+    const pendingCountByTeam = new Map(
+      pendingWaiverCounts.map((c) => [c.fantasyTeamId, c._count._all])
+    );
+
+    const pendingTrades = await prisma.trade.findMany({
+      where: {
+        OR: [
+          { proposerTeamId: { in: teamIds } },
+          { receiverTeamId: { in: teamIds } },
+        ],
+        status: { in: ["pending", "awaiting_veto"] },
+      },
+      select: { proposerTeamId: true, receiverTeamId: true },
+    });
+    for (const trade of pendingTrades) {
+      if (teamIds.includes(trade.proposerTeamId)) {
+        pendingCountByTeam.set(trade.proposerTeamId, (pendingCountByTeam.get(trade.proposerTeamId) ?? 0) + 1);
+      }
+      if (teamIds.includes(trade.receiverTeamId)) {
+        pendingCountByTeam.set(trade.receiverTeamId, (pendingCountByTeam.get(trade.receiverTeamId) ?? 0) + 1);
+      }
+    }
 
     // Fetch every opponent's roster for this week up front, so the maps below
     // can be built once instead of per-team.
@@ -95,11 +158,14 @@ export async function GET(
 
     // Real MLE opponent this week for every rostered team, via the Match
     // schedule + week date range (batched in one query for the whole page).
+    // Scoped to THIS league's own season — an unscoped "whichever
+    // SeasonSettings row has the highest season number" could silently pick
+    // an unrelated league's settings.
     const settings = await prisma.seasonSettings.findFirst({
-      orderBy: { season: "desc" },
+      where: { season: league.season },
     });
     const weekDates =
-      (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
+      (settings?.weekDates as Array<{ week: number; weekStart: string; matchStart: string; weekEnd: string }>) ?? [];
     const range = await getEffectiveWeekMatchRange(weekDates, week);
 
     const opponentByMleTeamId = new Map<string, { id: string; name: string; leagueId: string; slug: string; logoPath: string; primaryColor: string; secondaryColor: string }>();
@@ -213,7 +279,13 @@ export async function GET(
         if (!slot) {
           return {
             slot: slotName,
+            id: "",
             name: "",
+            leagueId: "",
+            slug: "",
+            logoPath: "",
+            primaryColor: "",
+            secondaryColor: "",
             score: 0,
             opponent: "",
             opponentTeam: null,
@@ -245,7 +317,13 @@ export async function GET(
 
         return {
           slot: slotName,
+          id: slot.mleTeamId,
           name: `${slot.mleTeam.leagueId} ${slot.mleTeam.name}`,
+          leagueId: slot.mleTeam.leagueId,
+          slug: slot.mleTeam.slug,
+          logoPath: slot.mleTeam.logoPath,
+          primaryColor: slot.mleTeam.primaryColor,
+          secondaryColor: slot.mleTeam.secondaryColor,
           score: slot.fantasyPoints ?? 0,
           opponent: oppTeam ? `${oppTeam.leagueId} ${oppTeam.name}` : "",
           opponentTeam: oppTeam
@@ -285,6 +363,10 @@ export async function GET(
         totalPoints: Math.round(totalPoints),
         avgPoints: Math.round(avgPoints),
         currentWeek: league.currentWeek,
+        waiverPriority: team.waiverPriority,
+        faabRemaining: team.faabRemaining,
+        completedTransactionCount: completedCountByTeam.get(team.id) ?? 0,
+        pendingTransactionCount: pendingCountByTeam.get(team.id) ?? 0,
         lastMatchup: lastMatchup ? {
           id: lastMatchup.id,
           week: lastMatchup.week,
@@ -311,6 +393,7 @@ export async function GET(
         id: league.id,
         name: league.name,
         currentWeek: league.currentWeek,
+        waiverSystem: league.waiverSystem,
       },
     });
   } catch (error) {

@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateRosterSlotId } from "@/lib/id-generator";
 import { getTeamSeasonStats, TeamSeasonStatsRow, getWithinLeagueStandings, rankTeamsByFpts } from "@/lib/teamSeasonStats";
-import { runAutoLockSweep } from "@/lib/autoLock";
+import { runAutoLockSweep, isWeekLocked, isWeekFrozen } from "@/lib/autoLock";
+import { cascadeRosterForward } from "@/lib/rosterCascade";
 import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
 import { getFantasyStandings } from "@/lib/standings";
 import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
@@ -46,6 +47,7 @@ export async function GET(
         league: {
           select: {
             id: true,
+            season: true,
             currentWeek: true,
             rosterConfig: true,
             waiverSystem: true,
@@ -186,11 +188,14 @@ export async function GET(
     if (rosterSlots.length > 0) {
       // Real MLE opponent this week, via the Match schedule + week date range
       // (same join pattern as weekly-breakdown), batched for the whole roster.
+      // Scoped to THIS league's own season — an unscoped "whichever
+      // SeasonSettings row has the highest season number" could silently
+      // pick an unrelated league's settings.
       const settings = await prisma.seasonSettings.findFirst({
-        orderBy: { season: "desc" },
+        where: { season: fantasyTeam.league.season },
       });
       const weekDates =
-        (settings?.weekDates as Array<{ week: number; startDate: string; endDate: string }>) ?? [];
+        (settings?.weekDates as Array<{ week: number; weekStart: string; matchStart: string; weekEnd: string }>) ?? [];
       const range = await getEffectiveWeekMatchRange(weekDates, week);
 
       const mleTeamIds = rosterSlots.map((s) => s.mleTeamId);
@@ -407,6 +412,8 @@ export async function POST(
         league: {
           select: {
             id: true,
+            season: true,
+            currentWeek: true,
             rosterConfig: true,
             draftStatus: true,
           },
@@ -432,6 +439,39 @@ export async function POST(
       return NextResponse.json(
         { error: "Team does not belong to this league" },
         { status: 400 }
+      );
+    }
+
+    // A week that's already fully over is settled history — permanently,
+    // bench included. This is deliberately `<` rather than the `<=` a
+    // lineup edit/drop uses: this route is also how team-portal's genuine
+    // free-agent pickups work, which legitimately target the CURRENT week
+    // (into an empty bench slot) — that's not the same thing as rearranging
+    // or dropping an already-rostered team out of an active lineup slot
+    // mid-week, which is what actually needs to stay blocked for the
+    // ongoing week too (see the isWeekLocked check right below, and the
+    // dedicated freeze checks on drop/edit-lineup).
+    if (week < fantasyTeam.league.currentWeek) {
+      return NextResponse.json(
+        { error: "This week is already over and its roster can't be changed" },
+        { status: 423 }
+      );
+    }
+
+    // Roster composition can't change for ANY week — current or future, any
+    // position including the bench — while the current week's match weekend
+    // is actually live. This is deliberately checked against the league's
+    // CURRENT week, not the week actually being added to: a future week
+    // hasn't started its own window yet (isWeekLocked on it alone would
+    // always read false), but it's still just a live mirror of the current
+    // roster right now, so adding to it while this weekend's results are
+    // already coming in is the same information-timing exploit the lock
+    // rule exists to prevent everywhere else. Pure lineup rearranging
+    // (roster/update) is deliberately NOT blocked by this.
+    if (await isWeekLocked(fantasyTeam.league.season, fantasyTeam.league.currentWeek)) {
+      return NextResponse.json(
+        { error: "Teams can't be added during the match weekend — try again once this week's matches are over." },
+        { status: 423 }
       );
     }
 
@@ -785,8 +825,10 @@ export async function PATCH(
 
 /**
  * DELETE /api/leagues/[leagueId]/rosters/[teamId]
- * Remove an MLE team from a roster slot (drops)
- * Body: { rosterSlotId: string }
+ * Drop an MLE team from a roster. Takes effect for the week the manager
+ * was viewing and every week after it (never a week already settled) —
+ * see cascadeRosterForward in lib/rosterCascade.ts.
+ * Body: { mleTeamId: string, week: number }
  */
 export async function DELETE(
   req: NextRequest,
@@ -800,95 +842,119 @@ export async function DELETE(
 
     const { leagueId, teamId } = await params;
 
-    // Make sure lock state is current before checking it below (e.g. a drop
-    // attempted right at the 3am ET boundary shouldn't slip through on a
-    // stale isLocked value from before this request).
+    // Make sure the current week is up to date before checking it below.
     await runAutoLockSweep(leagueId);
 
     const body = await req.json();
-    const { rosterSlotId } = body;
+    const { mleTeamId, week } = body;
 
-    if (!rosterSlotId) {
+    if (!mleTeamId || !week) {
       return NextResponse.json(
-        { error: "Missing required field: rosterSlotId" },
+        { error: "Missing required fields: mleTeamId, week" },
         { status: 400 }
       );
     }
 
-    // Get the roster slot
-    const rosterSlot = await prisma.rosterSlot.findUnique({
-      where: { id: rosterSlotId },
-      include: {
-        fantasyTeam: {
-          include: {
-            league: {
-              select: {
-                id: true,
-                draftStatus: true,
-              },
-            },
-          },
-        },
+    const fantasyTeam = await prisma.fantasyTeam.findUnique({
+      where: { id: teamId },
+      select: {
+        id: true,
+        ownerUserId: true,
+        fantasyLeagueId: true,
+        league: { select: { id: true, draftStatus: true, currentWeek: true, season: true } },
       },
     });
 
-    if (!rosterSlot) {
-      return NextResponse.json(
-        { error: "Roster slot not found" },
-        { status: 404 }
-      );
+    if (!fantasyTeam) {
+      return NextResponse.json({ error: "Fantasy team not found" }, { status: 404 });
     }
 
-    // Verify ownership
-    if (rosterSlot.fantasyTeam.ownerUserId !== session.user.id) {
+    if (fantasyTeam.ownerUserId !== session.user.id) {
       return NextResponse.json(
         { error: "You don't own this team" },
         { status: 403 }
       );
     }
 
-    if (rosterSlot.fantasyTeam.fantasyLeagueId !== leagueId) {
+    if (fantasyTeam.fantasyLeagueId !== leagueId) {
       return NextResponse.json(
         { error: "Team does not belong to this league" },
         { status: 400 }
       );
     }
 
-    if (rosterSlot.fantasyTeam.league.draftStatus !== "completed") {
+    if (fantasyTeam.league.draftStatus !== "completed") {
       return NextResponse.json(
         { error: "Roster drops are not allowed until the draft is complete" },
         { status: 403 }
       );
     }
 
-    // Check if locked
-    if (rosterSlot.isLocked) {
+    // A week that's already over, or whose matches have started, is settled
+    // — permanently. The current week specifically stays droppable-from
+    // until its matchStart arrives — see isWeekFrozen's own doc comment.
+    // Only a week strictly after the league's real current week is still
+    // just a live preview of that current roster (see the GET route's
+    // fallback below), safe to drop from.
+    if (await isWeekFrozen(fantasyTeam.league.season, week, fantasyTeam.league.currentWeek)) {
       return NextResponse.json(
-        { error: "This roster slot is locked and cannot be removed" },
-        { status: 400 }
+        { error: "This week's matches have already started and its lineup can't be changed" },
+        { status: 423 }
       );
     }
 
-    // Delete the roster slot, create the transaction record, and mark the
-    // team as on-waivers all in the same transaction — doing the waiver-
-    // period write as a separate call after this commits would leave a gap
-    // where the slot is already gone but the team doesn't look "on waivers"
-    // yet, letting a concurrent add request slip through as a normal free-
-    // agent pickup and bypass clearance entirely.
-    await prisma.$transaction(async (tx) => {
-      await tx.rosterSlot.delete({
-        where: { id: rosterSlotId },
-      });
+    // Roster composition can't change for ANY week — current or future —
+    // while the current week's match weekend is actually live, regardless of
+    // which week is being dropped from. A future week's preview roster is
+    // just a mirror of the current one, so dropping from it while results
+    // are already coming in this weekend is the same information-timing
+    // exploit the lock rule exists to prevent everywhere else. Pure lineup
+    // rearranging (roster/update) is deliberately NOT blocked by this.
+    if (await isWeekLocked(fantasyTeam.league.season, fantasyTeam.league.currentWeek)) {
+      return NextResponse.json(
+        { error: "Teams can't be dropped during the match weekend — try again once this week's matches are over." },
+        { status: 423 }
+      );
+    }
 
-      // Create transaction record for drop
+    await prisma.$transaction(async (tx) => {
+      // The week being dropped from might not have real rows of its own
+      // yet (a future week the manager is just previewing) — same
+      // fallback the GET route uses: the effective roster for any
+      // not-yet-materialized week is whatever the current week's real
+      // roster looks like right now.
+      let sourceWeek = week;
+      let sourceSlots = await tx.rosterSlot.findMany({
+        where: { fantasyTeamId: teamId, week: sourceWeek },
+      });
+      if (sourceSlots.length === 0) {
+        sourceWeek = fantasyTeam.league.currentWeek;
+        sourceSlots = await tx.rosterSlot.findMany({
+          where: { fantasyTeamId: teamId, week: sourceWeek },
+        });
+      }
+
+      const targetSlot = sourceSlots.find((s) => s.mleTeamId === mleTeamId);
+      if (!targetSlot) {
+        throw new Error("TEAM_NOT_ROSTERED");
+      }
+
+      const finalSlots = sourceSlots
+        .filter((s) => s.mleTeamId !== mleTeamId)
+        .map((s) => ({ position: s.position, slotIndex: s.slotIndex, mleTeamId: s.mleTeamId }));
+
+      // Drop applies to the week the manager was viewing and every week
+      // after it — never the ones before it, which are already settled.
+      await cascadeRosterForward(tx, teamId, week, finalSlots);
+
       await tx.transaction.create({
         data: {
           fantasyLeagueId: leagueId,
           fantasyTeamId: teamId,
-          userId: session.user.id,
+          userId: session.user.id!,
           type: "drop",
           addTeamId: null,
-          dropTeamId: rosterSlot.mleTeamId,
+          dropTeamId: mleTeamId,
           status: "approved",
           processedAt: new Date(),
         },
@@ -896,7 +962,7 @@ export async function DELETE(
 
       // Manager-initiated drop: the team enters the waiver clearance window
       // rather than going straight back to free agency.
-      await markTeamDroppedForWaivers(leagueId, rosterSlot.mleTeamId, tx);
+      await markTeamDroppedForWaivers(leagueId, mleTeamId, tx);
     });
 
     return NextResponse.json({
@@ -904,6 +970,12 @@ export async function DELETE(
       message: "Roster slot removed successfully",
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "TEAM_NOT_ROSTERED") {
+      return NextResponse.json(
+        { error: "That team isn't on your roster this week" },
+        { status: 400 }
+      );
+    }
     console.error("Error removing from roster:", error);
     return NextResponse.json(
       { error: "Failed to remove from roster" },

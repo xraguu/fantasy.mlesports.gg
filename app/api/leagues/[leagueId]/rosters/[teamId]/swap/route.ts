@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
-import { runAutoLockSweep } from "@/lib/autoLock";
+import { runAutoLockSweep, isWeekLocked } from "@/lib/autoLock";
 
 /**
  * POST /api/leagues/[leagueId]/rosters/[teamId]/swap
@@ -58,7 +58,7 @@ export async function POST(
         id: true,
         fantasyLeagueId: true,
         ownerUserId: true,
-        league: { select: { draftStatus: true } },
+        league: { select: { draftStatus: true, currentWeek: true, season: true } },
       },
     });
 
@@ -78,6 +78,28 @@ export async function POST(
       return NextResponse.json(
         { error: "Free agent pickups are not allowed until the draft is complete" },
         { status: 403 }
+      );
+    }
+    // A week that's already fully over is settled history. Deliberately
+    // `<` not `<=` — this route is genuine free-agency (not rearranging an
+    // already-rostered team), which legitimately targets the current week;
+    // findLockedSlotForTeam below already blocks touching a locked ACTIVE
+    // slot during it.
+    if (week < fantasyTeam.league.currentWeek) {
+      return NextResponse.json(
+        { error: "This week is already over and its roster can't be changed" },
+        { status: 423 }
+      );
+    }
+
+    // Roster composition can't change for ANY week — current or future —
+    // while the current week's match weekend is actually live, same rule as
+    // the plain add/drop routes. A swap is an add and a drop bundled
+    // together, so it needs the identical blackout.
+    if (await isWeekLocked(fantasyTeam.league.season, fantasyTeam.league.currentWeek)) {
+      return NextResponse.json(
+        { error: "Teams can't be swapped during the match weekend — try again once this week's matches are over." },
+        { status: 423 }
       );
     }
 

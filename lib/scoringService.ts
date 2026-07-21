@@ -1,6 +1,8 @@
 import { prisma } from "./prisma";
 import { generateAndSavePlayoffRound, nextPlayoffWeekToGenerate } from "./scheduleGenerator";
 import { logAdminActivity } from "./adminActivity";
+import { getCurrentSeason } from "./currentWeek";
+import { haveMatchesStarted } from "./autoLock";
 
 export interface SprocketRatingRange {
   min: number;
@@ -51,9 +53,20 @@ export interface ScoreCalculationResult {
 }
 
 export async function getActiveScoringRules(): Promise<ScoringRules> {
-  const settings = await prisma.seasonSettings.findFirst({
-    orderBy: { season: "desc" },
-  });
+  // Scoped to the season that actually has real leagues playing in it, not
+  // just "whichever SeasonSettings row happens to have the highest season
+  // number" — an orphaned settings row (e.g. from creating a test league
+  // for a season that was never actually used) could otherwise silently
+  // outrank the real one and apply the wrong point values to every score
+  // calculation, league-wide. Confirmed live: the three current
+  // SeasonSettings rows have genuinely different gameLoss/goalsAgainst/
+  // shotsAgainst values, and the highest-numbered one belongs to a season
+  // with zero real FantasyLeague rows.
+  const currentSeason = await getCurrentSeason();
+  const settings =
+    currentSeason !== null
+      ? await prisma.seasonSettings.findFirst({ where: { season: currentSeason } })
+      : await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
   const stored = settings?.scoringRules as Partial<ScoringRules> | undefined;
   if (!stored) return DEFAULT_SCORING_RULES;
 
@@ -138,23 +151,38 @@ export async function calculateScoresForWeek(
   // funnels through here (the scheduled refresh, and every admin manual-
   // recalculate route), so the guard lives here once rather than trusting
   // every call site to remember it.
+  //
+  // Beyond that week-level cap, the CURRENT week specifically can't be
+  // scored until its real matches actually start (`matchStart`) — a league
+  // reaching a new week's `weekStart` doesn't mean anything has been played
+  // yet, and scoring it early would show matchup results for games that
+  // haven't happened.
   let eligibleLeagueIds: string[] | null = null;
   if (leagueId) {
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { currentWeek: true },
+      select: { currentWeek: true, season: true },
     });
     if (league && week > league.currentWeek) {
       throw new Error(
         `Week ${week} hasn't happened yet for this league (currently on week ${league.currentWeek}) — scores can't be calculated ahead of time.`
       );
     }
+    if (league && !(await haveMatchesStarted(league.season, week))) {
+      throw new Error(
+        `Week ${week}'s matches haven't started yet for this league — scores can't be calculated ahead of the Match Start date.`
+      );
+    }
   } else {
     const leagues = await prisma.fantasyLeague.findMany({
       where: { currentWeek: { gte: week } },
-      select: { id: true },
+      select: { id: true, season: true },
     });
-    eligibleLeagueIds = leagues.map((l) => l.id);
+    const eligible: string[] = [];
+    for (const l of leagues) {
+      if (await haveMatchesStarted(l.season, week)) eligible.push(l.id);
+    }
+    eligibleLeagueIds = eligible;
     if (eligibleLeagueIds.length === 0) {
       return { slotsScored: 0, matchupsUpdated: 0, teamsWithNoStats: [] };
     }

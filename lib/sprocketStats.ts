@@ -133,20 +133,25 @@ export async function importSprocketStatsForWeek(
 
   const weekDates = settings.weekDates as Array<{
     week: number;
-    startDate: string;
-    endDate: string;
+    weekStart: string;
+    matchStart: string;
+    weekEnd: string;
   }>;
   const weekConfig = weekDates.find((w) => w.week === week);
 
-  if (!weekConfig?.startDate || !weekConfig?.endDate) {
+  if (!weekConfig?.matchStart || !weekConfig?.weekEnd) {
     throw new Error(
-      `No date range configured for week ${week} in Season ${season} settings.`
+      `No match date range configured for week ${week} in Season ${season} settings.`
     );
   }
 
+  // Named distinctly from the schema's own `weekStart`/`weekEnd` fields —
+  // this is the actual match-search range returned by getWeekMatchRange
+  // (matchStart through next week's matchStart, or a fallback cushion),
+  // not the calendar week boundaries themselves.
   const range = getWeekMatchRange(weekDates, week)!;
-  const weekStart = range.start;
-  const weekEnd = range.end;
+  const rangeStart = range.start;
+  const rangeEnd = range.end;
 
   // 2. Fetch matches.csv and player stats up front — player stats are
   // season-specific, so the set of match_ids appearing in it also doubles
@@ -178,7 +183,7 @@ export async function importSprocketStatsForWeek(
 
   let weekMatches = seasonMatches.filter((m) => {
     const matchDate = matchTime(m)!;
-    return matchDate >= weekStart && matchDate < weekEnd;
+    return matchDate >= rangeStart && matchDate < rangeEnd;
   });
 
   const fallbackNotes: string[] = [];
@@ -219,7 +224,7 @@ export async function importSprocketStatsForWeek(
       const clusterStart = matchTime(cluster[0])!.toISOString().slice(0, 10);
       const clusterEnd = matchTime(cluster[cluster.length - 1])!.toISOString().slice(0, 10);
       fallbackNotes.push(
-        `Week ${week}'s configured dates (${weekConfig.startDate} to ${weekConfig.endDate}) had no real matches — ` +
+        `Week ${week}'s configured match dates (${weekConfig.matchStart} to ${weekConfig.weekEnd}) had no real matches — ` +
           `used chronological cluster ${week} of Season ${sprocketSeason} instead (${clusterStart} to ${clusterEnd}, ${cluster.length} matches).`
       );
     }
@@ -227,7 +232,7 @@ export async function importSprocketStatsForWeek(
 
   if (weekMatches.length === 0) {
     throw new Error(
-      `No completed matches found for week ${week} (${weekConfig.startDate} to ${weekConfig.endDate}), ` +
+      `No completed matches found for week ${week} (${weekConfig.matchStart} to ${weekConfig.weekEnd}), ` +
         `and no chronological fallback cluster ${week} exists for Season ${sprocketSeason} either. ` +
         `Check that week dates in Season Settings match when MLE actually plays.`
     );

@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useParams } from "next/navigation";
+import { usePathname, useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { isAdminViewingLeague, clearAdminViewingLeague } from "@/lib/adminLeagueView";
 
 export default function LeagueNavbar() {
   const pathname = usePathname();
   const params = useParams();
+  const router = useRouter();
   const leagueId = params?.LeagueID as string;
   const { data: session } = useSession();
   const [myTeamId, setMyTeamId] = useState<string | null>(null);
@@ -17,6 +19,12 @@ export default function LeagueNavbar() {
   const [seasonStarted, setSeasonStarted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileOpenPathname, setMobileOpenPathname] = useState(pathname);
+  // Read client-side only (sessionStorage doesn't exist during SSR) — starts
+  // false and flips true in an effect.
+  const [viewingViaAdminPanel, setViewingViaAdminPanel] = useState(false);
+  useEffect(() => {
+    if (leagueId) setViewingViaAdminPanel(isAdminViewingLeague(leagueId));
+  }, [leagueId]);
 
   // Fetch the user's fantasy team ID and league data. Client-side navigation
   // within this league (e.g. the draft room redirecting to My Roster the
@@ -58,6 +66,16 @@ export default function LeagueNavbar() {
     return () => clearInterval(interval);
   }, [session?.user?.id, leagueId, draftStatus]);
 
+  // Admin viewing this league via the admin panel's "View League" button
+  // gets a stripped-down nav — just the read-only pages plus a way back to
+  // the admin panel — instead of the normal manager nav. Deliberately ONLY
+  // driven by that explicit click (viewingViaAdminPanel), not inferred from
+  // team ownership — an admin who's ALSO a real manager in this league
+  // (common in this app's own test leagues) must still see their normal
+  // manager nav when they arrive here any other way; the admin view is an
+  // opt-in action, not something to guess at.
+  const isAdminViewing = session?.user?.role === "admin" && viewingViaAdminPanel;
+
   const links = [
     {
       href: myTeamId ? `/leagues/${leagueId}/my-roster/${myTeamId}` : `/leagues/${leagueId}`,
@@ -67,6 +85,12 @@ export default function LeagueNavbar() {
     { href: `/leagues/${leagueId}/scoreboard`, label: "Scoreboard" },
     { href: `/leagues/${leagueId}/standings`, label: "Standings" },
     { href: `/leagues/${leagueId}/opponents`, label: "Opponents" },
+  ];
+
+  const adminViewLinks = [
+    { href: `/leagues/${leagueId}/scoreboard`, label: "Scoreboard" },
+    { href: `/leagues/${leagueId}/standings`, label: "Standings" },
+    { href: `/leagues/${leagueId}/managers`, label: "Managers" },
   ];
 
   const isActive = (href: string) => pathname === href;
@@ -82,16 +106,64 @@ export default function LeagueNavbar() {
   return (
     <header className="navbar">
       <div className="nav-inner flex items-center justify-between px-4 py-2">
-        <Link href="/" className="flex items-center gap-3">
-          <Image
-            src="/mle_fantasy_logo.png"
-            alt="MLE Fantasy Logo"
-            width={50}
-            height={50}
-            priority
-            style={{ cursor: "pointer" }}
-          />
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
+            <Image
+              src="/mle_fantasy_logo.png"
+              alt="MLE Fantasy Logo"
+              width={50}
+              height={50}
+              priority
+              style={{ cursor: "pointer" }}
+            />
+          </Link>
+
+          {isAdminViewing && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  clearAdminViewingLeague();
+                  router.push(`/admin/leagues/${leagueId}`);
+                }}
+                style={{
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  color: "var(--text-main)",
+                  padding: "0.5rem 1.25rem",
+                  borderRadius: "20px",
+                  fontWeight: 700,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.4rem",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span>←</span>
+                Back to Admin Panel
+              </button>
+              <span
+                title="You're viewing this league as an admin, not as a manager"
+                style={{
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "1px solid rgba(239, 68, 68, 0.5)",
+                  color: "#f87171",
+                  padding: "0.4rem 0.9rem",
+                  borderRadius: "20px",
+                  fontWeight: 700,
+                  fontSize: "0.75rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Admin View
+              </span>
+            </>
+          )}
+        </div>
 
         {/* Mobile hamburger toggle */}
         <button
@@ -108,62 +180,85 @@ export default function LeagueNavbar() {
 
         {/* Right: links */}
         <nav className={`nav-links flex items-center gap-4${mobileOpen ? " mobile-open" : ""}`}>
-          {/* Draft Button - stays reachable even after the draft finishes,
-              right up until the season itself actually starts (real
-              calendar week 1) — a completed draft and a started season are
-              different things, and managers may still want to review the
-              draft room in between. */}
-          {(draftStatus !== "completed" || !seasonStarted) && (
-            <Link
-              href={`/leagues/${leagueId}/draft`}
-              style={{
-                background: "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
-                color: "#ffffff",
-                padding: "0.5rem 1.5rem",
-                borderRadius: "20px",
-                fontWeight: 700,
-                fontSize: "0.9rem",
-                textDecoration: "none",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                boxShadow: "0 4px 10px rgba(212, 175, 55, 0.3)",
-                transition: "all 0.2s ease",
-                border: "none",
-                cursor: "pointer"
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "translateY(-2px)";
-                e.currentTarget.style.boxShadow = "0 6px 15px rgba(212, 175, 55, 0.4)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = "0 4px 10px rgba(212, 175, 55, 0.3)";
-              }}
-            >
-              Draft
-            </Link>
-          )}
+          {isAdminViewing ? (
+            <>
+              {/* Current Week Pill - same condition as the manager nav's */}
+              {draftStatus === "completed" && seasonStarted && (
+                <span className="card-pill" style={{ fontWeight: 700, fontSize: "0.85rem" }}>
+                  Week {currentWeek}
+                </span>
+              )}
 
-          {/* Current Week Pill - only show once the season has actually started */}
-          {draftStatus === "completed" && seasonStarted && (
-            <span className="card-pill" style={{ fontWeight: 700, fontSize: "0.85rem" }}>
-              Week {currentWeek}
-            </span>
-          )}
+              {adminViewLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`nav-link ${isActive(link.href) ? "nav-link-active" : ""}`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Draft Button - stays reachable even after the draft finishes,
+                  right up until the season itself actually starts (real
+                  calendar week 1) — a completed draft and a started season are
+                  different things, and managers may still want to review the
+                  draft room in between. */}
+              {(draftStatus !== "completed" || !seasonStarted) && (
+                <Link
+                  href={`/leagues/${leagueId}/draft`}
+                  style={{
+                    background: "linear-gradient(135deg, #d4af37 0%, #f2b632 100%)",
+                    color: "#ffffff",
+                    padding: "0.5rem 1.5rem",
+                    borderRadius: "20px",
+                    fontWeight: 700,
+                    fontSize: "0.9rem",
+                    textDecoration: "none",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    boxShadow: "0 4px 10px rgba(212, 175, 55, 0.3)",
+                    transition: "all 0.2s ease",
+                    border: "none",
+                    cursor: "pointer"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                    e.currentTarget.style.boxShadow = "0 6px 15px rgba(212, 175, 55, 0.4)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "0 4px 10px rgba(212, 175, 55, 0.3)";
+                  }}
+                >
+                  Draft
+                </Link>
+              )}
 
-          {links.map((link) => {
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`nav-link ${
-                  isActive(link.href) ? "nav-link-active" : ""
-                }`}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
+              {/* Current Week Pill - only show once the season has actually started */}
+              {draftStatus === "completed" && seasonStarted && (
+                <span className="card-pill" style={{ fontWeight: 700, fontSize: "0.85rem" }}>
+                  Week {currentWeek}
+                </span>
+              )}
+
+              {links.map((link) => {
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`nav-link ${
+                      isActive(link.href) ? "nav-link-active" : ""
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </nav>
       </div>
     </header>

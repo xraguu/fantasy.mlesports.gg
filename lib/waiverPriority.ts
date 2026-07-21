@@ -4,9 +4,11 @@ import { getFantasyStandings } from "./standings";
 /**
  * Sets every team's waiver priority from reverse draft order (last team to
  * pick gets priority #1, first team to pick gets priority #maxTeams) — the
- * starting order for both "rolling" and "fixed" leagues. No-op for "faab"
- * leagues, which don't use a priority order at all. Called once, at draft
- * completion (normal last-pick completion or an admin Skip Draft).
+ * starting order for "rolling"/"fixed" leagues (where it's the actual claim
+ * order) and "faab" leagues (where it's only a tiebreaker between equal
+ * bids, but still needs a real starting value rather than sitting null
+ * until the first weekly reset). Called once, at draft completion (normal
+ * last-pick completion or an admin Skip Draft).
  */
 export async function initializeWaiverPriorityFromDraftOrder(leagueId: string): Promise<void> {
   const league = await prisma.fantasyLeague.findUnique({
@@ -16,7 +18,7 @@ export async function initializeWaiverPriorityFromDraftOrder(leagueId: string): 
       fantasyTeams: { select: { id: true, draftPosition: true } },
     },
   });
-  if (!league || league.waiverSystem === "faab") return;
+  if (!league) return;
 
   const ordered = [...league.fantasyTeams].sort((a, b) => (b.draftPosition ?? 0) - (a.draftPosition ?? 0));
 
@@ -67,18 +69,23 @@ export async function moveTeamToBackOfWaiverLine(leagueId: string, winningTeamId
 }
 
 /**
- * "Fixed Order" leagues reset priority every week to reverse current
- * standings (worst record gets priority #1) — unlike "rolling" leagues,
- * which keep rotating the same line all season and never reset. Called once
- * per (league, week) from lib/autoLock.ts's sweep, right as a new week
- * begins, using standings through the week that just ended.
+ * "Fixed Order" and "FAAB" leagues both reset priority every week to
+ * reverse current standings (worst record gets priority #1) — for Fixed
+ * that's the actual claim order; for FAAB it's purely the tiebreaker
+ * between two equal bids (see processFaabLeagueClaims in
+ * lib/waiverProcessing.ts), but it still needs to track current standings
+ * rather than sit frozen at whatever it was initialized to. "Rolling"
+ * leagues are the only ones that keep rotating the same line all season and
+ * never reset this way. Called once per (league, week) from
+ * lib/autoLock.ts's sweep, right as a new week begins, using standings
+ * through the week that just ended.
  */
 export async function resetWaiverPriorityToReverseStandings(leagueId: string, throughWeek: number): Promise<void> {
   const league = await prisma.fantasyLeague.findUnique({
     where: { id: leagueId },
     select: { waiverSystem: true },
   });
-  if (!league || league.waiverSystem !== "fixed") return;
+  if (!league || league.waiverSystem === "rolling") return;
 
   const standings = await getFantasyStandings(leagueId, throughWeek);
   if (standings.length === 0) return;

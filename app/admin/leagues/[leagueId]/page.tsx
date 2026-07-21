@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAlert } from "@/components/AlertProvider";
+import { setAdminViewingLeague } from "@/lib/adminLeagueView";
 
 interface User {
   id: string;
@@ -1022,6 +1023,17 @@ export default function AdminLeagueManagementPage() {
           style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}
         >
           View Draft Page
+        </button>
+        <button
+          className="btn btn-ghost"
+          onClick={() => {
+            setAdminViewingLeague(leagueId);
+            router.push(`/leagues/${leagueId}/scoreboard`);
+          }}
+          style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}
+          title="View this league's Scoreboard, Standings, and Managers pages as an admin"
+        >
+          View League
         </button>
         <button
           className="btn"

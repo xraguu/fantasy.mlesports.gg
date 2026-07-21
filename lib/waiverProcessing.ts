@@ -1,8 +1,9 @@
 import { prisma } from "./prisma";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "./rosterLocks";
-import { markTeamDroppedForWaivers, clearWaiverPeriod, releaseWaiverPeriodsForLeague } from "./waiverPeriods";
+import { markTeamDroppedForWaivers, clearWaiverPeriod } from "./waiverPeriods";
 import { moveTeamToBackOfWaiverLine } from "./waiverPriority";
 import { assignTeamToRosterSlot } from "./rosterSlotAssignment";
+import { etDateTime } from "./timezone";
 
 export interface ProcessWaiversResult {
   processed: number;
@@ -12,9 +13,9 @@ export interface ProcessWaiversResult {
   errors: string[];
 }
 
-type ClaimWithTeam = Awaited<ReturnType<typeof fetchPendingClaims>>[number];
+export type ClaimWithTeam = Awaited<ReturnType<typeof fetchPendingClaims>>[number];
 
-async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: string }) {
+export async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: string }) {
   const whereClause: any = { status: "pending" };
   if (filter.claimIds) {
     whereClause.id = { in: filter.claimIds };
@@ -32,7 +33,7 @@ async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: stri
     include: {
       fantasyTeam: {
         include: {
-          league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true, rosterConfig: true } },
+          league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true, rosterConfig: true, season: true } },
         },
       },
     },
@@ -53,7 +54,7 @@ async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: stri
  * re-executing.
  */
 
-async function cancelClaim(claim: ClaimWithTeam, reason: string): Promise<boolean> {
+export async function cancelClaim(claim: ClaimWithTeam, reason: string): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     const claimed = await tx.waiverClaim.updateMany({
       where: { id: claim.id, status: "pending" },
@@ -148,6 +149,7 @@ async function executeClaim(claim: ClaimWithTeam): Promise<boolean> {
         mleTeamId: claim.addTeamId,
         dropTeamId: claim.dropTeamId,
         rosterConfig: claim.fantasyTeam.league.rosterConfig,
+        season: claim.fantasyTeam.league.season,
       });
 
       await tx.transaction.create({
@@ -325,10 +327,6 @@ export async function processPendingWaiverClaims(filter: { claimIds?: string[]; 
     }
   }
 
-  for (const touchedLeagueId of claimsByLeague.keys()) {
-    await releaseWaiverPeriodsForLeague(touchedLeagueId);
-  }
-
   return results;
 }
 
@@ -369,13 +367,69 @@ function isPastAScheduledWaiverTimeToday(schedule: WaiverScheduleEntry[]): boole
 }
 
 /**
+ * The most recent scheduled waiver-processing instant (day + time, ET) that
+ * has already happened, given a season's configured schedule (Admin
+ * Settings → Waiver Schedule) — or null if none has happened yet / nothing
+ * is configured. Schedule entries recur weekly, so this scans the last 7
+ * calendar days rather than just "today," which is what lets it find the
+ * right instant on a page load that happens well after it (e.g. checking on
+ * Friday for a Wednesday 3am entry).
+ */
+function mostRecentScheduledInstant(schedule: WaiverScheduleEntry[]): Date | null {
+  if (!Array.isArray(schedule) || schedule.length === 0) return null;
+  const now = new Date();
+  let latest: Date | null = null;
+
+  for (let daysAgo = 0; daysAgo < 7; daysAgo++) {
+    const candidate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    const dateStr = candidate.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const dayOfWeek = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "long",
+    }).format(candidate);
+
+    for (const entry of schedule) {
+      if (entry.day !== dayOfWeek) continue;
+      const minutes = parseTimeToMinutes(entry.time);
+      const instant = etDateTime(dateStr, Math.floor(minutes / 60), minutes % 60);
+      if (instant <= now && (!latest || instant > latest)) {
+        latest = instant;
+      }
+    }
+  }
+
+  return latest;
+}
+
+/**
+ * Releases every team still sitting in the post-drop waiver clearance
+ * window as of the most recent scheduled waiver-processing instant — it had
+ * a full processing cycle to get claimed and nobody did. Gated on
+ * `droppedAt <= cutoff` rather than wiping the whole league's clearance
+ * state unconditionally, so a team dropped AFTER that instant stays
+ * protected (claim-only) until the NEXT scheduled instant passes, even if
+ * this runs again later the same day — safe to call on every sweep pass.
+ */
+async function releaseExpiredWaiverPeriods(leagueId: string, schedule: WaiverScheduleEntry[]): Promise<void> {
+  const cutoff = mostRecentScheduledInstant(schedule);
+  if (!cutoff) return;
+  await prisma.teamWaiverPeriod.deleteMany({
+    where: { fantasyLeagueId: leagueId, droppedAt: { lte: cutoff } },
+  });
+}
+
+/**
  * Lazily auto-processes pending waiver claims once the current ET day/time
  * is at or past one of the league's season's configured waiver-schedule
- * entries (Admin Settings → Waiver Schedule). There's no cron in this app,
- * so this runs off read paths that touch waivers (same lazy-sweep pattern
- * as lib/autoLock.ts). Safe to call on every request — processing only ever
- * touches claims still "pending", so re-running it after a day's batch is
- * already done is a harmless no-op, no dedup marker needed.
+ * entries (Admin Settings → Waiver Schedule), and separately releases any
+ * team whose post-drop clearance window has outlived that same schedule
+ * (see releaseExpiredWaiverPeriods above) — a dropped team is claim-only
+ * until the next scheduled processing time passes, then becomes a normal
+ * free agent. There's no cron in this app, so this runs off read paths that
+ * touch waivers (same lazy-sweep pattern as lib/autoLock.ts). Safe to call
+ * on every request — claim processing only ever touches claims still
+ * "pending," and the release step is bounded by `droppedAt`, so re-running
+ * either after they're already done is a harmless no-op.
  */
 export async function runWaiverProcessingSweep(leagueId?: string): Promise<void> {
   const leagues = await prisma.fantasyLeague.findMany({
@@ -389,6 +443,14 @@ export async function runWaiverProcessingSweep(leagueId?: string): Promise<void>
   for (const season of seasons) {
     const settings = await prisma.seasonSettings.findFirst({ where: { season } });
     settingsBySeason.set(season, (settings?.waiverSchedule as WaiverScheduleEntry[] | undefined) ?? []);
+  }
+
+  for (const league of leagues) {
+    try {
+      await releaseExpiredWaiverPeriods(league.id, settingsBySeason.get(league.season) ?? []);
+    } catch (error) {
+      console.error(`Waiver period release failed for league ${league.id}:`, error);
+    }
   }
 
   const dueLeagueIds = leagues

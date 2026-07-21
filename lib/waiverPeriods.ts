@@ -4,9 +4,12 @@ import { prisma } from "@/lib/prisma";
  * Tracks MLE teams that are in the post-drop waiver clearance window (see
  * TeamWaiverPeriod in schema.prisma). A team enters this state when a
  * manager drops it — it shows as "on waivers" to other managers rather than
- * a free agent, and can only be acquired via a pending waiver claim. If
- * nobody claims it by the next waiver processing run, it's released back to
- * free agency.
+ * a free agent, and can only be acquired via a pending waiver claim. It's
+ * released back to free agency once the admin-configured waiver processing
+ * schedule (Admin Settings → Waiver Schedule) has passed it by — see
+ * `releaseExpiredWaiverPeriods` in lib/waiverProcessing.ts, gated on each
+ * team's `droppedAt` against the most recent scheduled processing instant
+ * so a team dropped after that instant stays protected until the next one.
  *
  * Admin roster edits are exempt (same override precedent as lib/rosterLocks.ts)
  * since those are explicit admin actions, not manager-initiated drops. Trades
@@ -43,13 +46,6 @@ export async function clearWaiverPeriod(
   await client.teamWaiverPeriod.deleteMany({
     where: { fantasyLeagueId, mleTeamId },
   });
-}
-
-/** Releases every team still in the waiver clearance window back to free agency for a league. */
-export async function releaseWaiverPeriodsForLeague(
-  fantasyLeagueId: string
-): Promise<void> {
-  await prisma.teamWaiverPeriod.deleteMany({ where: { fantasyLeagueId } });
 }
 
 export async function isTeamOnWaivers(

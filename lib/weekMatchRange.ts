@@ -1,21 +1,33 @@
 import { prisma } from "./prisma";
 
+// A week is split into three moments rather than a single start/end pair:
+// `weekStart` is the pure calendar boundary a new fantasy week begins on
+// (roster carry-forward, waiver-clearance release, waiver-priority reset —
+// none of which have anything to do with when matches are actually played);
+// `matchStart` is when that week's real MLE matches (and this app's roster
+// lock / trade blackout) actually begin, which can legitimately fall several
+// days after `weekStart`; `weekEnd` is when both the matches and the
+// fantasy week are over (the two happen to coincide, so one field covers
+// both). Every function below that used to read `startDate`/`endDate`
+// now reads whichever of these three actually matches what it needs.
 export interface WeekDateConfig {
   week: number;
-  startDate: string;
-  endDate: string;
+  weekStart: string;
+  matchStart: string;
+  weekEnd: string;
 }
 
 /**
  * The actual date/time range to use when looking up real MLE matches for a
  * given week. Real match weekends regularly run past midnight of the
- * configured `endDate` into the early morning hours of the next calendar
- * day — a hard cutoff at `endDate` 23:59:59 was silently dropping those
+ * configured `weekEnd` into the early morning hours of the next calendar
+ * day — a hard cutoff at `weekEnd` 23:59:59 was silently dropping those
  * matches (confirmed: ~74% of a real, audited data gap). The upper bound
- * extends to the START of the next configured week instead — there's
- * always a multi-day gap between weeks, so this can never accidentally
- * pull in the following week's matches. The last configured week has no
- * "next" week to bound it, so it gets a fixed 3-day cushion instead.
+ * extends to the START of the next configured week's matches instead —
+ * there's always a multi-day gap between one week's matches ending and the
+ * next week's beginning, so this can never accidentally pull in the
+ * following week's matches. The last configured week has no "next" week to
+ * bound it, so it gets a fixed 3-day cushion past `weekEnd` instead.
  *
  * Shared by every place that needs "which matches count as week N" — the
  * live Sprocket import, and every route that looks up real `Match` rows by
@@ -27,14 +39,14 @@ export function getWeekMatchRange(
 ): { start: Date; end: Date } | null {
   const sorted = [...weekDates].sort((a, b) => a.week - b.week);
   const config = sorted.find((w) => w.week === week);
-  if (!config?.startDate || !config?.endDate) return null;
+  if (!config?.matchStart || !config?.weekEnd) return null;
 
-  const start = new Date(config.startDate);
+  const start = new Date(config.matchStart);
   const nextConfig = sorted.find((w) => w.week === week + 1);
-  const end = nextConfig?.startDate
-    ? new Date(nextConfig.startDate)
+  const end = nextConfig?.matchStart
+    ? new Date(nextConfig.matchStart)
     : (() => {
-        const fallback = new Date(config.endDate);
+        const fallback = new Date(config.weekEnd);
         fallback.setDate(fallback.getDate() + 3);
         return fallback;
       })();

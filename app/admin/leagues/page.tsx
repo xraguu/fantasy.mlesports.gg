@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAlert } from "@/components/AlertProvider";
+import { setAdminViewingLeague } from "@/lib/adminLeagueView";
 
 interface FantasyLeague {
   id: string;
@@ -539,15 +540,28 @@ export default function ManageLeaguesPage() {
                       textAlign: "right",
                     }}
                   >
-                    <button
-                      className="btn btn-ghost"
-                      style={{ padding: "0.4rem 1rem", fontSize: "0.85rem" }}
-                      onClick={() =>
-                        (window.location.href = `/admin/leagues/${league.id}`)
-                      }
-                    >
-                      Manage
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.4rem 1rem", fontSize: "0.85rem" }}
+                        onClick={() => {
+                          setAdminViewingLeague(league.id);
+                          window.location.href = `/leagues/${league.id}/scoreboard`;
+                        }}
+                        title="View this league's Scoreboard, Standings, and Managers pages as an admin"
+                      >
+                        View League
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ padding: "0.4rem 1rem", fontSize: "0.85rem" }}
+                        onClick={() =>
+                          (window.location.href = `/admin/leagues/${league.id}`)
+                        }
+                      >
+                        Manage
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

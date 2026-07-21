@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import PlayerModal from "./PlayerModal";
 import MLEMatchDetailsModal, { MLEMatchDetailsData } from "./MLEMatchDetailsModal";
 import HeaderTooltip from "./HeaderTooltip";
@@ -45,8 +46,19 @@ interface TeamModalProps {
     rosteredBy?: {
       rosterName: string;
       managerName: string;
+      fantasyTeamId?: string;
     };
   } | null;
+  // The fantasy league this modal is being viewed from — NOT the same as
+  // team.leagueId (that's the MLE competition tier, e.g. "ML"/"CL"/"FL").
+  // Needed to scope the weekly-breakdown/match-details fetches below to the
+  // right league. Null when opened from a context with no fantasy league in
+  // scope (e.g. the cross-league home dashboard before a league is picked).
+  fantasyLeagueId?: string | null;
+  // The logged-in viewer's own fantasy team id within fantasyLeagueId, if
+  // they have one. Used only to decide where the "Rostered by" link below
+  // goes — their own roster (My Roster) vs. that manager's tab on Opponents.
+  currentUserFantasyTeamId?: string | null;
   onClose: () => void;
   isDraftContext?: boolean;
 }
@@ -71,9 +83,12 @@ interface TeamOverview {
 
 export default function TeamModal({
   team,
+  fantasyLeagueId = null,
+  currentUserFantasyTeamId = null,
   onClose,
   isDraftContext = false,
 }: TeamModalProps) {
+  const router = useRouter();
   const [gameMode, setGameMode] = useState<"2s" | "3s">("2s");
   const [playerSortColumn, setPlayerSortColumn] = useState<string>("goals");
   const [playerSortDirection, setPlayerSortDirection] = useState<
@@ -216,12 +231,16 @@ export default function TeamModal({
   // Fetch weekly breakdown when team changes
   useEffect(() => {
     const fetchWeeklyStats = async () => {
-      if (!team) return;
+      if (!team || !fantasyLeagueId) {
+        setWeeklyStats([]);
+        setLoadingWeeklyStats(false);
+        return;
+      }
 
       try {
         setLoadingWeeklyStats(true);
         const response = await fetch(
-          `/api/leagues/${team.leagueId}/mle-teams/${team.id}/weekly-breakdown`
+          `/api/leagues/${fantasyLeagueId}/mle-teams/${team.id}/weekly-breakdown`
         );
 
         if (!response.ok) {
@@ -239,17 +258,17 @@ export default function TeamModal({
     };
 
     fetchWeeklyStats();
-  }, [team?.id, team?.leagueId]);
+  }, [team?.id, fantasyLeagueId]);
 
   // Fetch the real MLE-vs-MLE match details when a week is selected
   useEffect(() => {
-    if (!selectedWeek || !team) return;
+    if (!selectedWeek || !team || !fantasyLeagueId) return;
 
     const fetchMatchData = async () => {
       try {
         setLoadingMatchup(true);
         const response = await fetch(
-          `/api/leagues/${team.leagueId}/mle-teams/${team.id}/match-details?week=${selectedWeek}`
+          `/api/leagues/${fantasyLeagueId}/mle-teams/${team.id}/match-details?week=${selectedWeek}`
         );
 
         if (!response.ok) {
@@ -267,7 +286,7 @@ export default function TeamModal({
     };
 
     fetchMatchData();
-  }, [selectedWeek, team?.id, team?.leagueId]);
+  }, [selectedWeek, team?.id, fantasyLeagueId]);
 
   if (!team) return null;
 
@@ -635,18 +654,47 @@ export default function TeamModal({
                     ? "Free Agent"
                     : "On Waivers"}
                 </span>
-                {team.rosteredBy && (
-                  <span
-                    style={{
-                      fontSize: "0.9rem",
-                      color: "rgba(255, 255, 255, 0.9)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    | {team.rosteredBy.rosterName} (
-                    {team.rosteredBy.managerName})
-                  </span>
-                )}
+                {team.rosteredBy && (() => {
+                  const targetTeamId = team.rosteredBy.fantasyTeamId;
+                  const href =
+                    targetTeamId && fantasyLeagueId
+                      ? targetTeamId === currentUserFantasyTeamId
+                        ? `/leagues/${fantasyLeagueId}/my-roster/${targetTeamId}`
+                        : `/leagues/${fantasyLeagueId}/opponents?teamId=${targetTeamId}`
+                      : null;
+                  return (
+                    <span
+                      onClick={
+                        href
+                          ? () => {
+                              onClose();
+                              router.push(href);
+                            }
+                          : undefined
+                      }
+                      style={{
+                        fontSize: "0.9rem",
+                        color: "rgba(255, 255, 255, 0.9)",
+                        fontWeight: 600,
+                        cursor: href ? "pointer" : undefined,
+                        transition: "color 0.2s",
+                      }}
+                      onMouseEnter={
+                        href
+                          ? (e) => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")
+                          : undefined
+                      }
+                      onMouseLeave={
+                        href
+                          ? (e) => (e.currentTarget.style.color = "rgba(255, 255, 255, 0.9)")
+                          : undefined
+                      }
+                    >
+                      | {team.rosteredBy.rosterName} (
+                      {team.rosteredBy.managerName})
+                    </span>
+                  );
+                })()}
               </div>
             )}
           </div>

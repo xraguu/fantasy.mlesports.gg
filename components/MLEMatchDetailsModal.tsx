@@ -237,50 +237,53 @@ export default function MLEMatchDetailsModal({
             {/* Rounds */}
             {data.rounds.length === 0 ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "rgba(255,255,255,0.7)" }}>
-                No round-by-round data available for this match
+                Sprocket never recorded round-by-round stats for this match — the final result is
+                known, but the per-game detail isn&apos;t available for a small number of matches.
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {/* Column headers */}
-                <div
-                  className="match-modal-3col-grid"
-                  style={{
-                    gap: "1rem",
-                    alignItems: "center",
-                    padding: "0 1rem",
-                  }}
-                >
-                  <StatHeaderRow align="left" />
-                  <div style={{ minWidth: "90px" }} />
-                  <StatHeaderRow align="right" />
-                </div>
-
-                {data.rounds.map((round) => (
+              <div className="match-modal-rounds-scroll">
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {/* Column headers */}
                   <div
-                    key={round.roundNumber}
-                    className="match-modal-3col-grid"
+                    className="match-modal-round-row"
                     style={{
                       gap: "1rem",
                       alignItems: "center",
-                      padding: "1rem",
-                      backgroundColor: "rgba(255,255,255,0.05)",
-                      borderRadius: "8px",
+                      padding: "0 1rem",
                     }}
                   >
-                    <StatValueRow stats={round.homeStats} align="left" />
-
-                    <div style={{ textAlign: "center", minWidth: "90px" }}>
-                      <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", marginBottom: "0.15rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Game {round.roundNumber}
-                      </div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#ffffff" }}>
-                        {round.homeScore} - {round.awayScore}
-                      </div>
-                    </div>
-
-                    <StatValueRow stats={round.awayStats} align="right" />
+                    <StatHeaderRow align="left" />
+                    <div style={{ minWidth: "90px" }} />
+                    <StatHeaderRow align="right" />
                   </div>
-                ))}
+
+                  {data.rounds.map((round) => (
+                    <div
+                      key={round.roundNumber}
+                      className="match-modal-round-row"
+                      style={{
+                        gap: "1rem",
+                        alignItems: "center",
+                        padding: "1rem",
+                        backgroundColor: "rgba(255,255,255,0.05)",
+                        borderRadius: "8px",
+                      }}
+                    >
+                      <StatValueRow stats={round.homeStats} align="left" />
+
+                      <div style={{ textAlign: "center", minWidth: "90px" }}>
+                        <div style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.5)", marginBottom: "0.15rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Game {round.roundNumber}
+                        </div>
+                        <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#ffffff" }}>
+                          {round.homeScore} - {round.awayScore}
+                        </div>
+                      </div>
+
+                      <StatValueRow stats={round.awayStats} align="right" />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>

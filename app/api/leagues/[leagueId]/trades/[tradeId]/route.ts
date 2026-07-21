@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { tradeVetoDeadline } from "@/lib/tradeExecution";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
+import { isWeekLocked } from "@/lib/autoLock";
 
 /**
  * PATCH /api/leagues/[leagueId]/trades/[tradeId]
@@ -95,7 +96,7 @@ export async function PATCH(
 
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { currentWeek: true, draftStatus: true },
+      select: { currentWeek: true, draftStatus: true, season: true },
     });
     if (league?.draftStatus !== "completed") {
       return NextResponse.json(
@@ -111,6 +112,16 @@ export async function PATCH(
     if (tradeCutoff && new Date() > tradeCutoff) {
       return NextResponse.json(
         { error: "The trade deadline has passed for this league" },
+        { status: 403 }
+      );
+    }
+
+    // Same match-weekend blackout as propose time — a trade could sit
+    // pending across a whole weekend, so this has to be re-checked at
+    // accept time too, not just when it was first proposed.
+    if (league && (await isWeekLocked(league.season, league.currentWeek))) {
+      return NextResponse.json(
+        { error: "Trades can't be accepted during the match weekend — try again once this week's matches are over." },
         { status: 403 }
       );
     }

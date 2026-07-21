@@ -23,7 +23,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
 
     const league = await tx.fantasyLeague.findUnique({
       where: { id: trade.fantasyLeagueId },
-      select: { currentWeek: true, rosterConfig: true },
+      select: { currentWeek: true, rosterConfig: true, season: true },
     });
     if (!league) throw new Error("League not found");
     const currentWeek = league.currentWeek;
@@ -150,6 +150,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
         week: currentWeek,
         mleTeamId,
         rosterConfig: league.rosterConfig,
+        season: league.season,
       });
     }
     for (const mleTeamId of trade.proposerGives) {
@@ -158,6 +159,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
         week: currentWeek,
         mleTeamId,
         rosterConfig: league.rosterConfig,
+        season: league.season,
       });
     }
 

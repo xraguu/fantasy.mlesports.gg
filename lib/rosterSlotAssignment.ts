@@ -1,4 +1,5 @@
 import { generateRosterSlotId } from "./id-generator";
+import { isWeekLocked } from "./autoLock";
 
 /** Total roster slots a league's config allows, across every position. */
 export function getRosterCapacity(rosterConfig: any): number {
@@ -23,6 +24,12 @@ export function getRosterCapacity(rosterConfig: any): number {
  * position's configured count, which used to silently create roster rows
  * My Roster could never render (it only ever iterates 0..config[position]-1
  * per position).
+ *
+ * A currently-locked non-bench position is skipped in that search even if
+ * it's empty — a genuinely empty active slot has no row for the lock sweep
+ * to have marked isLocked, so without this it'd otherwise be free to fill
+ * mid-week once results start coming in, exactly what the lock exists to
+ * prevent. Bench never locks, so the search always has somewhere to land.
  */
 export async function assignTeamToRosterSlot(
   tx: any,
@@ -32,9 +39,10 @@ export async function assignTeamToRosterSlot(
     mleTeamId: string;
     dropTeamId?: string | null;
     rosterConfig: any;
+    season: number;
   }
 ): Promise<void> {
-  const { fantasyTeamId, week, mleTeamId, dropTeamId, rosterConfig } = params;
+  const { fantasyTeamId, week, mleTeamId, dropTeamId, rosterConfig, season } = params;
 
   if (dropTeamId) {
     const slotToReplace = await tx.rosterSlot.findFirst({
@@ -63,11 +71,13 @@ export async function assignTeamToRosterSlot(
     where: { fantasyTeamId, week },
   });
   const filled = new Set(existingSlots.map((s: any) => `${s.position}-${s.slotIndex}`));
+  const activeSlotsLocked = await isWeekLocked(season, week);
 
   const perPositionIndex = new Map<string, number>();
   for (const position of orderedPositions) {
     const idx = perPositionIndex.get(position) ?? 0;
     perPositionIndex.set(position, idx + 1);
+    if (position !== "be" && activeSlotsLocked) continue;
     if (!filled.has(`${position}-${idx}`)) {
       await tx.rosterSlot.create({
         data: {
