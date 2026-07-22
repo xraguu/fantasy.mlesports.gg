@@ -189,30 +189,23 @@ export async function POST(
       }
     }
 
-    // Neither side can end up with more teams than their roster has slots
-    // for. Checked here (not just left to execution time) so a proposal
-    // that's invalid on arrival never sits around waiting to be accepted.
-    // proposerDrops don't go to the receiver — they're just removed — so
-    // they count against the proposer's post-trade total but not the
-    // receiver's.
+    // Only the proposer's own capacity is checked here — proposerDrops don't
+    // go to the receiver, they're just removed, so they count against the
+    // proposer's post-trade total. The receiver's side is deliberately NOT
+    // blocked here even if it would overflow their roster: they can still be
+    // offered a trade that's better for them than what they have room for
+    // right now — accepting it is what prompts THEM to pick teams to drop
+    // (see the accept route and receiverDrops), not proposing it.
     const capacity = getRosterCapacity(league?.rosterConfig);
-    const [proposerCount, receiverCount] = await Promise.all([
-      prisma.rosterSlot.count({ where: { fantasyTeamId: proposerTeamId, week: currentWeek } }),
-      prisma.rosterSlot.count({ where: { fantasyTeamId: receiverTeamId, week: currentWeek } }),
-    ]);
+    const proposerCount = await prisma.rosterSlot.count({
+      where: { fantasyTeamId: proposerTeamId, week: currentWeek },
+    });
     const proposerAfter =
       proposerCount - (proposerGives as string[]).length - (proposerDrops as string[]).length + (receiverGives as string[]).length;
-    const receiverAfter = receiverCount - (receiverGives as string[]).length + (proposerGives as string[]).length;
 
     if (proposerAfter > capacity) {
       return NextResponse.json(
         { error: "This trade would leave your roster with more teams than it has slots for. Drop a team first, or offer up more in return." },
-        { status: 400 }
-      );
-    }
-    if (receiverAfter > capacity) {
-      return NextResponse.json(
-        { error: "This trade would leave the other manager's roster with more teams than it has slots for." },
         { status: 400 }
       );
     }

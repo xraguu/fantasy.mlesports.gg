@@ -182,6 +182,19 @@ export default function MyRosterPage() {
   const [trades, setTrades] = useState<any[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
 
+  // A trade can be proposed without regard for whether it fits on this
+  // roster (see app/api/leagues/[leagueId]/trades/propose/route.ts) —
+  // accepting it is where that's actually enforced. If it would overflow,
+  // this holds which trade is being accepted and how many teams still need
+  // to be picked to drop, so the roster-picker modal below can open instead
+  // of accepting outright.
+  const [tradeAcceptDropModal, setTradeAcceptDropModal] = useState<{
+    trade: any;
+    neededCount: number;
+  } | null>(null);
+  const [selectedTradeDropIndices, setSelectedTradeDropIndices] = useState<number[]>([]);
+  const [acceptingTrade, setAcceptingTrade] = useState(false);
+
   // Waiver claims state (pending claims are private to the manager who
   // submitted them — the API scopes ?mine=true to the current session)
   const [waiverClaims, setWaiverClaims] = useState<any[]>([]);
@@ -414,6 +427,63 @@ export default function MyRosterPage() {
 
     fetchTrades();
   }, [activeTab, teamId, leagueId]);
+
+  const refreshTrades = async () => {
+    const tradesResponse = await fetch(`/api/leagues/${leagueId}/trades?teamId=${teamId}`);
+    if (tradesResponse.ok) {
+      const data = await tradesResponse.json();
+      setTrades(data.trades || []);
+    }
+  };
+
+  // Accepting a trade that was proposed without regard for this roster's
+  // capacity is where that actually gets enforced — if it would overflow,
+  // open the drop-picker modal instead of calling the API, then re-call this
+  // once the manager's picked enough teams. `receiverDrops` rides along on
+  // the accept request itself (see the PATCH route) rather than being a
+  // separate step, mirroring how proposerDrops works on the propose side.
+  const acceptTrade = async (trade: any, receiverDrops: string[] = []) => {
+    if (!rosterData) return;
+
+    if (receiverDrops.length === 0) {
+      const capacity =
+        rosterData.league.rosterConfig["2s"] +
+        rosterData.league.rosterConfig["3s"] +
+        rosterData.league.rosterConfig.flx +
+        rosterData.league.rosterConfig.be;
+      const receiverAfter =
+        rosterData.rosterSlots.length - trade.receiver.gives.length + trade.proposer.gives.length;
+      const neededCount = receiverAfter - capacity;
+      if (neededCount > 0) {
+        setSelectedTradeDropIndices([]);
+        setTradeAcceptDropModal({ trade, neededCount });
+        return;
+      }
+    }
+
+    setAcceptingTrade(true);
+    try {
+      const response = await fetch(`/api/leagues/${leagueId}/trades/${trade.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "accept", receiverDrops }),
+      });
+
+      if (response.ok) {
+        setTradeAcceptDropModal(null);
+        setSelectedTradeDropIndices([]);
+        await refreshTrades();
+      } else {
+        const errorData = await response.json();
+        showAlert(errorData.error || "Failed to accept trade", "error");
+      }
+    } catch (error) {
+      console.error("Error accepting trade:", error);
+      showAlert("Failed to accept trade. Please try again.", "error");
+    } finally {
+      setAcceptingTrade(false);
+    }
+  };
 
   // Fetch this manager's own pending waiver claims when the waivers tab is active
   useEffect(() => {
@@ -2725,44 +2795,18 @@ export default function MyRosterPage() {
                           Counter
                         </button>
                         <button
-                          onClick={async () => {
-                            try {
-                              const response = await fetch(
-                                `/api/leagues/${leagueId}/trades/${trade.id}`,
-                                {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ action: "accept" }),
-                                }
-                              );
-
-                              if (response.ok) {
-                                // Refresh trades
-                                const tradesResponse = await fetch(
-                                  `/api/leagues/${leagueId}/trades?teamId=${teamId}`
-                                );
-                                if (tradesResponse.ok) {
-                                  const data = await tradesResponse.json();
-                                  setTrades(data.trades || []);
-                                }
-                              } else {
-                                const errorData = await response.json();
-                                showAlert(errorData.error || "Failed to accept trade", "error");
-                              }
-                            } catch (error) {
-                              console.error("Error accepting trade:", error);
-                              showAlert("Failed to accept trade. Please try again.", "error");
-                            }
-                          }}
+                          onClick={() => acceptTrade(trade)}
+                          disabled={acceptingTrade}
                           style={{
                             background: "rgba(34, 197, 94, 0.2)",
                             border: "1px solid #22c55e",
                             color: "#22c55e",
                             padding: "0.5rem 1.5rem",
                             borderRadius: "6px",
-                            cursor: "pointer",
+                            cursor: acceptingTrade ? "not-allowed" : "pointer",
                             fontSize: "0.9rem",
                             fontWeight: 600,
+                            opacity: acceptingTrade ? 0.6 : 1,
                           }}
                         >
                           Accept
@@ -3122,6 +3166,198 @@ export default function MyRosterPage() {
               >
                 Drop Team
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accept-trade drop-picker modal — only shown when accepting this
+          trade would overflow this roster (see acceptTrade above). */}
+      {tradeAcceptDropModal && rosterData && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 95,
+          }}
+          onClick={() => {
+            setTradeAcceptDropModal(null);
+            setSelectedTradeDropIndices([]);
+          }}
+        >
+          <div
+            className="modal-box"
+            style={{
+              width: "min(900px, 92vw)",
+              background: "linear-gradient(135deg, #1a2332 0%, #0f1419 100%)",
+              border: "2px solid rgba(242, 182, 50, 0.3)",
+              borderRadius: "16px",
+              padding: "0",
+              boxShadow: "0 25px 50px rgba(0, 0, 0, 0.8)",
+              position: "relative",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => {
+                setTradeAcceptDropModal(null);
+                setSelectedTradeDropIndices([]);
+              }}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                left: "1rem",
+                background: "rgba(255, 255, 255, 0.1)",
+                border: "1px solid rgba(255, 255, 255, 0.2)",
+                borderRadius: "8px",
+                width: "32px",
+                height: "32px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                color: "var(--text-muted)",
+                fontSize: "1.2rem",
+                fontWeight: 700,
+                zIndex: 10,
+              }}
+            >
+              ×
+            </button>
+
+            <button
+              onClick={() => {
+                if (selectedTradeDropIndices.length === tradeAcceptDropModal.neededCount) {
+                  const receiverDrops = selectedTradeDropIndices
+                    .map((idx) => rosterData.rosterSlots[idx]?.mleTeam?.id)
+                    .filter((id): id is string => !!id);
+                  acceptTrade(tradeAcceptDropModal.trade, receiverDrops);
+                } else {
+                  showAlert(
+                    `Please select ${tradeAcceptDropModal.neededCount} team${tradeAcceptDropModal.neededCount === 1 ? "" : "s"} to drop`,
+                    "warning"
+                  );
+                }
+              }}
+              disabled={acceptingTrade}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                background: "linear-gradient(135deg, var(--accent) 0%, #d4a832 100%)",
+                color: "#1a1a2e",
+                fontWeight: 700,
+                padding: "0.65rem 2rem",
+                borderRadius: "8px",
+                border: "none",
+                cursor: acceptingTrade ? "not-allowed" : "pointer",
+                fontSize: "1rem",
+                boxShadow: "0 4px 12px rgba(242, 182, 50, 0.4)",
+                zIndex: 10,
+                opacity: acceptingTrade ? 0.5 : 1,
+              }}
+            >
+              {acceptingTrade ? "Accepting..." : "Confirm & Accept"}
+            </button>
+
+            <div style={{ padding: "3.5rem 2rem 1.5rem", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>
+              <div style={{ fontSize: "clamp(1.1rem, 5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)" }}>
+                Make Room to Accept This Trade
+              </div>
+              <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+                Accepting would leave your roster over capacity — pick teams to drop to make it fit.
+              </div>
+              <div style={{ fontSize: "0.9rem", color: "var(--accent)", marginTop: "1rem", fontWeight: 600 }}>
+                Select {tradeAcceptDropModal.neededCount} team{tradeAcceptDropModal.neededCount === 1 ? "" : "s"} to drop (
+                {selectedTradeDropIndices.length}/{tradeAcceptDropModal.neededCount} selected)
+              </div>
+            </div>
+
+            <div style={{ padding: "1.5rem 2rem" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid rgba(255, 255, 255, 0.2)" }}>
+                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
+                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rosterData.rosterSlots.map((slot, index) => {
+                      if (!slot.mleTeam) return null;
+                      // A team already going out as part of the trade itself
+                      // can't also be picked to drop — it's already leaving.
+                      const alreadyGiven = tradeAcceptDropModal.trade.receiver.gives.some(
+                        (t: any) => t.id === slot.mleTeam!.id
+                      );
+                      const selected = selectedTradeDropIndices.includes(index);
+                      return (
+                        <tr
+                          key={slot.id}
+                          style={{
+                            borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
+                            backgroundColor: selected ? "rgba(242, 182, 50, 0.1)" : "transparent",
+                            opacity: alreadyGiven ? 0.4 : 1,
+                          }}
+                        >
+                          <td style={{ padding: "0.75rem 0.5rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <Image
+                                src={slot.mleTeam.logoPath}
+                                alt={slot.mleTeam.name}
+                                width={24}
+                                height={24}
+                                style={{ borderRadius: "4px" }}
+                              />
+                              <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
+                                {slot.mleTeam.leagueId} {slot.mleTeam.name}
+                              </span>
+                              {alreadyGiven && (
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                  (already in this trade)
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
+                            <button
+                              onClick={() =>
+                                !alreadyGiven &&
+                                setSelectedTradeDropIndices((prev) =>
+                                  prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+                                )
+                              }
+                              disabled={alreadyGiven}
+                              style={{
+                                width: "24px",
+                                height: "24px",
+                                border: "2px solid var(--accent)",
+                                borderRadius: "4px",
+                                background: selected ? "var(--accent)" : "transparent",
+                                cursor: alreadyGiven ? "not-allowed" : "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: selected ? "#1a1a2e" : "transparent",
+                                fontWeight: 700,
+                                fontSize: "1rem",
+                              }}
+                            >
+                              ✓
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

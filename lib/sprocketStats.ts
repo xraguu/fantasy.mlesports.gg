@@ -1,6 +1,5 @@
 import { parse } from "csv-parse/sync";
 import { prisma } from "./prisma";
-import { parseSprocketSeasonNumber } from "./sprocketSeason";
 import { getWeekMatchRange } from "./weekMatchRange";
 
 export const SPROCKET_BASE_URL =
@@ -124,12 +123,11 @@ export async function importSprocketStatsForWeek(
     throw new Error(`No SeasonSettings found for season ${season}. Configure it at /admin/settings first.`);
   }
 
-  const sprocketSeason = parseSprocketSeasonNumber(settings.draftStatsSeason);
-  if (sprocketSeason === null) {
-    throw new Error(
-      `Season Settings' "Current Season" isn't configured — set it at /admin/settings first. It determines which MLE season's live Sprocket data to pull (e.g. "Season 19"), which is a different number than the fantasy season (${season}).`
-    );
-  }
+  // The fantasy season number IS the real MLE season number by policy (kept
+  // in sync via Admin Settings' "Current Season") — no separate setting to
+  // translate one to the other, so there's nothing else here that can drift
+  // out of sync with it.
+  const sprocketSeason = season;
 
   const weekDates = settings.weekDates as Array<{
     week: number;

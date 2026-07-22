@@ -18,6 +18,7 @@ interface TransactionItem {
   addTeam?: TeamRef | null;
   dropTeam?: TeamRef | null;
   faabBid?: number | null;
+  priority?: number | null;
   proposerTeam?: string;
   proposerManager?: string;
   receiverTeam?: string;
@@ -248,9 +249,11 @@ export default function TransactionHistoryModal({
                           <span style={{ color: "var(--text-main)" }}>{t.dropTeam.leagueId} {t.dropTeam.name}</span>
                         </div>
                       )}
-                      {t.faabBid != null && (
+                      {t.faabBid != null ? (
                         <span style={{ color: "var(--text-muted)" }}>(${t.faabBid} bid)</span>
-                      )}
+                      ) : t.priority != null ? (
+                        <span style={{ color: "var(--text-muted)" }}>(Waiver priority #{t.priority})</span>
+                      ) : null}
                     </div>
                   )}
                 </div>

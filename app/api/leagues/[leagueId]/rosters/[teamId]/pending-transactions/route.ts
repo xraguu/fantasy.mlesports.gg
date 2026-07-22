@@ -77,6 +77,11 @@ export async function GET(
       addTeam: mleTeamMap.get(claim.addTeamId) ?? null,
       dropTeam: claim.dropTeamId ? mleTeamMap.get(claim.dropTeamId) ?? null : null,
       faabBid: claim.faabBid,
+      // Snapshotted from the submitting team's waiverPriority at claim time
+      // (see POST /api/leagues/[leagueId]/waivers) — the tiebreaker/ordering
+      // value for non-FAAB leagues, shown here alongside faabBid so an admin
+      // can see whichever one actually determines this claim's standing.
+      priority: claim.priority,
       status: "Pending",
       timestamp: claim.createdAt,
     }));

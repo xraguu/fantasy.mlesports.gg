@@ -332,6 +332,12 @@ model Trade {
   proposerGives   String[]
   receiverGives   String[]
   proposerDrops   String[]      @default([])
+  // Teams the receiver chooses to drop to make room, picked at ACCEPT time
+  // (not propose time, since only the receiver can know if/how they want to
+  // make room) — a trade is allowed to be proposed even if accepting it as-is
+  // would overflow the receiver's roster; accepting it is what surfaces the
+  // "pick teams to drop" prompt, mirroring proposerDrops' role on the other side.
+  receiverDrops   String[]      @default([])
   status          String        @default("pending")
   acceptedAt      DateTime?
   executedAt      DateTime?

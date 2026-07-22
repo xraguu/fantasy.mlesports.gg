@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { parse } from "csv-parse/sync";
 import { prisma } from "@/lib/prisma";
 import { SPROCKET_BASE_URL, fetchCsvText } from "@/lib/sprocketStats";
-import { parseSprocketSeasonNumber } from "@/lib/sprocketSeason";
 import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
 
 interface RoundRow {
@@ -147,17 +146,11 @@ export async function GET(
       });
     }
 
-    // Sprocket's files are named by MLE's own season number (e.g. "s19"),
-    // not FantasyLeague/SeasonSettings.season (a fantasy-league label,
-    // currently "2026") — using the latter here previously produced a URL
-    // that doesn't exist on Sprocket's CDN, failing every match lookup.
-    const sprocketSeason = parseSprocketSeasonNumber(settings.draftStatsSeason);
-    if (sprocketSeason === null) {
-      return NextResponse.json(
-        { error: "Current Season isn't configured in Admin Settings — set it before match details can load" },
-        { status: 404 }
-      );
-    }
+    // The fantasy season number IS the real MLE season number by policy
+    // (kept in sync via Admin Settings' "Current Season") — Sprocket's files
+    // are named by that same number (e.g. "s19"), so no separate lookup or
+    // translation is needed here.
+    const sprocketSeason = league.season;
 
     const [roundsCsv, playerStatsCsv] = await Promise.all([
       fetchCsvText(`${SPROCKET_BASE_URL}/rounds_s${sprocketSeason}.csv`),

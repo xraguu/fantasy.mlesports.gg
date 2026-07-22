@@ -78,6 +78,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
       ...trade.proposerGives.map((mleTeamId) => ({ fantasyTeamId: trade.proposerTeamId, mleTeamId })),
       ...trade.receiverGives.map((mleTeamId) => ({ fantasyTeamId: trade.receiverTeamId, mleTeamId })),
       ...trade.proposerDrops.map((mleTeamId) => ({ fantasyTeamId: trade.proposerTeamId, mleTeamId })),
+      ...trade.receiverDrops.map((mleTeamId) => ({ fantasyTeamId: trade.receiverTeamId, mleTeamId })),
     ];
     for (const { fantasyTeamId, mleTeamId } of allGives) {
       const slot = await tx.rosterSlot.findFirst({
@@ -106,7 +107,8 @@ export async function executeTrade(tradeId: string): Promise<void> {
     ]);
     const proposerAfter =
       proposerCount - trade.proposerGives.length - trade.proposerDrops.length + trade.receiverGives.length;
-    const receiverAfter = receiverCount - trade.receiverGives.length + trade.proposerGives.length;
+    const receiverAfter =
+      receiverCount - trade.receiverGives.length - trade.receiverDrops.length + trade.proposerGives.length;
     if (proposerAfter > capacity || receiverAfter > capacity) {
       await cancelTrade("Cancelled — a roster no longer had room for this trade by the time it was set to execute");
       return { executed: false as const };
@@ -139,6 +141,15 @@ export async function executeTrade(tradeId: string): Promise<void> {
     for (const mleTeamId of trade.proposerDrops) {
       const slot = await tx.rosterSlot.findFirst({
         where: { fantasyTeamId: trade.proposerTeamId, mleTeamId, week: currentWeek },
+      });
+      if (slot) await tx.rosterSlot.delete({ where: { id: slot.id } });
+      await markTeamDroppedForWaivers(trade.fantasyLeagueId, mleTeamId, tx);
+    }
+    // Teams the receiver chose to drop at accept time to make room — same
+    // treatment as proposerDrops, just picked later in the trade's lifecycle.
+    for (const mleTeamId of trade.receiverDrops) {
+      const slot = await tx.rosterSlot.findFirst({
+        where: { fantasyTeamId: trade.receiverTeamId, mleTeamId, week: currentWeek },
       });
       if (slot) await tx.rosterSlot.delete({ where: { id: slot.id } });
       await markTeamDroppedForWaivers(trade.fantasyLeagueId, mleTeamId, tx);

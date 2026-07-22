@@ -111,6 +111,8 @@ export async function GET(
             name: true,
             leagueId: true,
             logoPath: true,
+            primaryColor: true,
+            secondaryColor: true,
           },
         });
 
@@ -126,6 +128,8 @@ export async function GET(
             name: true,
             leagueId: true,
             logoPath: true,
+            primaryColor: true,
+            secondaryColor: true,
           },
         });
 
@@ -142,6 +146,8 @@ export async function GET(
             name: true,
             leagueId: true,
             logoPath: true,
+            primaryColor: true,
+            secondaryColor: true,
           },
         });
 
@@ -161,12 +167,18 @@ export async function GET(
             gives: proposerGivesTeams.map((team) => ({
               id: team.id,
               name: `${team.leagueId} ${team.name}`,
+              leagueId: team.leagueId,
               logoPath: team.logoPath,
+              primaryColor: team.primaryColor,
+              secondaryColor: team.secondaryColor,
             })),
             drops: proposerDropsTeams.map((team) => ({
               id: team.id,
               name: `${team.leagueId} ${team.name}`,
+              leagueId: team.leagueId,
               logoPath: team.logoPath,
+              primaryColor: team.primaryColor,
+              secondaryColor: team.secondaryColor,
             })),
           },
           receiver: {
@@ -176,7 +188,10 @@ export async function GET(
             gives: receiverGivesTeams.map((team) => ({
               id: team.id,
               name: `${team.leagueId} ${team.name}`,
+              leagueId: team.leagueId,
               logoPath: team.logoPath,
+              primaryColor: team.primaryColor,
+              secondaryColor: team.secondaryColor,
             })),
           },
         };

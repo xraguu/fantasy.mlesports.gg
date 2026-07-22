@@ -5,11 +5,17 @@ import { tradeVetoDeadline } from "@/lib/tradeExecution";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
 import { isWeekLocked } from "@/lib/autoLock";
+import { getRosterCapacity } from "@/lib/rosterSlotAssignment";
 
 /**
  * PATCH /api/leagues/[leagueId]/trades/[tradeId]
  * Accept or reject a trade
- * Body: { action: "accept" | "reject" }
+ * Body: { action: "accept" | "reject", receiverDrops?: string[] }
+ * receiverDrops is only needed when accepting a trade that was proposed
+ * without regard for the receiver's roster capacity — a trade CAN be
+ * proposed even if it would overflow the receiver, and it's only at this
+ * accept step that the receiver picks what to drop to make room (mirrors
+ * proposerDrops, which the proposer picks at propose time instead).
  */
 export async function PATCH(
   req: NextRequest,
@@ -34,7 +40,7 @@ export async function PATCH(
 
     const { leagueId, tradeId } = await params;
     const body = await req.json();
-    const { action } = body;
+    const { action, receiverDrops = [] } = body;
 
     if (action !== "accept" && action !== "reject") {
       return NextResponse.json(
@@ -96,7 +102,7 @@ export async function PATCH(
 
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { currentWeek: true, draftStatus: true, season: true },
+      select: { currentWeek: true, draftStatus: true, season: true, rosterConfig: true },
     });
     if (league?.draftStatus !== "completed") {
       return NextResponse.json(
@@ -148,6 +154,64 @@ export async function PATCH(
         );
       }
     }
+    for (const mleTeamId of receiverDrops as string[]) {
+      const lockedSlot = await findLockedSlotForTeam(trade.receiverTeamId, currentWeek, mleTeamId);
+      if (lockedSlot) {
+        return NextResponse.json(
+          { error: lockedTeamErrorMessage(lockedSlot.mleTeam) },
+          { status: 400 }
+        );
+      }
+    }
+
+    // A team the receiver picked to drop (to make room) has to actually be
+    // on their roster right now, and can't also be one of the teams they're
+    // already sending out in this same trade.
+    if ((receiverDrops as string[]).some((id) => trade.receiverGives.includes(id))) {
+      return NextResponse.json(
+        { error: "A team can't be both given away and dropped in the same trade" },
+        { status: 400 }
+      );
+    }
+    if ((receiverDrops as string[]).length > 0) {
+      const receiverRosterTeamIds = new Set(
+        (
+          await prisma.rosterSlot.findMany({
+            where: { fantasyTeamId: trade.receiverTeamId, week: currentWeek },
+            select: { mleTeamId: true },
+          })
+        ).map((s) => s.mleTeamId)
+      );
+      const notOnRoster = (receiverDrops as string[]).find((id) => !receiverRosterTeamIds.has(id));
+      if (notOnRoster) {
+        return NextResponse.json(
+          { error: "One of the teams selected to drop isn't on your roster" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // This trade may have been proposed without regard for whether it fits
+    // on the receiver's roster (see propose/route.ts) — accepting it is
+    // where that actually gets enforced. If receiverDrops don't make up the
+    // difference, tell the receiver how many more teams to pick instead of
+    // silently rejecting the whole trade.
+    const capacity = getRosterCapacity(league?.rosterConfig);
+    const receiverCount = await prisma.rosterSlot.count({
+      where: { fantasyTeamId: trade.receiverTeamId, week: currentWeek },
+    });
+    const receiverAfter =
+      receiverCount - trade.receiverGives.length - (receiverDrops as string[]).length + trade.proposerGives.length;
+    if (receiverAfter > capacity) {
+      const stillNeeded = receiverAfter - capacity;
+      return NextResponse.json(
+        {
+          error: `Accepting this trade would leave your roster with more teams than it has slots for. Select ${stillNeeded} more team${stillNeeded === 1 ? "" : "s"} to drop.`,
+          needsDropCount: receiverCount - trade.receiverGives.length + trade.proposerGives.length - capacity,
+        },
+        { status: 400 }
+      );
+    }
 
     // Action is "accept" - don't execute yet. Trades auto-process 12 hours
     // after acceptance unless an admin vetoes them in that window (see
@@ -158,6 +222,7 @@ export async function PATCH(
       data: {
         status: "awaiting_veto",
         acceptedAt,
+        receiverDrops: receiverDrops as string[],
       },
     });
 

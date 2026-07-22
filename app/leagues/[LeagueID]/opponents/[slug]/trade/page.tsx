@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
+import TeamModal from "@/components/TeamModal";
 
 interface RosterTeam {
   id: string;
@@ -52,6 +53,36 @@ export default function TradePage() {
   const [showDropModal, setShowDropModal] = useState(false);
   const [selectedDropTeamIndices, setSelectedDropTeamIndices] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [teamModalData, setTeamModalData] = useState<{
+    id: string;
+    name: string;
+    leagueId: string;
+    logoPath: string;
+    primaryColor: string;
+    secondaryColor: string;
+    status: string;
+    rosteredBy: { rosterName: string; managerName: string; fantasyTeamId: string };
+  } | null>(null);
+
+  const openTeamModal = (slot: any, side: "mine" | "opponent") => {
+    if (!slot?.mleTeam) return;
+    const roster = side === "mine" ? myRoster : opponentRoster;
+    if (!roster) return;
+    setTeamModalData({
+      id: slot.mleTeam.id,
+      name: slot.mleTeam.name,
+      leagueId: slot.mleTeam.leagueId,
+      logoPath: slot.mleTeam.logoPath,
+      primaryColor: slot.mleTeam.primaryColor,
+      secondaryColor: slot.mleTeam.secondaryColor,
+      status: "rostered",
+      rosteredBy: {
+        rosterName: roster.fantasyTeam.displayName,
+        managerName: roster.fantasyTeam.ownerDisplayName,
+        fantasyTeamId: roster.fantasyTeam.id,
+      },
+    });
+  };
 
   // Fetch roster data
   useEffect(() => {
@@ -246,6 +277,13 @@ export default function TradePage() {
 
   return (
     <>
+      <TeamModal
+        team={teamModalData}
+        fantasyLeagueId={leagueId}
+        currentUserFantasyTeamId={myRoster.fantasyTeam.id}
+        onClose={() => setTeamModalData(null)}
+      />
+
       {/* Confirmation Modal - "Are you sure?" */}
       {showConfirmModal && (
         <div
@@ -672,7 +710,14 @@ export default function TradePage() {
                   {team ? (
                     <>
                       <Image src={team.logo} alt={team.name} width={24} height={24} style={{ borderRadius: "4px" }} />
-                      <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{team.name}</div>
+                      <div
+                        onClick={() => openTeamModal(myRoster.rosterSlots[idx], "mine")}
+                        style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff", cursor: "pointer" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#ffffff")}
+                      >
+                        {team.name}
+                      </div>
                       <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
                       <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
                       <input
@@ -701,7 +746,14 @@ export default function TradePage() {
                   {oppTeam ? (
                     <>
                       <Image src={oppTeam.logo} alt={oppTeam.name} width={24} height={24} style={{ borderRadius: "4px" }} />
-                      <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff" }}>{oppTeam.name}</div>
+                      <div
+                        onClick={() => openTeamModal(opponentRoster.rosterSlots[idx], "opponent")}
+                        style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff", cursor: "pointer" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.7)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#ffffff")}
+                      >
+                        {oppTeam.name}
+                      </div>
                       <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{oppTeam.fpts.toFixed(1)}</div>
                       <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{oppTeam.record}</div>
                       <input
