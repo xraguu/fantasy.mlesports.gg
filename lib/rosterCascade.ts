@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { generateRosterSlotId } from "./id-generator";
 
 export const TOTAL_WEEKS = 10;
@@ -22,7 +23,7 @@ export const TOTAL_WEEKS = 10;
  * locked yet either.
  */
 export async function cascadeRosterForward(
-  tx: any,
+  tx: Prisma.TransactionClient,
   fantasyTeamId: string,
   fromWeek: number,
   finalSlots: Array<{ position: string; slotIndex: number; mleTeamId: string }>

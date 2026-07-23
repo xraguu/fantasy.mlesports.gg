@@ -4,20 +4,49 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 
+interface LockLineupSlot {
+  id: string;
+  position: string;
+  slotIndex: number;
+  isLocked: boolean;
+  mleTeam: { id: string; name: string; leagueId: string; logoPath: string } | null;
+}
+
+interface Lineup {
+  fantasyTeamId: string;
+  manager: string;
+  teamName: string;
+  league: string;
+  leagueId: string;
+  week: number;
+  slots: LockLineupSlot[];
+  locked: boolean;
+  partiallyLocked: boolean;
+  lockedCount: number;
+  totalSlots: number;
+  lastUpdated?: string;
+}
+
+interface LeagueOption {
+  id: string;
+  name: string;
+  currentWeek: number;
+}
+
 export default function LockLineupsPage() {
   const showAlert = useAlert();
   // null until we know the real current week — never guess/hardcode one,
   // since that's exactly what caused this page to silently show the wrong
   // week's (and therefore wrong lock state / wrong roster) data before.
   const [currentWeek, setCurrentWeek] = useState<number | null>(null);
-  const [lineups, setLineups] = useState<any[]>([]);
+  const [lineups, setLineups] = useState<Lineup[]>([]);
   const [filterLeague, setFilterLeague] = useState("all");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showRosterModal, setShowRosterModal] = useState(false);
-  const [selectedManager, setSelectedManager] = useState<any | null>(null);
-  const [managerRoster, setManagerRoster] = useState<any[]>([]);
+  const [selectedManager, setSelectedManager] = useState<Lineup | null>(null);
+  const [managerRoster, setManagerRoster] = useState<LockLineupSlot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [leagues, setLeagues] = useState<any[]>([]);
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
 
   // Fetch lineups when week or league filter changes
   useEffect(() => {
@@ -49,7 +78,7 @@ export default function LockLineupsPage() {
     };
 
     fetchLineups();
-  }, [currentWeek, filterLeague]);
+  }, [currentWeek, filterLeague, showAlert]);
 
   // Fetch all leagues (admin-scoped — NOT /api/leagues, which only returns
   // leagues the calling admin personally manages a team in, and would
@@ -113,7 +142,7 @@ export default function LockLineupsPage() {
     }
   };
 
-  const openRosterModal = (manager: any) => {
+  const openRosterModal = (manager: Lineup) => {
     setSelectedManager(manager);
     setManagerRoster(manager.slots || []);
     setShowRosterModal(true);
@@ -145,7 +174,7 @@ export default function LockLineupsPage() {
   const saveRosterLocks = async () => {
     if (currentWeek === null) return;
     try {
-      const originalSlots: any[] = selectedManager?.slots || [];
+      const originalSlots: LockLineupSlot[] = selectedManager?.slots || [];
       const toLock = managerRoster
         .filter((slot) => {
           const original = originalSlots.find((s) => s.id === slot.id);

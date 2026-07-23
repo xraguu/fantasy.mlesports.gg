@@ -80,15 +80,6 @@ interface MatchRow {
   scheduling_start_time: string; // For date calculation
 }
 
-interface RoundRow {
-  match_id: string;
-  round_id: string;
-  Home: string;
-  "Home Goals": string;
-  Away: string;
-  "Away Goals": string;
-}
-
 interface MatchGroupRow {
   match_group_id: string;
   start: string;
@@ -364,18 +355,8 @@ async function importRoleUsages() {
     return;
   }
 
-  let count = 0;
-  for (const roleUsage of roleUsages) {
-    // We need to find the player ID from team_name
-    // For now, skip if we can't determine the player
-    const role = roleUsage.gamemode === "doubles" ? "2s" : "3s";
-    const totalUses = parseInt(roleUsage.total_uses) || 0;
-
-    // TODO: Map team_name to actual player IDs
-    // This requires a lookup table or additional data
-    count++;
-  }
-
+  // TODO: Map team_name to actual player IDs — requires a lookup table or
+  // additional data, so this import is a no-op for now.
   console.log(`⚠️  Role usage import requires player ID mapping (skipped for now)`);
 }
 
@@ -423,7 +404,7 @@ async function importPlayerStats() {
         },
       });
       count++;
-    } catch (error) {
+    } catch {
       skipped++;
       if (skipped < 10) {
         console.warn(`⚠️  Skipped stat for player ${stat.member_id} in match ${stat.match_id}`);
@@ -508,7 +489,7 @@ async function importHistoricalStats() {
         },
       });
       count++;
-    } catch (error) {
+    } catch {
       skipped++;
       if (skipped < 10) {
         console.warn(`⚠️  Skipped historical stats for player ${stat.member_id}`);

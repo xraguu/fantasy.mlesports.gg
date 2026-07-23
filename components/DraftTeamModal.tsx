@@ -63,22 +63,28 @@ export default function DraftTeamModal({
     name: string;
   } | null>(null);
 
+  // Every fetch below only ever cares about the team's id, never any other
+  // field on it — depending on that id alone (rather than the whole `team`
+  // object) avoids refiring every one of these on a parent re-render that
+  // passes an equivalent-but-newly-constructed `team` object.
+  const teamId = team?.id;
+
   // Reset to the combined lens whenever a new team is opened, rather than
   // carrying over whatever lens was selected for the previously-viewed team.
   useEffect(() => {
     setStatsLens("combined");
-  }, [team?.id]);
+  }, [teamId]);
 
   // Fetch this team's last-completed-season stats when the team or the
   // selected 2s/3s/Both lens changes.
   useEffect(() => {
     const fetchHistoricalStats = async () => {
-      if (!team) return;
+      if (!teamId) return;
 
       try {
         setLoadingHistoricalStats(true);
         const response = await fetch(
-          `/api/mle-teams/${team.id}/historical-stats?mode=${statsLens}`
+          `/api/mle-teams/${teamId}/historical-stats?mode=${statsLens}`
         );
         if (!response.ok) {
           throw new Error("Failed to fetch team historical stats");
@@ -96,16 +102,16 @@ export default function DraftTeamModal({
     };
 
     fetchHistoricalStats();
-  }, [team?.id, statsLens]);
+  }, [teamId, statsLens]);
 
   // Fetch players when team changes
   useEffect(() => {
     const fetchPlayers = async () => {
-      if (!team) return;
+      if (!teamId) return;
 
       try {
         setLoadingPlayers(true);
-        const response = await fetch(`/api/teams/${team.id}/players`);
+        const response = await fetch(`/api/teams/${teamId}/players`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch players");
@@ -122,17 +128,16 @@ export default function DraftTeamModal({
     };
 
     fetchPlayers();
-  }, [team?.id]);
+  }, [teamId]);
 
   // Fetch staff when team changes
   useEffect(() => {
     const fetchStaff = async () => {
-      if (!team) return;
+      if (!teamId) return;
 
       try {
         setLoadingStaff(true);
-        console.log('Fetching staff for team:', team.id, team.name);
-        const response = await fetch(`/api/teams/${team.id}/staff`);
+        const response = await fetch(`/api/teams/${teamId}/staff`);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -141,7 +146,6 @@ export default function DraftTeamModal({
         }
 
         const data = await response.json();
-        console.log('Staff data received:', data);
         setStaff(data.staff || {
           franchiseManager: null,
           generalManager: null,
@@ -160,7 +164,7 @@ export default function DraftTeamModal({
     };
 
     fetchStaff();
-  }, [team?.id]);
+  }, [teamId]);
 
   if (!team) return null;
 

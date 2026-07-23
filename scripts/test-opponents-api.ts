@@ -27,7 +27,7 @@ async function testOpponentsAPI() {
   console.log(`Roster Config:`, league.rosterConfig);
 
   // Parse roster config
-  const rosterConfig = league.rosterConfig as any;
+  const rosterConfig = league.rosterConfig as Record<string, number>;
   const expectedSlots = [
     ...Array(rosterConfig["2s"] || 0).fill("2s"),
     ...Array(rosterConfig["3s"] || 0).fill("3s"),

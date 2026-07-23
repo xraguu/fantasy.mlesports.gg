@@ -5,7 +5,7 @@ import { tradeVetoDeadline } from "@/lib/tradeExecution";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
 import { isWeekLocked } from "@/lib/autoLock";
-import { getRosterCapacity } from "@/lib/rosterSlotAssignment";
+import { getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 /**
  * PATCH /api/leagues/[leagueId]/trades/[tradeId]
@@ -196,7 +196,7 @@ export async function PATCH(
     // where that actually gets enforced. If receiverDrops don't make up the
     // difference, tell the receiver how many more teams to pick instead of
     // silently rejecting the whole trade.
-    const capacity = getRosterCapacity(league?.rosterConfig);
+    const capacity = getRosterCapacity(league?.rosterConfig as RosterConfigShape);
     const receiverCount = await prisma.rosterSlot.count({
       where: { fantasyTeamId: trade.receiverTeamId, week: currentWeek },
     });

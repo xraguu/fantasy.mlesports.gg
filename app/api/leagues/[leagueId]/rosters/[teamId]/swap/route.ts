@@ -47,7 +47,7 @@ export async function POST(
 
     if (!week || !dropMleTeamId || !addMleTeamId) {
       return NextResponse.json(
-        { error: "week, dropMleTeamId, and addMleTeamId are required" },
+        { error: "Week, dropMleTeamId, and addMleTeamId are required" },
         { status: 400 }
       );
     }

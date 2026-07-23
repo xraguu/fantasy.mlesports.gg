@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -31,7 +32,7 @@ export async function GET(
     const weekParam = searchParams.get("week");
 
     // Build query
-    const where: any = { fantasyLeagueId: leagueId };
+    const where: Prisma.MatchupWhereInput = { fantasyLeagueId: leagueId };
     if (weekParam) {
       const week = parseInt(weekParam);
       if (!isNaN(week)) {

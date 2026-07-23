@@ -8,14 +8,6 @@ import { LEAGUE_COLORS } from "@/lib/teams";
 import { isAdminViewingLeague } from "@/lib/adminLeagueView";
 import TeamModal from "@/components/TeamModal";
 
-// Helper function to get fantasy rank color
-const getFantasyRankColor = (rank: number): string => {
-  if (rank >= 1 && rank <= 12) return "#ef4444"; // red
-  if (rank >= 13 && rank <= 24) return "#9ca3af"; // gray
-  if (rank >= 25 && rank <= 32) return "#22c55e"; // green
-  return "#9ca3af"; // default gray
-};
-
 type MLETeam = {
   id: string;
   name: string;

@@ -23,6 +23,13 @@ type FantasyTeamData = {
   isYou: boolean;
 };
 
+type StandingEntry = {
+  fantasyTeamId: string;
+  team: string;
+  manager: string;
+  isYou: boolean;
+};
+
 export default function SchedulePage() {
   const params = useParams();
   const router = useRouter();
@@ -43,7 +50,7 @@ export default function SchedulePage() {
         if (!response.ok) throw new Error("Failed to fetch teams");
 
         const data = await response.json();
-        const teamsData = data.standings.map((standing: any) => ({
+        const teamsData = data.standings.map((standing: StandingEntry) => ({
           id: standing.fantasyTeamId,
           displayName: standing.team,
           manager: standing.manager,
@@ -51,9 +58,9 @@ export default function SchedulePage() {
         }));
 
         setTeams(teamsData);
-        if (teamsData.length > 0 && !activeTeamId) {
+        if (teamsData.length > 0) {
           const own = teamsData.find((t: FantasyTeamData) => t.isYou);
-          setActiveTeamId(own ? own.id : teamsData[0].id);
+          setActiveTeamId((prev) => prev ?? (own ? own.id : teamsData[0].id));
         }
       } catch (err) {
         console.error("Error fetching teams:", err);

@@ -145,11 +145,29 @@ export async function GET(
           be: number;
         };
 
+        interface ScoreboardSlot {
+          id: string;
+          position: string;
+          slotIndex: number;
+          fantasyPoints: number;
+          played: boolean;
+          isLocked: boolean;
+          mleTeam: {
+            id: string;
+            name: string;
+            leagueId: string;
+            slug: string;
+            logoPath: string;
+            primaryColor: string;
+            secondaryColor: string;
+          } | null;
+        }
+
         const fillRosterSlots = (
           roster: typeof homeRoster,
           teamId: string
         ) => {
-          const slots: any[] = [];
+          const slots: ScoreboardSlot[] = [];
           const positions = [
             ...Array(rosterConfig["2s"]).fill("2s"),
             ...Array(rosterConfig["3s"]).fill("3s"),

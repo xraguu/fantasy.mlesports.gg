@@ -157,7 +157,7 @@ export default function TeamPortalPage() {
         if (response.ok) {
           const data = await response.json();
           const myTeam = data.league?.fantasyTeams?.find(
-            (team: any) => team.ownerUserId === session.user.id
+            (team: { id: string; ownerUserId: string }) => team.ownerUserId === session.user.id
           );
           if (myTeam) {
             setMyTeamId(myTeam.id);
@@ -233,7 +233,7 @@ export default function TeamPortalPage() {
               const rosterResponse = await fetch(`/api/leagues/${leagueId}/rosters/${fantasyTeam.id}?week=${currentWeekForRosterLookup}`);
               if (rosterResponse.ok) {
                 const rosterData = await rosterResponse.json();
-                rosterData.rosterSlots.forEach((slot: any) => {
+                rosterData.rosterSlots.forEach((slot: { mleTeam: { id: string } | null }) => {
                   if (slot.mleTeam) {
                     rosteredByMap.set(slot.mleTeam.id, {
                       rosterName: fantasyTeam.displayName,
@@ -258,7 +258,7 @@ export default function TeamPortalPage() {
         if (waiverResponse.ok) {
           const waiverData = await waiverResponse.json();
           if (waiverData.waiverClaims) {
-            waiverData.waiverClaims.forEach((claim: any) => {
+            waiverData.waiverClaims.forEach((claim: { status: string; addTeamId: string }) => {
               if (claim.status === "pending") {
                 waiverTeamIds.add(claim.addTeamId);
               }
@@ -802,7 +802,7 @@ export default function TeamPortalPage() {
                       }}
                     >
                       This team is on waivers, so this becomes a pending claim instead of an
-                      instant add — you can pick a team to drop now (even a locked one; that's
+                      instant add — you can pick a team to drop now (even a locked one; that&apos;s
                       only checked once the claim actually processes), or leave it blank if you
                       have an empty slot.
                     </div>
@@ -822,7 +822,7 @@ export default function TeamPortalPage() {
                           fontSize: "0.85rem",
                         }}
                       >
-                        Every team on your roster is currently locked — you can't drop any of
+                        Every team on your roster is currently locked — you can&apos;t drop any of
                         them to make room for this free agent until at least one unlocks.
                       </div>
                     )}
@@ -1256,7 +1256,13 @@ export default function TeamPortalPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedData.map((team, index) => (
+              {loadingTeams ? (
+                <tr>
+                  <td colSpan={13} style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>
+                    Loading teams...
+                  </td>
+                </tr>
+              ) : sortedData.map((team, index) => (
                 <tr
                   key={team.id}
                   style={{

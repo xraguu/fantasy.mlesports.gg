@@ -77,6 +77,7 @@ export async function GET(
         proposerGives: true,
         receiverGives: true,
         proposerDrops: true,
+        receiverDrops: true,
       },
     });
     const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
@@ -103,6 +104,7 @@ export async function GET(
       t.proposerGives.forEach((id) => mleTeamIds.add(id));
       t.receiverGives.forEach((id) => mleTeamIds.add(id));
       t.proposerDrops.forEach((id) => mleTeamIds.add(id));
+      t.receiverDrops.forEach((id) => mleTeamIds.add(id));
     });
 
     const mleTeams = await prisma.mLETeam.findMany({
@@ -178,6 +180,7 @@ export async function GET(
           proposerGivesTeams: trade ? resolveTeams(trade.proposerGives) : [],
           receiverGivesTeams: trade ? resolveTeams(trade.receiverGives) : [],
           proposerDropsTeams: trade ? resolveTeams(trade.proposerDrops) : [],
+          receiverDropsTeams: trade ? resolveTeams(trade.receiverDrops) : [],
           status: transaction.status === "approved" ? "Accepted" : "Denied",
           timestamp: transaction.processedAt,
         };

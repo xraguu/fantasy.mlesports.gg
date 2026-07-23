@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateRosterSlotId } from "@/lib/id-generator";
+import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 /**
  * POST /api/leagues/[leagueId]/draft/admin
@@ -64,7 +65,7 @@ export async function POST(
 
     switch (action) {
       case "start": {
-        const draftStatus = (league as any).draftStatus || "not_started";
+        const draftStatus = league.draftStatus || "not_started";
         if (draftStatus === "in_progress" || draftStatus === "completed") {
           return NextResponse.json(
             { error: "Draft has already started or is completed" },
@@ -77,7 +78,7 @@ export async function POST(
         if (existingPicks === 0) {
           // Generate draft order based on draftType
           const totalTeams = league.fantasyTeams.length;
-          const rosterConfig = league.rosterConfig as any;
+          const rosterConfig = league.rosterConfig as RosterConfigShape;
           const totalSlots =
             (rosterConfig?.["2s"] || 0) +
             (rosterConfig?.["3s"] || 0) +
@@ -116,7 +117,6 @@ export async function POST(
         await prisma.fantasyLeague.update({
           where: { id: leagueId },
           data: {
-            // @ts-ignore - custom fields
             draftStatus: "in_progress",
             draftPickTimeSeconds: timePerPick,
             draftPickDeadline: firstDeadline,
@@ -132,7 +132,7 @@ export async function POST(
       }
 
       case "pause": {
-        const draftStatus = (league as any).draftStatus;
+        const draftStatus = league.draftStatus;
         if (draftStatus !== "in_progress") {
           return NextResponse.json(
             { error: "Draft is not in progress" },
@@ -143,7 +143,6 @@ export async function POST(
         await prisma.fantasyLeague.update({
           where: { id: leagueId },
           data: {
-            // @ts-ignore - custom fields
             draftStatus: "paused",
           },
         });
@@ -155,7 +154,7 @@ export async function POST(
       }
 
       case "resume": {
-        const draftStatus = (league as any).draftStatus;
+        const draftStatus = league.draftStatus;
         if (draftStatus !== "paused") {
           return NextResponse.json(
             { error: "Draft is not paused" },
@@ -164,13 +163,12 @@ export async function POST(
         }
 
         // Reset deadline for current pick
-        const pickTimeSeconds = (league as any).draftPickTimeSeconds || 90;
+        const pickTimeSeconds = league.draftPickTimeSeconds || 90;
         const newDeadline = new Date(Date.now() + pickTimeSeconds * 1000);
 
         await prisma.fantasyLeague.update({
           where: { id: leagueId },
           data: {
-            // @ts-ignore - custom fields
             draftStatus: "in_progress",
             draftPickDeadline: newDeadline,
           },
@@ -236,7 +234,7 @@ export async function POST(
         });
 
         // Add to roster
-        const rosterConfig = league.rosterConfig as any;
+        const rosterConfig = league.rosterConfig as RosterConfigShape;
         const benchSlots = rosterConfig?.be || 3;
 
         const existingRosterSlots = await prisma.rosterSlot.findMany({

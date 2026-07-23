@@ -26,7 +26,7 @@ async function main() {
     console.log(`  Old config: ${JSON.stringify(league.rosterConfig)}`);
 
     const newConfig = {
-      ...(league.rosterConfig as any),
+      ...(league.rosterConfig as Record<string, unknown>),
       be: 8, // Temporarily set bench to 8 to show all drafted teams
     };
 

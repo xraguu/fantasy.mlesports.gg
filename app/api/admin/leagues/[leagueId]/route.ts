@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
@@ -96,7 +97,7 @@ export async function PATCH(
     }
 
     // Prepare update data
-    const updateData: any = {};
+    const updateData: Prisma.FantasyLeagueUpdateInput = {};
 
     if (name) updateData.name = name;
     if (currentWeek !== undefined) updateData.currentWeek = parseInt(currentWeek);

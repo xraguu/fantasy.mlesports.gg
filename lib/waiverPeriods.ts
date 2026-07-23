@@ -1,4 +1,7 @@
+import type { PrismaClient, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+type PrismaOrTx = PrismaClient | Prisma.TransactionClient;
 
 /**
  * Tracks MLE teams that are in the post-drop waiver clearance window (see
@@ -29,7 +32,7 @@ import { prisma } from "@/lib/prisma";
 export async function markTeamDroppedForWaivers(
   fantasyLeagueId: string,
   mleTeamId: string,
-  client: any = prisma
+  client: PrismaOrTx = prisma
 ): Promise<void> {
   await client.teamWaiverPeriod.upsert({
     where: { fantasyLeagueId_mleTeamId: { fantasyLeagueId, mleTeamId } },
@@ -41,7 +44,7 @@ export async function markTeamDroppedForWaivers(
 export async function clearWaiverPeriod(
   fantasyLeagueId: string,
   mleTeamId: string,
-  client: any = prisma
+  client: PrismaOrTx = prisma
 ): Promise<void> {
   await client.teamWaiverPeriod.deleteMany({
     where: { fantasyLeagueId, mleTeamId },

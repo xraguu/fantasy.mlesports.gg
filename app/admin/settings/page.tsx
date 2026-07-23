@@ -92,7 +92,7 @@ export default function SettingsPage() {
     loadSettings();
   }, []);
 
-  const updateScoringSetting = (key: string, value: number | any) => {
+  const updateScoringSetting = (key: string, value: number) => {
     setSettings((prev) => ({
       ...prev,
       scoring: {

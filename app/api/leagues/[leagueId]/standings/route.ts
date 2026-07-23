@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { TeamWeeklyStats } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getFantasyStandings, getDoubleWinResultsByTeam, compareStandings } from "@/lib/standings";
@@ -120,7 +121,7 @@ export async function GET(
         });
 
         // Calculate fantasy points for each MLE team
-        const calculateFantasyPoints = (stats: any) => {
+        const calculateFantasyPoints = (stats: TeamWeeklyStats) => {
           return (
             stats.goals * 2 +
             stats.shots * 0.1 +

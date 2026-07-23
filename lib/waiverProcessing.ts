@@ -1,8 +1,9 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "./rosterLocks";
 import { markTeamDroppedForWaivers, clearWaiverPeriod } from "./waiverPeriods";
 import { moveTeamToBackOfWaiverLine } from "./waiverPriority";
-import { assignTeamToRosterSlot } from "./rosterSlotAssignment";
+import { assignTeamToRosterSlot, type RosterConfigShape } from "./rosterSlotAssignment";
 import { etDateTime } from "./timezone";
 
 export interface ProcessWaiversResult {
@@ -16,7 +17,7 @@ export interface ProcessWaiversResult {
 export type ClaimWithTeam = Awaited<ReturnType<typeof fetchPendingClaims>>[number];
 
 export async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: string }) {
-  const whereClause: any = { status: "pending" };
+  const whereClause: Prisma.WaiverClaimWhereInput = { status: "pending" };
   if (filter.claimIds) {
     whereClause.id = { in: filter.claimIds };
   } else if (filter.leagueId) {
@@ -148,7 +149,7 @@ async function executeClaim(claim: ClaimWithTeam): Promise<boolean> {
         week,
         mleTeamId: claim.addTeamId,
         dropTeamId: claim.dropTeamId,
-        rosterConfig: claim.fantasyTeam.league.rosterConfig,
+        rosterConfig: claim.fantasyTeam.league.rosterConfig as RosterConfigShape,
         season: claim.fantasyTeam.league.season,
       });
 

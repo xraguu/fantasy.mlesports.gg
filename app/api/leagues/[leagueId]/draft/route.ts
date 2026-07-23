@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { runDraftAutopickSweep } from "@/lib/draftAutopick";
 import { getTeamHistoricalStats, resolveDraftStatsSeason, HistoricalLens } from "@/lib/teamHistoricalStats";
 import { generateDraftPickOrder } from "@/lib/draftPickOrder";
+import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 /**
  * GET /api/leagues/[leagueId]/draft
@@ -78,12 +79,12 @@ export async function GET(
     let picksSource = league.draftPicks;
     const isPreview = picksSource.length === 0 && league.fantasyTeams.length > 0;
     if (isPreview) {
-      const rosterConfig = league.rosterConfig as any;
+      const rosterConfig = league.rosterConfig as RosterConfigShape;
       const numRounds =
-        (rosterConfig["2s"] || 0) +
-        (rosterConfig["3s"] || 0) +
-        (rosterConfig["flx"] || 0) +
-        (rosterConfig["be"] || 0);
+        (rosterConfig?.["2s"] || 0) +
+        (rosterConfig?.["3s"] || 0) +
+        (rosterConfig?.flx || 0) +
+        (rosterConfig?.be || 0);
       picksSource = generateDraftPickOrder(league.fantasyTeams, league.draftType, numRounds).map(
         (entry) => ({
           id: `preview-${entry.overallPick}`,

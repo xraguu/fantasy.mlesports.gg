@@ -1,8 +1,18 @@
+import type { Prisma, RosterSlot } from "@prisma/client";
 import { generateRosterSlotId } from "./id-generator";
 import { isWeekLocked } from "./autoLock";
 
+/** Shape of FantasyLeague.rosterConfig (a Json column) actually read anywhere
+ *  it's used — slot counts per position. */
+export type RosterConfigShape = {
+  "2s"?: number;
+  "3s"?: number;
+  flx?: number;
+  be?: number;
+} | null | undefined;
+
 /** Total roster slots a league's config allows, across every position. */
-export function getRosterCapacity(rosterConfig: any): number {
+export function getRosterCapacity(rosterConfig: RosterConfigShape): number {
   return (
     (rosterConfig?.["2s"] || 0) +
     (rosterConfig?.["3s"] || 0) +
@@ -32,13 +42,13 @@ export function getRosterCapacity(rosterConfig: any): number {
  * prevent. Bench never locks, so the search always has somewhere to land.
  */
 export async function assignTeamToRosterSlot(
-  tx: any,
+  tx: Prisma.TransactionClient,
   params: {
     fantasyTeamId: string;
     week: number;
     mleTeamId: string;
     dropTeamId?: string | null;
-    rosterConfig: any;
+    rosterConfig: RosterConfigShape;
     season: number;
   }
 ): Promise<void> {
@@ -70,7 +80,7 @@ export async function assignTeamToRosterSlot(
   const existingSlots = await tx.rosterSlot.findMany({
     where: { fantasyTeamId, week },
   });
-  const filled = new Set(existingSlots.map((s: any) => `${s.position}-${s.slotIndex}`));
+  const filled = new Set(existingSlots.map((s: RosterSlot) => `${s.position}-${s.slotIndex}`));
   const activeSlotsLocked = await isWeekLocked(season, week);
 
   const perPositionIndex = new Map<string, number>();
@@ -97,7 +107,7 @@ export async function assignTeamToRosterSlot(
   // Roster is fully saturated per its configured shape (shouldn't happen if
   // capacity is enforced before this is called) — defensive fallback: an
   // extra bench slot rather than silently dropping the pickup.
-  const bench = existingSlots.filter((s: any) => s.position === "be").length;
+  const bench = existingSlots.filter((s: RosterSlot) => s.position === "be").length;
   await tx.rosterSlot.create({
     data: {
       id: generateRosterSlotId(fantasyTeamId, week, "be", bench),

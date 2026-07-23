@@ -6,7 +6,7 @@ import { logAdminActivity } from "@/lib/adminActivity";
 import { getCurrentSeason } from "@/lib/currentWeek";
 
 // GET /api/admin/leagues - List all fantasy leagues (admin only)
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
     if (!session?.user || session.user.role !== "admin") {
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!name || !season) {
       return NextResponse.json(
-        { error: "name and season are required" },
+        { error: "Name and season are required" },
         { status: 400 }
       );
     }

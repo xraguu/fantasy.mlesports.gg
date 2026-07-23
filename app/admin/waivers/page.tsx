@@ -33,12 +33,93 @@ const HISTORY_TYPE_OPTIONS: { value: string; label: string }[] = [
 // only distinguishes "this actually took effect" from "this didn't."
 const statusBucket = (status: string) => (status === "approved" ? "approved" : "cancelled");
 
+interface MleTeamSummary {
+  id: string;
+  name: string;
+  leagueId: string;
+  slug: string;
+  logoPath: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
+interface WaiverClaim {
+  id: string;
+  priority: number;
+  manager: string;
+  teamName: string;
+  fantasyLeague: string;
+  fantasyLeagueName: string;
+  addTeam: MleTeamSummary | null;
+  dropTeam: MleTeamSummary | null;
+  faabBid: number | null;
+  status: string;
+  submitted: string;
+}
+
+interface PendingTrade {
+  id: string;
+  fantasyLeague: string;
+  fantasyLeagueName: string;
+  proposer: string;
+  proposerTeam: string;
+  receiver: string;
+  receiverTeam: string;
+  proposerGivesTeams: MleTeamSummary[];
+  receiverGivesTeams: MleTeamSummary[];
+  proposerDropsTeams: MleTeamSummary[];
+  receiverDropsTeams: MleTeamSummary[];
+  status: string;
+  submitted: string;
+  acceptedAt: string | null;
+  vetoDeadline: string | null;
+}
+
+interface NonTradeHistoryEntry {
+  id: string;
+  type: "waiver" | "pickup" | "drop";
+  fantasyLeague: string;
+  fantasyLeagueName: string;
+  manager: string;
+  teamName: string;
+  addTeam: MleTeamSummary | null;
+  dropTeam: MleTeamSummary | null;
+  status: string;
+  processed: string | null;
+  reason: string | null;
+}
+
+interface TradeHistoryEntry {
+  id: string;
+  type: "trade";
+  fantasyLeague: string;
+  fantasyLeagueName: string;
+  proposer: string;
+  proposerTeam: string;
+  receiver: string;
+  receiverTeam: string;
+  proposerGivesTeams: MleTeamSummary[];
+  receiverGivesTeams: MleTeamSummary[];
+  proposerDropsTeams: MleTeamSummary[];
+  receiverDropsTeams: MleTeamSummary[];
+  status: string;
+  processed: string | null;
+  reason: string | null;
+}
+
+type HistoryEntry = NonTradeHistoryEntry | TradeHistoryEntry;
+
+interface LeagueOption {
+  id: string;
+  name: string;
+}
+
 export default function TransactionsPage() {
   const showAlert = useAlert();
-  const [claims, setClaims] = useState<any[]>([]);
-  const [pendingTrades, setPendingTrades] = useState<any[]>([]);
-  const [transactionHistory, setTransactionHistory] = useState<any[]>([]);
-  const [leagues, setLeagues] = useState<any[]>([]);
+  const [claims, setClaims] = useState<WaiverClaim[]>([]);
+  const [pendingTrades, setPendingTrades] = useState<PendingTrade[]>([]);
+  const [transactionHistory, setTransactionHistory] = useState<HistoryEntry[]>([]);
+  const [leagues, setLeagues] = useState<LeagueOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -80,7 +161,7 @@ export default function TransactionsPage() {
         setClaims(data.pendingWaivers || []);
         setPendingTrades(data.pendingTrades || []);
         setTransactionHistory(data.transactionHistory || []);
-        setSelectedLeagues((data.leagues || []).map((l: any) => l.id));
+        setSelectedLeagues((data.leagues || []).map((l: LeagueOption) => l.id));
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load data");
@@ -156,39 +237,6 @@ export default function TransactionsPage() {
     }
   };
 
-  // Waiver claims are resolved automatically (priority/FAAB bid, run on the
-  // league's scheduled waiver day) — there's no admin "approve" or "deny"
-  // judgment call to make. This just forces that same automatic resolution
-  // to run right now for one specific claim instead of waiting for the
-  // schedule, e.g. to unblock a manager. If the claimed team already got
-  // taken by a higher-priority claim, processing naturally resolves it as
-  // lost — there's no separate "deny" action distinct from this.
-  const processClaimNow = async (id: string) => {
-    try {
-      const response = await fetch("/api/admin/waivers/process", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ claimIds: [id] }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to process waiver claim");
-      }
-
-      // Refresh data
-      const dataResponse = await fetch("/api/admin/transactions");
-      const data = await dataResponse.json();
-      setClaims(data.pendingWaivers || []);
-      setTransactionHistory(data.transactionHistory || []);
-
-      showAlert("Waiver claim processed!", "success");
-    } catch (error) {
-      console.error("Error processing waiver claim:", error);
-      showAlert("Failed to process waiver claim. Please try again.", "error");
-    }
-  };
 
   // Trade processing functions
   const vetoTrade = async (id: string) => {
@@ -211,7 +259,7 @@ export default function TransactionsPage() {
       } else {
         showAlert("Trade vetoed!", "success");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error vetoing trade:", error);
       showAlert("Failed to veto trade. Please try again.", "error");
     } finally {
@@ -249,7 +297,7 @@ export default function TransactionsPage() {
       } else {
         showAlert("Trade processed!", "success");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error processing trade:", error);
       showAlert("Failed to process trade. Please try again.", "error");
     } finally {
@@ -641,17 +689,6 @@ export default function TransactionsPage() {
                   >
                     Submitted
                   </th>
-                  <th
-                    style={{
-                      padding: "0.75rem 0.5rem",
-                      textAlign: "right",
-                      fontSize: "0.85rem",
-                      color: "var(--text-muted)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Actions
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -759,32 +796,6 @@ export default function TransactionsPage() {
                       }}
                     >
                       {new Date(claim.submitted).toLocaleString()}
-                    </td>
-                    <td
-                      style={{
-                        padding: "0.75rem 0.5rem",
-                        textAlign: "right",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "0.5rem",
-                          justifyContent: "flex-end",
-                        }}
-                      >
-                        <button
-                          className="btn btn-primary"
-                          style={{
-                            padding: "0.4rem 1rem",
-                            fontSize: "0.85rem",
-                          }}
-                          onClick={() => processClaimNow(claim.id)}
-                          title="Run this claim's normal automatic resolution now instead of waiting for the scheduled waiver day"
-                        >
-                          Process Now
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 ))}
@@ -940,7 +951,7 @@ export default function TransactionsPage() {
                       >
                         {trade.proposerTeam} Gives
                       </div>
-                      {trade.proposerGivesTeams.map((team: any, idx: number) => (
+                      {trade.proposerGivesTeams.map((team: MleTeamSummary, idx: number) => (
                         <div
                           key={idx}
                           style={{
@@ -975,7 +986,7 @@ export default function TransactionsPage() {
                           >
                             Dropping (to make room):
                           </div>
-                          {trade.proposerDropsTeams.map((team: any, idx: number) => (
+                          {trade.proposerDropsTeams.map((team: MleTeamSummary, idx: number) => (
                             <div
                               key={`drop-${idx}`}
                               style={{
@@ -1020,7 +1031,7 @@ export default function TransactionsPage() {
                       >
                         {trade.receiverTeam} Gives
                       </div>
-                      {trade.receiverGivesTeams.map((team: any, idx: number) => (
+                      {trade.receiverGivesTeams.map((team: MleTeamSummary, idx: number) => (
                         <div
                           key={idx}
                           style={{
@@ -1042,6 +1053,44 @@ export default function TransactionsPage() {
                           </span>
                         </div>
                       ))}
+
+                      {(trade.receiverDropsTeams ?? []).length > 0 && (
+                        <>
+                          <div
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "rgba(255,255,255,0.5)",
+                              marginTop: "0.75rem",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            Dropping (to make room):
+                          </div>
+                          {trade.receiverDropsTeams.map((team: MleTeamSummary, idx: number) => (
+                            <div
+                              key={`drop-${idx}`}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              <span style={{ fontSize: "1rem", color: "#ef4444", fontWeight: 700 }}>−</span>
+                              <Image
+                                src={team.logoPath}
+                                alt={team.name}
+                                width={28}
+                                height={28}
+                                style={{ borderRadius: "4px", opacity: 0.7 }}
+                              />
+                              <span style={{ fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>
+                                {team.leagueId} {team.name}
+                              </span>
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1250,7 +1299,7 @@ export default function TransactionsPage() {
                           {transaction.proposerTeam} received
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                          {(transaction.receiverGivesTeams || []).map((team: any) => (
+                          {(transaction.receiverGivesTeams || []).map((team: MleTeamSummary) => (
                             <div key={`prop-recv-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                               <span style={{ fontSize: "0.9rem", color: "#22c55e", fontWeight: 700 }}>+</span>
                               <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px" }} />
@@ -1262,11 +1311,9 @@ export default function TransactionsPage() {
                         </div>
                         {(transaction.proposerDropsTeams ?? []).length > 0 && (
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
-                            {transaction.proposerDropsTeams.map((team: any) => (
+                            {transaction.proposerDropsTeams.map((team: MleTeamSummary) => (
                               <div key={`prop-drop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                <span style={{ fontSize: "0.7rem", color: "#ef4444", fontWeight: 700, textTransform: "uppercase" }}>
-                                  Dropped
-                                </span>
+                                <span style={{ fontSize: "0.9rem", color: "#ef4444", fontWeight: 700 }}>−</span>
                                 <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px", opacity: 0.7 }} />
                                 <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>
                                   {team.leagueId} {team.name}
@@ -1289,7 +1336,7 @@ export default function TransactionsPage() {
                           {transaction.receiverTeam} received
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                          {(transaction.proposerGivesTeams || []).map((team: any) => (
+                          {(transaction.proposerGivesTeams || []).map((team: MleTeamSummary) => (
                             <div key={`recv-recv-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                               <span style={{ fontSize: "0.9rem", color: "#22c55e", fontWeight: 700 }}>+</span>
                               <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px" }} />
@@ -1299,6 +1346,19 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.receiverDropsTeams ?? []).length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
+                            {transaction.receiverDropsTeams.map((team: MleTeamSummary) => (
+                              <div key={`recv-drop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span style={{ fontSize: "0.9rem", color: "#ef4444", fontWeight: 700 }}>−</span>
+                                <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px", opacity: 0.7 }} />
+                                <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)" }}>
+                                  {team.leagueId} {team.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (

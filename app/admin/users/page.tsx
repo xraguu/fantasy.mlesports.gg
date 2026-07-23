@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 
 interface User {
@@ -23,12 +24,7 @@ export default function ManageUsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
-  // Fetch users from API
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/users");
       if (!response.ok) throw new Error("Failed to fetch users");
@@ -40,7 +36,12 @@ export default function ManageUsersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showAlert]);
+
+  // Fetch users from API
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
@@ -505,12 +506,12 @@ export default function ManageUsersPage() {
                   <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                       {user.avatarUrl && (
-                        <img
+                        <Image
                           src={user.avatarUrl}
                           alt={user.displayName}
+                          width={32}
+                          height={32}
                           style={{
-                            width: "32px",
-                            height: "32px",
                             borderRadius: "50%",
                           }}
                         />

@@ -124,12 +124,12 @@ export async function POST(
 
     if (!week || !action || !position || slotIndex === undefined) {
       return NextResponse.json(
-        { error: "week, action, position, and slotIndex are required" },
+        { error: "Week, action, position, and slotIndex are required" },
         { status: 400 }
       );
     }
     if (action !== "add" && action !== "drop") {
-      return NextResponse.json({ error: "action must be 'add' or 'drop'" }, { status: 400 });
+      return NextResponse.json({ error: "Action must be 'add' or 'drop'" }, { status: 400 });
     }
 
     const team = await prisma.fantasyTeam.findUnique({ where: { id: teamId } });

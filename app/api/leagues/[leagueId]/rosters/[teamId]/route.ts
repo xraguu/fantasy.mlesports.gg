@@ -183,7 +183,7 @@ export async function GET(
       orderBy: [{ position: "asc" }, { slotIndex: "asc" }],
     });
 
-    let enrichedSlots: any[] = [];
+    let enrichedSlots: unknown[] = [];
 
     if (rosterSlots.length > 0) {
       // Real MLE opponent this week, via the Match schedule + week date range
@@ -485,7 +485,7 @@ export async function POST(
     }
 
     // Validate position and slotIndex against rosterConfig
-    const rosterConfig = fantasyTeam.league.rosterConfig as any;
+    const rosterConfig = fantasyTeam.league.rosterConfig as Record<string, number | undefined>;
     const positionKey = position.toLowerCase();
     const maxSlots = rosterConfig[positionKey];
 
@@ -687,7 +687,7 @@ export async function PATCH(
     }
 
     // Validate new position
-    const rosterConfig = rosterSlot.fantasyTeam.league.rosterConfig as any;
+    const rosterConfig = rosterSlot.fantasyTeam.league.rosterConfig as Record<string, number | undefined>;
     const positionKey = newPosition.toLowerCase();
     const maxSlots = rosterConfig[positionKey];
 

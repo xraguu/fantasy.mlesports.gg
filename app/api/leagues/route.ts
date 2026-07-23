@@ -5,7 +5,7 @@ import { generateFantasyLeagueId } from "@/lib/id-generator";
 import { getCurrentSeason } from "@/lib/currentWeek";
 
 // GET /api/leagues - List leagues user has access to
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const session = await auth();
 

@@ -27,7 +27,7 @@ export async function POST(
 
     if (!Array.isArray(teams) || teams.length === 0) {
       return NextResponse.json(
-        { error: "teams must be a non-empty array" },
+        { error: "Teams must be a non-empty array" },
         { status: 400 }
       );
     }

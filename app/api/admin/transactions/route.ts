@@ -162,6 +162,7 @@ export async function GET(req: NextRequest) {
         proposerGives: true,
         receiverGives: true,
         proposerDrops: true,
+        receiverDrops: true,
       },
     });
     const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
@@ -177,6 +178,7 @@ export async function GET(req: NextRequest) {
       t.proposerGives.forEach((id) => mleTeamIds.add(id));
       t.receiverGives.forEach((id) => mleTeamIds.add(id));
       t.proposerDrops.forEach((id) => mleTeamIds.add(id));
+      t.receiverDrops.forEach((id) => mleTeamIds.add(id));
     });
     transactionHistory.forEach((tx) => {
       if (tx.addTeamId) mleTeamIds.add(tx.addTeamId);
@@ -187,6 +189,7 @@ export async function GET(req: NextRequest) {
       t.proposerGives.forEach((id) => mleTeamIds.add(id));
       t.receiverGives.forEach((id) => mleTeamIds.add(id));
       t.proposerDrops.forEach((id) => mleTeamIds.add(id));
+      t.receiverDrops.forEach((id) => mleTeamIds.add(id));
     });
 
     const mleTeams = await prisma.mLETeam.findMany({
@@ -249,6 +252,9 @@ export async function GET(req: NextRequest) {
       proposerDropsTeams: trade.proposerDrops
         .map((id) => mleTeamMap.get(id))
         .filter((t): t is NonNullable<typeof t> => Boolean(t)),
+      receiverDropsTeams: trade.receiverDrops
+        .map((id) => mleTeamMap.get(id))
+        .filter((t): t is NonNullable<typeof t> => Boolean(t)),
       status: trade.status,
       submitted: trade.createdAt,
       acceptedAt: trade.acceptedAt,
@@ -305,6 +311,9 @@ export async function GET(req: NextRequest) {
             : [],
           proposerDropsTeams: trade
             ? trade.proposerDrops.map((id) => mleTeamMap.get(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
+            : [],
+          receiverDropsTeams: trade
+            ? trade.receiverDrops.map((id) => mleTeamMap.get(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
             : [],
           status: transaction.status,
           processed: transaction.processedAt,

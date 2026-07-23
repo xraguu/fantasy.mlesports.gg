@@ -14,6 +14,10 @@ interface TeamRef {
   secondaryColor: string;
 }
 
+interface StandingEntry {
+  manager: string;
+}
+
 interface Transaction {
   id: string;
   type: "trade" | "waiver" | "pickup" | "drop";
@@ -28,6 +32,7 @@ interface Transaction {
   proposerGivesTeams?: TeamRef[];
   receiverGivesTeams?: TeamRef[];
   proposerDropsTeams?: TeamRef[];
+  receiverDropsTeams?: TeamRef[];
   // Waiver/FA fields
   addTeam?: TeamRef | null;
   dropTeam?: TeamRef | null;
@@ -39,7 +44,6 @@ interface Transaction {
 export default function TransactionsPage() {
   const params = useParams();
   const leagueId = params.LeagueID as string;
-  const teamId = params.managerId as string;
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedFilters, setSelectedFilters] = useState<string[]>(["Waiver", "Trade", "Pick Up/Drop"]);
@@ -73,7 +77,7 @@ export default function TransactionsPage() {
           throw new Error("Failed to fetch managers");
         }
         const standingsData = await standingsResponse.json();
-        const managers = standingsData.standings.map((s: any) => s.manager);
+        const managers = standingsData.standings.map((s: StandingEntry) => s.manager);
         setAllManagers(managers);
         setSelectedManagers(managers); // Default to all managers selected
 
@@ -107,6 +111,14 @@ export default function TransactionsPage() {
   };
 
   const filteredTransactions = transactions.filter((transaction) => {
+    // This page is for managers to see completed, approved transactions —
+    // a waiver claim that lost to a competing claim isn't something that
+    // "happened" in the league, so it's excluded here (unlike the admin's
+    // own transaction views, which intentionally keep showing it).
+    if (transaction.type === "waiver" && transaction.status === "Failed - Lower Priority") {
+      return false;
+    }
+
     // Filter by transaction type (if any filters selected, only show those types)
     if (selectedFilters.length > 0) {
       const typeMatch =
@@ -439,9 +451,7 @@ export default function TransactionsPage() {
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
                             {(transaction.proposerDropsTeams ?? []).map((team) => (
                               <div key={`prop-drop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                <span style={{ fontSize: "0.7rem", color: "#ef4444", fontWeight: 700, textTransform: "uppercase" }}>
-                                  Dropped
-                                </span>
+                                <span style={{ fontSize: "1rem", color: "#ef4444", fontWeight: 700 }}>−</span>
                                 <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px", opacity: 0.6 }} />
                                 <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)" }}>{team.leagueId} {team.name}</span>
                               </div>
@@ -463,6 +473,17 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.receiverDropsTeams ?? []).length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                            {(transaction.receiverDropsTeams ?? []).map((team) => (
+                              <div key={`recv-drop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <span style={{ fontSize: "1rem", color: "#ef4444", fontWeight: 700 }}>−</span>
+                                <Image src={team.logoPath} alt={team.name} width={28} height={28} style={{ borderRadius: "4px", opacity: 0.6 }} />
+                                <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)" }}>{team.leagueId} {team.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -480,7 +501,10 @@ export default function TransactionsPage() {
 
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", flex: 1 }}>
                       {transaction.addTeam && (
-                        <>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div style={{ fontSize: "1.5rem", color: "#22c55e", fontWeight: 700 }}>
+                            +
+                          </div>
                           <Image
                             src={transaction.addTeam.logoPath}
                             alt={transaction.addTeam.name}
@@ -491,18 +515,24 @@ export default function TransactionsPage() {
                           <div style={{ fontSize: "1rem", fontWeight: 600, color: "white" }}>
                             {transaction.addTeam.leagueId} {transaction.addTeam.name}
                           </div>
-                        </>
-                      )}
-
-                      {transaction.addTeam && transaction.dropTeam && (
-                        <div style={{ fontSize: "1.5rem", color: "rgba(255,255,255,0.3)", marginLeft: "0.5rem", marginRight: "0.5rem" }}>
-                          →
                         </div>
                       )}
 
                       {transaction.dropTeam && (
-                        <div style={{ fontSize: "0.95rem", color: "rgba(255,255,255,0.5)" }}>
-                          {transaction.dropTeam.leagueId} {transaction.dropTeam.name}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div style={{ fontSize: "1.5rem", color: "#ef4444", fontWeight: 700 }}>
+                            −
+                          </div>
+                          <Image
+                            src={transaction.dropTeam.logoPath}
+                            alt={transaction.dropTeam.name}
+                            width={40}
+                            height={40}
+                            style={{ borderRadius: "6px" }}
+                          />
+                          <div style={{ fontSize: "0.95rem", color: "rgba(255,255,255,0.5)" }}>
+                            {transaction.dropTeam.leagueId} {transaction.dropTeam.name}
+                          </div>
                         </div>
                       )}
                     </div>

@@ -12,8 +12,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   generateFantasyLeagueId,
   generateFantasyTeamId,
-  generateRosterSlotId,
-  extractLeagueCode
+  generateRosterSlotId
 } from "../lib/id-generator";
 
 const prisma = new PrismaClient();
@@ -49,7 +48,7 @@ async function main() {
     for (let i = 0; i < users.length; i++) {
       const user = users[i];
       const newId = i + 1; // 1, 2, 3, etc.
-      mapping.users.set(user.id as any, newId);
+      mapping.users.set(user.id, newId);
       console.log(`  User "${user.displayName}": ${user.id} → ${newId}`);
     }
 
@@ -77,7 +76,7 @@ async function main() {
     console.log(`Found ${teams.length} teams`);
 
     for (const team of teams) {
-      const oldUserId = team.ownerUserId as any;
+      const oldUserId = team.ownerUserId;
       const newUserId = mapping.users.get(oldUserId);
       const newLeagueId = mapping.leagues.get(team.fantasyLeagueId);
 
@@ -144,7 +143,7 @@ async function main() {
         const league = leagues.find(l => l.id === oldId);
         if (!league) continue;
 
-        const newCreatedByUserId = mapping.users.get(league.createdByUserId as any);
+        const newCreatedByUserId = mapping.users.get(league.createdByUserId);
 
         await tx.$executeRawUnsafe(
           `UPDATE "FantasyLeague"
@@ -162,7 +161,7 @@ async function main() {
         const team = teams.find(t => t.id === oldId);
         if (!team) continue;
 
-        const newUserId = mapping.users.get(team.ownerUserId as any);
+        const newUserId = mapping.users.get(team.ownerUserId);
         const newLeagueId = mapping.leagues.get(team.fantasyLeagueId);
 
         await tx.$executeRawUnsafe(

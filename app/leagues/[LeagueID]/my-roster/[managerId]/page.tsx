@@ -29,7 +29,6 @@ interface MLETeam {
   logoPath: string;
   primaryColor: string;
   secondaryColor: string;
-  weeklyStats: any | null;
   stats: { "2s": StatBundle; "3s": StatBundle };
 }
 
@@ -47,7 +46,10 @@ interface OpponentInfo {
   primaryColor: string;
   secondaryColor: string;
   record: { "2s": string; "3s": string };
-  standing: { "2s": WithinLeagueStanding | null; "3s": WithinLeagueStanding | null };
+  standing: {
+    "2s": WithinLeagueStanding | null;
+    "3s": WithinLeagueStanding | null;
+  };
 }
 
 interface RosterSlot {
@@ -79,11 +81,58 @@ function getOpponentStandingsColor(rank: number, totalTeams: number): string {
 function ordinal(n: number): string {
   if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
   switch (n % 10) {
-    case 1: return `${n}st`;
-    case 2: return `${n}nd`;
-    case 3: return `${n}rd`;
-    default: return `${n}th`;
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
   }
+}
+
+interface TeamSummary {
+  id: string;
+  name: string;
+  leagueId: string;
+  logoPath: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
+interface TradeParty {
+  teamId: string;
+  teamName: string;
+  managerName: string;
+  gives: TeamSummary[];
+}
+
+interface Trade {
+  id: string;
+  status: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  vetoDeadline: string | null;
+  isProposer: boolean;
+  proposer: TradeParty & { drops: TeamSummary[] };
+  receiver: TradeParty;
+}
+
+interface WaiverMleTeamSummary {
+  id: string;
+  name: string;
+  leagueId: string;
+  slug: string;
+  logoPath: string;
+}
+
+interface MyWaiverClaim {
+  id: string;
+  addTeam: WaiverMleTeamSummary | null;
+  dropTeam: WaiverMleTeamSummary | null;
+  faabBid: number | null;
+  createdAt: string;
 }
 
 interface RosterData {
@@ -136,14 +185,6 @@ interface RosterData {
   };
 }
 
-// Helper function to get fantasy rank color (matching main page)
-const getFantasyRankColor = (rank: number): string => {
-  if (rank >= 1 && rank <= 12) return "#ef4444";
-  if (rank >= 13 && rank <= 24) return "#9ca3af";
-  if (rank >= 25 && rank <= 32) return "#22c55e";
-  return "#9ca3af";
-};
-
 export default function MyRosterPage() {
   const showAlert = useAlert();
   const router = useRouter();
@@ -171,7 +212,7 @@ export default function MyRosterPage() {
   >("lineup");
   const [moveMode, setMoveMode] = useState(false);
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(
-    null
+    null,
   );
   const [gameMode, setGameMode] = useState<"2s" | "3s">("2s");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -179,7 +220,7 @@ export default function MyRosterPage() {
   const [editableRoster, setEditableRoster] = useState<RosterSlot[]>([]);
 
   // Trades state
-  const [trades, setTrades] = useState<any[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
 
   // A trade can be proposed without regard for whether it fits on this
@@ -189,19 +230,27 @@ export default function MyRosterPage() {
   // to be picked to drop, so the roster-picker modal below can open instead
   // of accepting outright.
   const [tradeAcceptDropModal, setTradeAcceptDropModal] = useState<{
-    trade: any;
+    trade: Trade;
     neededCount: number;
   } | null>(null);
-  const [selectedTradeDropIndices, setSelectedTradeDropIndices] = useState<number[]>([]);
+  const [selectedTradeDropIndices, setSelectedTradeDropIndices] = useState<
+    number[]
+  >([]);
   const [acceptingTrade, setAcceptingTrade] = useState(false);
 
   // Waiver claims state (pending claims are private to the manager who
   // submitted them — the API scopes ?mine=true to the current session)
-  const [waiverClaims, setWaiverClaims] = useState<any[]>([]);
+  const [waiverClaims, setWaiverClaims] = useState<MyWaiverClaim[]>([]);
   const [waiverClaimsLoading, setWaiverClaimsLoading] = useState(false);
   const [waiverPriorityData, setWaiverPriorityData] = useState<{
     waiverSystem: string;
-    teams: Array<{ id: string; teamName: string; managerName: string; waiverPriority: number | null; faabRemaining: number | null }>;
+    teams: Array<{
+      id: string;
+      teamName: string;
+      managerName: string;
+      waiverPriority: number | null;
+      faabRemaining: number | null;
+    }>;
   } | null>(null);
   const [waiverPriorityLoading, setWaiverPriorityLoading] = useState(false);
 
@@ -221,13 +270,13 @@ export default function MyRosterPage() {
     | "demos"
   >("fprk");
   const [statsSortDirection, setStatsSortDirection] = useState<"asc" | "desc">(
-    "asc"
+    "asc",
   );
 
   // Drop modal state
   const [showDropModal, setShowDropModal] = useState(false);
   const [selectedDropSlot, setSelectedDropSlot] = useState<RosterSlot | null>(
-    null
+    null,
   );
 
   // Team rename state
@@ -238,9 +287,10 @@ export default function MyRosterPage() {
 
   // Team modal state
   const [showModal, setShowModal] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<MLETeam | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<TeamSummary | null>(null);
   const [selectedTeamRosteredBy, setSelectedTeamRosteredBy] = useState<
-    { rosterName: string; managerName: string; fantasyTeamId?: string } | undefined
+    | { rosterName: string; managerName: string; fantasyTeamId?: string }
+    | undefined
   >(undefined);
 
   const startEditingTeamName = () => {
@@ -263,7 +313,7 @@ export default function MyRosterPage() {
             displayName: nameDraft,
             shortCode: shortCodeDraft,
           }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -281,8 +331,8 @@ export default function MyRosterPage() {
         },
       });
       setEditingTeamName(false);
-    } catch (err: any) {
-      showAlert(err.message || "Failed to update team", "error");
+    } catch (err) {
+      showAlert(err instanceof Error ? err.message : "Failed to update team", "error");
     } finally {
       setSavingTeamName(false);
     }
@@ -298,7 +348,7 @@ export default function MyRosterPage() {
 
     const createEmptySlot = (
       position: string,
-      slotIndex: number
+      slotIndex: number,
     ): RosterSlot => ({
       id: `empty-${position}-${slotIndex}`,
       position,
@@ -314,28 +364,28 @@ export default function MyRosterPage() {
 
     for (let i = 0; i < config["2s"]; i++) {
       const existing = existingSlots.find(
-        (s) => s.position === "2s" && s.slotIndex === i
+        (s) => s.position === "2s" && s.slotIndex === i,
       );
       slots.push(existing || createEmptySlot("2s", i));
     }
 
     for (let i = 0; i < config["3s"]; i++) {
       const existing = existingSlots.find(
-        (s) => s.position === "3s" && s.slotIndex === i
+        (s) => s.position === "3s" && s.slotIndex === i,
       );
       slots.push(existing || createEmptySlot("3s", i));
     }
 
     for (let i = 0; i < config.flx; i++) {
       const existing = existingSlots.find(
-        (s) => s.position === "flx" && s.slotIndex === i
+        (s) => s.position === "flx" && s.slotIndex === i,
       );
       slots.push(existing || createEmptySlot("flx", i));
     }
 
     for (let i = 0; i < config.be; i++) {
       const existing = existingSlots.find(
-        (s) => s.position === "be" && s.slotIndex === i
+        (s) => s.position === "be" && s.slotIndex === i,
       );
       slots.push(existing || createEmptySlot("be", i));
     }
@@ -347,13 +397,15 @@ export default function MyRosterPage() {
   // locked (empty placeholder slots have no real DB row / lock state, so
   // they don't count against this).
   const filledSlots = fullRoster.filter((s) => s.mleTeam);
-  const isWholeLineupLocked = filledSlots.length > 0 && filledSlots.every((s) => s.isLocked);
+  const isWholeLineupLocked =
+    filledSlots.length > 0 && filledSlots.every((s) => s.isLocked);
 
   // A week that's already behind the league's real current week is settled
   // history — its roster stays locked (frozen, can't be edited) but the
   // urgent red/🔒 "locked" styling is reserved for the active week, so a
   // manager isn't shown alarm-red rows for a matchup that's long over.
-  const isPastWeek = !!rosterData && currentWeek < rosterData.league.currentWeek;
+  const isPastWeek =
+    !!rosterData && currentWeek < rosterData.league.currentWeek;
 
   // Re-sync editable roster whenever fresh roster data loads (e.g. switching
   // weeks) — previously only re-synced when the slot COUNT changed, so
@@ -374,7 +426,7 @@ export default function MyRosterPage() {
       try {
         setLoading(true);
         const response = await fetch(
-          `/api/leagues/${leagueId}/rosters/${teamId}?week=${currentWeek}`
+          `/api/leagues/${leagueId}/rosters/${teamId}?week=${currentWeek}`,
         );
 
         if (!response.ok) {
@@ -396,10 +448,14 @@ export default function MyRosterPage() {
 
   // Initialize current week only on first load
   useEffect(() => {
-    if (rosterData && currentWeek === 1 && rosterData.league.currentWeek !== 1) {
+    if (
+      rosterData &&
+      currentWeek === 1 &&
+      rosterData.league.currentWeek !== 1
+    ) {
       setCurrentWeek(rosterData.league.currentWeek);
     }
-  }, [rosterData?.league.currentWeek]);
+  }, [rosterData, currentWeek]);
 
   // Fetch trades when trades tab is active
   useEffect(() => {
@@ -409,7 +465,7 @@ export default function MyRosterPage() {
       try {
         setTradesLoading(true);
         const response = await fetch(
-          `/api/leagues/${leagueId}/trades?teamId=${teamId}`
+          `/api/leagues/${leagueId}/trades?teamId=${teamId}`,
         );
 
         if (!response.ok) {
@@ -429,7 +485,9 @@ export default function MyRosterPage() {
   }, [activeTab, teamId, leagueId]);
 
   const refreshTrades = async () => {
-    const tradesResponse = await fetch(`/api/leagues/${leagueId}/trades?teamId=${teamId}`);
+    const tradesResponse = await fetch(
+      `/api/leagues/${leagueId}/trades?teamId=${teamId}`,
+    );
     if (tradesResponse.ok) {
       const data = await tradesResponse.json();
       setTrades(data.trades || []);
@@ -442,7 +500,7 @@ export default function MyRosterPage() {
   // once the manager's picked enough teams. `receiverDrops` rides along on
   // the accept request itself (see the PATCH route) rather than being a
   // separate step, mirroring how proposerDrops works on the propose side.
-  const acceptTrade = async (trade: any, receiverDrops: string[] = []) => {
+  const acceptTrade = async (trade: Trade, receiverDrops: string[] = []) => {
     if (!rosterData) return;
 
     if (receiverDrops.length === 0) {
@@ -452,7 +510,9 @@ export default function MyRosterPage() {
         rosterData.league.rosterConfig.flx +
         rosterData.league.rosterConfig.be;
       const receiverAfter =
-        rosterData.rosterSlots.length - trade.receiver.gives.length + trade.proposer.gives.length;
+        rosterData.rosterSlots.length -
+        trade.receiver.gives.length +
+        trade.proposer.gives.length;
       const neededCount = receiverAfter - capacity;
       if (neededCount > 0) {
         setSelectedTradeDropIndices([]);
@@ -463,11 +523,14 @@ export default function MyRosterPage() {
 
     setAcceptingTrade(true);
     try {
-      const response = await fetch(`/api/leagues/${leagueId}/trades/${trade.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "accept", receiverDrops }),
-      });
+      const response = await fetch(
+        `/api/leagues/${leagueId}/trades/${trade.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "accept", receiverDrops }),
+        },
+      );
 
       if (response.ok) {
         setTradeAcceptDropModal(null);
@@ -488,11 +551,18 @@ export default function MyRosterPage() {
   // Fetch this manager's own pending waiver claims when the waivers tab is active
   useEffect(() => {
     const fetchWaiverClaims = async () => {
-      if (activeTab !== "waivers" || !leagueId || !rosterData?.fantasyTeam.isOwner) return;
+      if (
+        activeTab !== "waivers" ||
+        !leagueId ||
+        !rosterData?.fantasyTeam.isOwner
+      )
+        return;
 
       try {
         setWaiverClaimsLoading(true);
-        const response = await fetch(`/api/leagues/${leagueId}/waivers?mine=true`);
+        const response = await fetch(
+          `/api/leagues/${leagueId}/waivers?mine=true`,
+        );
         if (!response.ok) throw new Error("Failed to fetch waiver claims");
         const data = await response.json();
         setWaiverClaims(data.waiverClaims || []);
@@ -513,7 +583,9 @@ export default function MyRosterPage() {
 
       try {
         setWaiverPriorityLoading(true);
-        const response = await fetch(`/api/leagues/${leagueId}/waiver-priority`);
+        const response = await fetch(
+          `/api/leagues/${leagueId}/waiver-priority`,
+        );
         if (!response.ok) throw new Error("Failed to fetch waiver priority");
         setWaiverPriorityData(await response.json());
       } catch (error) {
@@ -540,20 +612,17 @@ export default function MyRosterPage() {
     try {
       setIsSaving(true);
 
-      const response = await fetch(
-        `/api/leagues/${leagueId}/roster/update`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fantasyTeamId: rosterData.fantasyTeam.id,
-            week: currentWeek,
-            roster: editableRoster,
-          }),
-        }
-      );
+      const response = await fetch(`/api/leagues/${leagueId}/roster/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fantasyTeamId: rosterData.fantasyTeam.id,
+          week: currentWeek,
+          roster: editableRoster,
+        }),
+      });
 
       if (!response.ok) {
         const error = await response.json();
@@ -564,7 +633,7 @@ export default function MyRosterPage() {
 
       // Refetch roster to get updated data
       const rosterResponse = await fetch(
-        `/api/leagues/${leagueId}/rosters/${teamId}?week=${currentWeek}`
+        `/api/leagues/${leagueId}/rosters/${teamId}?week=${currentWeek}`,
       );
       if (rosterResponse.ok) {
         const updatedRoster = await rosterResponse.json();
@@ -572,7 +641,10 @@ export default function MyRosterPage() {
       }
     } catch (error) {
       console.error("Error saving roster:", error);
-      showAlert(error instanceof Error ? error.message : "Failed to save lineup", "error");
+      showAlert(
+        error instanceof Error ? error.message : "Failed to save lineup",
+        "error",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -726,13 +798,20 @@ export default function MyRosterPage() {
         >
           Roster
         </h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "clamp(0.4rem, 2vw, 1rem)" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "clamp(0.4rem, 2vw, 1rem)",
+          }}
+        >
           <button
             onClick={handleScheduleClick}
             style={{
               backgroundColor: "var(--accent)",
               color: "#1a1a2e",
-              padding: "clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.75rem, 4vw, 1.5rem)",
+              padding:
+                "clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.75rem, 4vw, 1.5rem)",
               borderRadius: "2rem",
               fontWeight: 700,
               fontSize: "clamp(0.8rem, 3vw, 1rem)",
@@ -748,7 +827,8 @@ export default function MyRosterPage() {
             style={{
               backgroundColor: "var(--accent)",
               color: "#1a1a2e",
-              padding: "clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.75rem, 4vw, 1.5rem)",
+              padding:
+                "clamp(0.35rem, 1.5vw, 0.5rem) clamp(0.75rem, 4vw, 1.5rem)",
               borderRadius: "2rem",
               fontWeight: 700,
               fontSize: "clamp(0.8rem, 3vw, 1rem)",
@@ -927,10 +1007,10 @@ export default function MyRosterPage() {
                         {rosterData.rank === 1
                           ? "st"
                           : rosterData.rank === 2
-                          ? "nd"
-                          : rosterData.rank === 3
-                          ? "rd"
-                          : "th"}
+                            ? "nd"
+                            : rosterData.rank === 3
+                              ? "rd"
+                              : "th"}
                       </span>
                     )}
                   </span>
@@ -958,7 +1038,9 @@ export default function MyRosterPage() {
               >
                 {rosterData.totalPoints ?? 0} Fantasy Points
               </span>
-              <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+              <span
+                style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}
+              >
                 {rosterData.avgPoints ?? 0} Avg Fantasy Points
               </span>
             </div>
@@ -994,7 +1076,7 @@ export default function MyRosterPage() {
               <div
                 onClick={() =>
                   router.push(
-                    `/leagues/${leagueId}/scoreboard?week=${rosterData.lastMatchup!.week}&matchup=${rosterData.lastMatchup!.id}`
+                    `/leagues/${leagueId}/scoreboard?week=${rosterData.lastMatchup!.week}&matchup=${rosterData.lastMatchup!.id}`,
                   )
                 }
                 style={{
@@ -1026,7 +1108,9 @@ export default function MyRosterPage() {
                   Last Matchup
                 </div>
                 <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
-                  <span style={{ color: "var(--text-main)" }}>{rosterData.lastMatchup.myTeam}</span>{" "}
+                  <span style={{ color: "var(--text-main)" }}>
+                    {rosterData.lastMatchup.myTeam}
+                  </span>{" "}
                   <span
                     style={{
                       color: "var(--accent)",
@@ -1038,7 +1122,9 @@ export default function MyRosterPage() {
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
-                  <span style={{ color: "var(--text-muted)" }}>{rosterData.lastMatchup.opponent}</span>{" "}
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {rosterData.lastMatchup.opponent}
+                  </span>{" "}
                   <span
                     style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
                   >
@@ -1063,7 +1149,7 @@ export default function MyRosterPage() {
               <div
                 onClick={() =>
                   router.push(
-                    `/leagues/${leagueId}/scoreboard?week=${rosterData.currentMatchup!.week}&matchup=${rosterData.currentMatchup!.id}`
+                    `/leagues/${leagueId}/scoreboard?week=${rosterData.currentMatchup!.week}&matchup=${rosterData.currentMatchup!.id}`,
                   )
                 }
                 style={{
@@ -1095,7 +1181,9 @@ export default function MyRosterPage() {
                   Current Matchup
                 </div>
                 <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
-                  <span style={{ color: "var(--text-main)" }}>{rosterData.currentMatchup.myTeam}</span>{" "}
+                  <span style={{ color: "var(--text-main)" }}>
+                    {rosterData.currentMatchup.myTeam}
+                  </span>{" "}
                   <span
                     style={{
                       color: "var(--accent)",
@@ -1107,7 +1195,9 @@ export default function MyRosterPage() {
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
-                  <span style={{ color: "var(--text-muted)" }}>{rosterData.currentMatchup.opponent}</span>{" "}
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {rosterData.currentMatchup.opponent}
+                  </span>{" "}
                   <span
                     style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
                   >
@@ -1118,7 +1208,13 @@ export default function MyRosterPage() {
             )}
 
             {!rosterData.lastMatchup && !rosterData.currentMatchup && (
-              <div style={{ color: "var(--text-muted)", fontSize: "0.9rem", fontStyle: "italic" }}>
+              <div
+                style={{
+                  color: "var(--text-muted)",
+                  fontSize: "0.9rem",
+                  fontStyle: "italic",
+                }}
+              >
                 No matchup data available
               </div>
             )}
@@ -1127,7 +1223,14 @@ export default function MyRosterPage() {
       </section>
 
       {/* Tabs */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.5rem" }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          marginBottom: "1.5rem",
+        }}
+      >
         <button
           onClick={() => setActiveTab("lineup")}
           className={
@@ -1181,7 +1284,14 @@ export default function MyRosterPage() {
               borderBottom: "1px solid rgba(255,255,255,0.1)",
             }}
           >
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "1rem",
+              }}
+            >
               <button
                 onClick={() => setCurrentWeek((prev) => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
@@ -1224,7 +1334,9 @@ export default function MyRosterPage() {
                   fontSize: "1rem",
                 }}
               >
-                {currentWeek === 10 ? "►" : `Week ${getNextWeek(currentWeek)} ►`}
+                {currentWeek === 10
+                  ? "►"
+                  : `Week ${getNextWeek(currentWeek)} ►`}
               </button>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
@@ -1253,27 +1365,30 @@ export default function MyRosterPage() {
                       ? "2px solid #ef4444"
                       : "2px solid var(--accent)",
                   background:
-                    isWholeLineupLocked && !isPastWeek ? "rgba(239, 68, 68, 0.15)" : undefined,
-                  color: isWholeLineupLocked && !isPastWeek ? "#ef4444" : undefined,
-                  boxShadow:
-                    isWholeLineupLocked
-                      ? "none"
-                      : moveMode
+                    isWholeLineupLocked && !isPastWeek
+                      ? "rgba(239, 68, 68, 0.15)"
+                      : undefined,
+                  color:
+                    isWholeLineupLocked && !isPastWeek ? "#ef4444" : undefined,
+                  boxShadow: isWholeLineupLocked
+                    ? "none"
+                    : moveMode
                       ? "0 0 12px rgba(242, 182, 50, 0.4)"
                       : "0 0 8px rgba(242, 182, 50, 0.3)",
                   opacity: isSaving ? 0.6 : 1,
-                  cursor: isSaving || isWholeLineupLocked ? "not-allowed" : "pointer",
+                  cursor:
+                    isSaving || isWholeLineupLocked ? "not-allowed" : "pointer",
                 }}
               >
                 {isSaving
                   ? "Saving..."
                   : isWholeLineupLocked
-                  ? isPastWeek
-                    ? "Week Complete"
-                    : "🔒 Lineup Locked"
-                  : moveMode
-                  ? "✓ Done Editing"
-                  : "Edit Lineup"}
+                    ? isPastWeek
+                      ? "Week Complete"
+                      : "🔒 Lineup Locked"
+                    : moveMode
+                      ? "✓ Done Editing"
+                      : "Edit Lineup"}
               </button>
             </div>
           </div>
@@ -1345,7 +1460,10 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    <HeaderTooltip label="Opp" full="Opponent" />
+                    <HeaderTooltip
+                      label="Opp"
+                      full="Opponent / Game Record (MLE Rank)"
+                    />
                   </th>
                   <th
                     style={{
@@ -1356,7 +1474,10 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    <HeaderTooltip label="Oprk" full="Opponent Rank" />
+                    <HeaderTooltip
+                      label="Oprk"
+                      full="Opponent Fantasy Points Rank"
+                    />
                   </th>
                   <th
                     style={{
@@ -1378,7 +1499,7 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    <HeaderTooltip label="Fpts" full="Fantasy Points" />
+                    <HeaderTooltip label="Fpts" full="Total Fantasy Points" />
                   </th>
                   <th
                     style={{
@@ -1400,340 +1521,376 @@ export default function MyRosterPage() {
                       fontWeight: 600,
                     }}
                   >
-                    <HeaderTooltip label="Last" full="Last Week's Fantasy Points" />
+                    <HeaderTooltip
+                      label="Last"
+                      full="Last Week's Fantasy Points"
+                    />
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {(editableRoster.length > 0 ? editableRoster : fullRoster).map((slot, index) => {
-                  const currentMode = slotModes[index] || slot.defaultMode;
-                  const isEmpty = !slot.mleTeam;
-                  const isBench = slot.position === "be";
+                {(editableRoster.length > 0 ? editableRoster : fullRoster).map(
+                  (slot, index) => {
+                    const currentMode = slotModes[index] || slot.defaultMode;
+                    const isEmpty = !slot.mleTeam;
+                    const isBench = slot.position === "be";
 
-                  return (
-                    <tr
-                      key={slot.id}
-                      onClick={() => handleTeamClick(index)}
-                      style={{
-                        borderBottom: "1px solid rgba(255,255,255,0.05)",
-                        backgroundColor:
-                          selectedTeamIndex === index
-                            ? "rgba(242, 182, 50, 0.2)"
-                            : !isEmpty && slot.isLocked && !isPastWeek
-                            ? "rgba(239, 68, 68, 0.08)"
-                            : isBench
-                            ? "rgba(255,255,255,0.02)"
-                            : "transparent",
-                        borderTop:
-                          isBench &&
-                          index ===
-                            (editableRoster.length > 0 ? editableRoster : fullRoster).findIndex((s) => s.position === "be")
-                            ? "2px solid rgba(255,255,255,0.15)"
-                            : "none",
-                        cursor:
-                          moveMode &&
-                          !slot.isLocked &&
-                          (!isEmpty || selectedTeamIndex !== null)
-                            ? "pointer"
-                            : "default",
-                        transition: "background-color 0.2s",
-                        borderLeft:
-                          selectedTeamIndex === index
-                            ? "3px solid var(--accent)"
-                            : !isEmpty && slot.isLocked && !isPastWeek
-                            ? "3px solid rgba(239, 68, 68, 0.4)"
-                            : "3px solid transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (
-                          moveMode &&
-                          selectedTeamIndex !== index &&
-                          !slot.isLocked &&
-                          (!isEmpty || selectedTeamIndex !== null)
-                        ) {
-                          e.currentTarget.style.backgroundColor =
-                            "rgba(242, 182, 50, 0.1)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (moveMode && selectedTeamIndex !== index) {
-                          e.currentTarget.style.backgroundColor =
-                            !isEmpty && slot.isLocked && !isPastWeek
-                              ? "rgba(239, 68, 68, 0.08)"
-                              : isBench
-                              ? "rgba(255,255,255,0.02)"
-                              : "transparent";
-                        }
-                      }}
-                    >
-                      <td
+                    return (
+                      <tr
+                        key={slot.id}
+                        onClick={() => handleTeamClick(index)}
                         style={{
-                          padding: "0.75rem 0.5rem",
-                          textAlign: "center",
+                          borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          backgroundColor:
+                            selectedTeamIndex === index
+                              ? "rgba(242, 182, 50, 0.2)"
+                              : !isEmpty && slot.isLocked && !isPastWeek
+                                ? "rgba(239, 68, 68, 0.08)"
+                                : isBench
+                                  ? "rgba(255,255,255,0.02)"
+                                  : "transparent",
+                          borderTop:
+                            isBench &&
+                            index ===
+                              (editableRoster.length > 0
+                                ? editableRoster
+                                : fullRoster
+                              ).findIndex((s) => s.position === "be")
+                              ? "2px solid rgba(255,255,255,0.15)"
+                              : "none",
+                          cursor:
+                            moveMode &&
+                            !slot.isLocked &&
+                            (!isEmpty || selectedTeamIndex !== null)
+                              ? "pointer"
+                              : "default",
+                          transition: "background-color 0.2s",
+                          borderLeft:
+                            selectedTeamIndex === index
+                              ? "3px solid var(--accent)"
+                              : !isEmpty && slot.isLocked && !isPastWeek
+                                ? "3px solid rgba(239, 68, 68, 0.4)"
+                                : "3px solid transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (
+                            moveMode &&
+                            selectedTeamIndex !== index &&
+                            !slot.isLocked &&
+                            (!isEmpty || selectedTeamIndex !== null)
+                          ) {
+                            e.currentTarget.style.backgroundColor =
+                              "rgba(242, 182, 50, 0.1)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (moveMode && selectedTeamIndex !== index) {
+                            e.currentTarget.style.backgroundColor =
+                              !isEmpty && slot.isLocked && !isPastWeek
+                                ? "rgba(239, 68, 68, 0.08)"
+                                : isBench
+                                  ? "rgba(255,255,255,0.02)"
+                                  : "transparent";
+                          }
                         }}
                       >
-                        <div
+                        <td
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.25rem",
-                            justifyContent: "center",
+                            padding: "0.75rem 0.5rem",
+                            textAlign: "center",
                           }}
                         >
-                          {!isEmpty && (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const newModes = [...slotModes];
-                                  newModes[index] = currentMode === "2s" ? "3s" : "2s";
-                                  setSlotModes(newModes);
-                                }}
-                                style={{
-                                  background: "rgba(255,255,255,0.1)",
-                                  border: "none",
-                                  borderRadius: "4px",
-                                  padding: "0.25rem 0.5rem",
-                                  fontSize: "0.75rem",
-                                  fontWeight: 600,
-                                  color: "var(--accent)",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s ease",
-                                }}
-                                onMouseEnter={(e) =>
-                                  (e.currentTarget.style.background =
-                                    "rgba(242, 182, 50, 0.2)")
-                                }
-                                onMouseLeave={(e) =>
-                                  (e.currentTarget.style.background =
-                                    "rgba(255,255,255,0.1)")
-                                }
-                              >
-                                ⇄
-                              </button>
-                              <span
-                                style={{
-                                  fontSize: "0.7rem",
-                                  fontWeight: 600,
-                                  color: "var(--accent)",
-                                }}
-                              >
-                                {currentMode}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          fontWeight: 700,
-                          fontSize: "0.9rem",
-                          color: isBench
-                            ? "var(--text-muted)"
-                            : "var(--accent)",
-                        }}
-                      >
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-                          {slot.position === "be" || slot.position === "flx" ? slot.position.toUpperCase() : slot.position}
-                          {!isEmpty && slot.isLocked && !isPastWeek && (
-                            <span title="Locked — cannot be edited" style={{ fontSize: "0.8rem" }}>
-                              🔒
-                            </span>
-                          )}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.75rem 1rem" }}>
-                        {isEmpty ? (
-                          <span
-                            style={{
-                              color: "var(--text-muted)",
-                              fontSize: "0.95rem",
-                              fontStyle: "italic",
-                            }}
-                          >
-                            Empty
-                          </span>
-                        ) : (
                           <div
                             style={{
                               display: "flex",
                               alignItems: "center",
-                              gap: "0.5rem",
+                              gap: "0.25rem",
+                              justifyContent: "center",
                             }}
                           >
-                            <Image
-                              src={slot.mleTeam!.logoPath}
-                              alt={slot.mleTeam!.name}
-                              width={32}
-                              height={32}
-                              style={{ borderRadius: "4px" }}
-                            />
-                            <div>
-                              <div
-                                onClick={(e) => {
-                                  if (!moveMode) {
-                                    e.stopPropagation();
-                                    setSelectedTeam(slot.mleTeam!);
-                                    setSelectedTeamRosteredBy(
-                                      rosterData
-                                        ? {
-                                            rosterName: rosterData.fantasyTeam.displayName,
-                                            managerName: rosterData.fantasyTeam.ownerDisplayName,
-                                            fantasyTeamId: teamId,
-                                          }
-                                        : undefined
-                                    );
-                                    setShowModal(true);
-                                  }
-                                }}
-                                style={{
-                                  fontWeight: 600,
-                                  fontSize: "1rem",
-                                  cursor: moveMode ? "default" : "pointer",
-                                  color: "var(--text-main)",
-                                  transition: "color 0.2s",
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!moveMode) {
-                                    e.currentTarget.style.color =
-                                      "var(--accent)";
-                                  }
-                                }}
-                                onMouseLeave={(e) =>
-                                  (e.currentTarget.style.color =
-                                    "var(--text-main)")
-                                }
-                              >
-                                {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          textAlign: "center",
-                          fontWeight: 700,
-                          fontSize: "1rem",
-                          color: slot.mleTeam
-                            ? "var(--accent)"
-                            : "var(--text-muted)",
-                        }}
-                      >
-                        {slot.mleTeam
-                          ? slot.mleTeam.stats[currentMode].score.toFixed(1)
-                          : "-"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          fontSize: "0.9rem",
-                          color: "var(--text-muted)",
-                        }}
-                      >
-                        {slot.opponent ? (
-                          <span
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // TeamModal fetches its own player/weekly-breakdown data
-                              // by id/leagueId — the stat fields here are unused filler.
-                              setSelectedTeam({
-                                id: slot.opponent!.id,
-                                name: slot.opponent!.name,
-                                leagueId: slot.opponent!.leagueId,
-                                slug: slot.opponent!.slug,
-                                logoPath: slot.opponent!.logoPath,
-                                primaryColor: slot.opponent!.primaryColor,
-                                secondaryColor: slot.opponent!.secondaryColor,
-                                weeklyStats: null,
-                                stats: {
-                                  "2s": { record: "0-0", goals: 0, shots: 0, saves: 0, assists: 0, demos: 0, fpts: 0, avg: 0, last: 0, score: 0 },
-                                  "3s": { record: "0-0", goals: 0, shots: 0, saves: 0, assists: 0, demos: 0, fpts: 0, avg: 0, last: 0, score: 0 },
-                                },
-                              });
-                              setSelectedTeamRosteredBy(undefined);
-                              setShowModal(true);
-                            }}
-                            style={{ cursor: "pointer" }}
-                            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
-                            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
-                          >
-                            {slot.opponent.name} {slot.opponent.record[currentMode]}
-                            {slot.opponent.standing[currentMode] && (
+                            {!isEmpty && (
                               <>
-                                {" "}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const newModes = [...slotModes];
+                                    newModes[index] =
+                                      currentMode === "2s" ? "3s" : "2s";
+                                    setSlotModes(newModes);
+                                  }}
+                                  style={{
+                                    background: "rgba(255,255,255,0.1)",
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    padding: "0.25rem 0.5rem",
+                                    fontSize: "0.75rem",
+                                    fontWeight: 600,
+                                    color: "var(--accent)",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                  onMouseEnter={(e) =>
+                                    (e.currentTarget.style.background =
+                                      "rgba(242, 182, 50, 0.2)")
+                                  }
+                                  onMouseLeave={(e) =>
+                                    (e.currentTarget.style.background =
+                                      "rgba(255,255,255,0.1)")
+                                  }
+                                >
+                                  ⇄
+                                </button>
                                 <span
                                   style={{
-                                    color: getOpponentStandingsColor(
-                                      slot.opponent.standing[currentMode]!.rank,
-                                      slot.opponent.standing[currentMode]!.totalTeams
-                                    ),
+                                    fontSize: "0.7rem",
                                     fontWeight: 600,
+                                    color: "var(--accent)",
                                   }}
                                 >
-                                  ({ordinal(slot.opponent.standing[currentMode]!.rank)})
+                                  {currentMode}
                                 </span>
                               </>
                             )}
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            fontWeight: 700,
+                            fontSize: "0.9rem",
+                            color: isBench
+                              ? "var(--text-muted)"
+                              : "var(--accent)",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.4rem",
+                            }}
+                          >
+                            {slot.position === "be" || slot.position === "flx"
+                              ? slot.position.toUpperCase()
+                              : slot.position}
+                            {!isEmpty && slot.isLocked && !isPastWeek && (
+                              <span
+                                title="Locked — cannot be edited"
+                                style={{ fontSize: "0.8rem" }}
+                              >
+                                🔒
+                              </span>
+                            )}
                           </span>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          textAlign: "center",
-                          fontSize: "0.9rem",
-                        }}
-                      >
-                        {slot.oprk[currentMode] ?? "-"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          textAlign: "center",
-                          fontSize: "0.9rem",
-                          fontWeight: 600,
-                        }}
-                      >
-                        {slot.fprk[currentMode] ?? "-"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          textAlign: "right",
-                          fontWeight: 600,
-                          fontSize: "0.95rem",
-                        }}
-                      >
-                        {slot.mleTeam ? slot.mleTeam.stats[currentMode].fpts.toFixed(1) : "-"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          textAlign: "right",
-                          color: "var(--text-muted)",
-                          fontSize: "0.9rem",
-                        }}
-                      >
-                        {slot.mleTeam ? slot.mleTeam.stats[currentMode].avg.toFixed(1) : "-"}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 1rem",
-                          textAlign: "right",
-                          color: "var(--text-muted)",
-                          fontSize: "0.9rem",
-                        }}
-                      >
-                        {slot.mleTeam ? slot.mleTeam.stats[currentMode].last.toFixed(1) : "-"}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td style={{ padding: "0.75rem 1rem" }}>
+                          {isEmpty ? (
+                            <span
+                              style={{
+                                color: "var(--text-muted)",
+                                fontSize: "0.95rem",
+                                fontStyle: "italic",
+                              }}
+                            >
+                              Empty
+                            </span>
+                          ) : (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                              }}
+                            >
+                              <Image
+                                src={slot.mleTeam!.logoPath}
+                                alt={slot.mleTeam!.name}
+                                width={32}
+                                height={32}
+                                style={{ borderRadius: "4px" }}
+                              />
+                              <div>
+                                <div
+                                  onClick={(e) => {
+                                    if (!moveMode) {
+                                      e.stopPropagation();
+                                      setSelectedTeam(slot.mleTeam!);
+                                      setSelectedTeamRosteredBy(
+                                        rosterData
+                                          ? {
+                                              rosterName:
+                                                rosterData.fantasyTeam
+                                                  .displayName,
+                                              managerName:
+                                                rosterData.fantasyTeam
+                                                  .ownerDisplayName,
+                                              fantasyTeamId: teamId,
+                                            }
+                                          : undefined,
+                                      );
+                                      setShowModal(true);
+                                    }
+                                  }}
+                                  style={{
+                                    fontWeight: 600,
+                                    fontSize: "1rem",
+                                    cursor: moveMode ? "default" : "pointer",
+                                    color: "var(--text-main)",
+                                    transition: "color 0.2s",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!moveMode) {
+                                      e.currentTarget.style.color =
+                                        "var(--accent)";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) =>
+                                    (e.currentTarget.style.color =
+                                      "var(--text-main)")
+                                  }
+                                >
+                                  {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "center",
+                            fontWeight: 700,
+                            fontSize: "1rem",
+                            color: slot.mleTeam
+                              ? "var(--accent)"
+                              : "var(--text-muted)",
+                          }}
+                        >
+                          {slot.mleTeam
+                            ? slot.mleTeam.stats[currentMode].score.toFixed(1)
+                            : "-"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            fontSize: "0.9rem",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          {slot.opponent ? (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // TeamModal fetches its own player/weekly-breakdown data
+                                // by id/leagueId — no stat fields needed here.
+                                setSelectedTeam({
+                                  id: slot.opponent!.id,
+                                  name: slot.opponent!.name,
+                                  leagueId: slot.opponent!.leagueId,
+                                  logoPath: slot.opponent!.logoPath,
+                                  primaryColor: slot.opponent!.primaryColor,
+                                  secondaryColor: slot.opponent!.secondaryColor,
+                                });
+                                setSelectedTeamRosteredBy(undefined);
+                                setShowModal(true);
+                              }}
+                              style={{ cursor: "pointer" }}
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.textDecoration =
+                                  "underline")
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.textDecoration = "none")
+                              }
+                            >
+                              {slot.opponent.name}{" "}
+                              {slot.opponent.record[currentMode]}
+                              {slot.opponent.standing[currentMode] && (
+                                <>
+                                  {" "}
+                                  <span
+                                    style={{
+                                      color: getOpponentStandingsColor(
+                                        slot.opponent.standing[currentMode]!
+                                          .rank,
+                                        slot.opponent.standing[currentMode]!
+                                          .totalTeams,
+                                      ),
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    (
+                                    {ordinal(
+                                      slot.opponent.standing[currentMode]!.rank,
+                                    )}
+                                    )
+                                  </span>
+                                </>
+                              )}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "center",
+                            fontSize: "0.9rem",
+                          }}
+                        >
+                          {slot.oprk[currentMode] ?? "-"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "center",
+                            fontSize: "0.9rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {slot.fprk[currentMode] ?? "-"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "right",
+                            fontWeight: 600,
+                            fontSize: "0.95rem",
+                          }}
+                        >
+                          {slot.mleTeam
+                            ? slot.mleTeam.stats[currentMode].fpts.toFixed(1)
+                            : "-"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "right",
+                            color: "var(--text-muted)",
+                            fontSize: "0.9rem",
+                          }}
+                        >
+                          {slot.mleTeam
+                            ? slot.mleTeam.stats[currentMode].avg.toFixed(1)
+                            : "-"}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "right",
+                            color: "var(--text-muted)",
+                            fontSize: "0.9rem",
+                          }}
+                        >
+                          {slot.mleTeam
+                            ? slot.mleTeam.stats[currentMode].last.toFixed(1)
+                            : "-"}
+                        </td>
+                      </tr>
+                    );
+                  },
+                )}
               </tbody>
             </table>
           </div>
@@ -1755,7 +1912,14 @@ export default function MyRosterPage() {
               alignItems: "center",
             }}
           >
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "1rem",
+              }}
+            >
               <button
                 onClick={() => setCurrentWeek((prev) => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
@@ -1798,7 +1962,9 @@ export default function MyRosterPage() {
                   fontSize: "1rem",
                 }}
               >
-                {currentWeek === 10 ? "►" : `Week ${getNextWeek(currentWeek)} ►`}
+                {currentWeek === 10
+                  ? "►"
+                  : `Week ${getNextWeek(currentWeek)} ►`}
               </button>
             </div>
 
@@ -1945,7 +2111,10 @@ export default function MyRosterPage() {
                       userSelect: "none",
                     }}
                   >
-                    <HeaderTooltip label="Last" full="Last Week's Fantasy Points" />{" "}
+                    <HeaderTooltip
+                      label="Last"
+                      full="Last Week's Fantasy Points"
+                    />{" "}
                     {statsSortColumn === "last" &&
                       (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
@@ -2082,11 +2251,13 @@ export default function MyRosterPage() {
                               setSelectedTeamRosteredBy(
                                 rosterData
                                   ? {
-                                      rosterName: rosterData.fantasyTeam.displayName,
-                                      managerName: rosterData.fantasyTeam.ownerDisplayName,
+                                      rosterName:
+                                        rosterData.fantasyTeam.displayName,
+                                      managerName:
+                                        rosterData.fantasyTeam.ownerDisplayName,
                                       fantasyTeamId: teamId,
                                     }
-                                  : undefined
+                                  : undefined,
                               );
                               setShowModal(true);
                             }}
@@ -2239,8 +2410,17 @@ export default function MyRosterPage() {
         <>
           <section className="card" style={{ marginBottom: "1.5rem" }}>
             <div style={{ padding: "1.5rem" }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent)", marginBottom: "1rem" }}>
-                {waiverPriorityData?.waiverSystem === "faab" ? "FAAB Budget" : "Waiver Priority Order"}
+              <h3
+                style={{
+                  fontSize: "1.1rem",
+                  fontWeight: 700,
+                  color: "var(--accent)",
+                  marginBottom: "1rem",
+                }}
+              >
+                {waiverPriorityData?.waiverSystem === "faab"
+                  ? "FAAB Budget"
+                  : "Waiver Priority Order"}
               </h3>
               {waiverPriorityLoading || !waiverPriorityData ? (
                 <div style={{ color: "var(--text-muted)" }}>Loading...</div>
@@ -2248,11 +2428,20 @@ export default function MyRosterPage() {
                 <div style={{ fontSize: "1.1rem", color: "var(--text-main)" }}>
                   Your remaining budget:{" "}
                   <span style={{ fontWeight: 700, color: "var(--accent)" }}>
-                    ${waiverPriorityData.teams.find((t) => t.id === rosterData?.fantasyTeam.id)?.faabRemaining ?? 0}
+                    $
+                    {waiverPriorityData.teams.find(
+                      (t) => t.id === rosterData?.fantasyTeam.id,
+                    )?.faabRemaining ?? 0}
                   </span>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                  }}
+                >
                   {waiverPriorityData.teams.map((t) => (
                     <div
                       key={t.id}
@@ -2262,13 +2451,38 @@ export default function MyRosterPage() {
                         gap: "0.75rem",
                         padding: "0.6rem 0.9rem",
                         borderRadius: "6px",
-                        background: t.id === rosterData?.fantasyTeam.id ? "rgba(242, 182, 50, 0.12)" : "rgba(255,255,255,0.03)",
-                        border: t.id === rosterData?.fantasyTeam.id ? "1px solid rgba(242, 182, 50, 0.35)" : "1px solid transparent",
+                        background:
+                          t.id === rosterData?.fantasyTeam.id
+                            ? "rgba(242, 182, 50, 0.12)"
+                            : "rgba(255,255,255,0.03)",
+                        border:
+                          t.id === rosterData?.fantasyTeam.id
+                            ? "1px solid rgba(242, 182, 50, 0.35)"
+                            : "1px solid transparent",
                       }}
                     >
-                      <span style={{ width: "2rem", fontWeight: 700, color: "var(--accent)" }}>#{t.waiverPriority ?? "-"}</span>
-                      <span style={{ fontWeight: 600, color: "var(--text-main)" }}>{t.teamName}</span>
-                      <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>{t.managerName}</span>
+                      <span
+                        style={{
+                          width: "2rem",
+                          fontWeight: 700,
+                          color: "var(--accent)",
+                        }}
+                      >
+                        #{t.waiverPriority ?? "-"}
+                      </span>
+                      <span
+                        style={{ fontWeight: 600, color: "var(--text-main)" }}
+                      >
+                        {t.teamName}
+                      </span>
+                      <span
+                        style={{
+                          color: "var(--text-muted)",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        {t.managerName}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -2277,130 +2491,223 @@ export default function MyRosterPage() {
           </section>
 
           <section className="card">
-          <div style={{ padding: "1.5rem", minHeight: "300px" }}>
-            {!rosterData?.fantasyTeam.isOwner ? (
-              <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "3rem" }}>
-                Pending waiver claims are only visible to the manager who submitted them.
-              </div>
-            ) : waiverClaimsLoading ? (
-              <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "3rem" }}>
-                Loading waiver claims...
-              </div>
-            ) : waiverClaims.length === 0 ? (
-              <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "3rem" }}>
-                No pending waiver claims
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {waiverClaims.map((claim) => (
-                  <div
-                    key={claim.id}
-                    style={{
-                      background: "rgba(15, 23, 42, 0.6)",
-                      border: "1px solid rgba(255, 255, 255, 0.1)",
-                      borderRadius: "8px",
-                      padding: "1.25rem 1.5rem",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "1.5rem",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
-                      <span style={{ fontSize: "1.25rem", color: "#22c55e", fontWeight: 700 }}>+</span>
-                      {claim.addTeam ? (
-                        <>
-                          <Image
-                            src={claim.addTeam.logoPath}
-                            alt={claim.addTeam.name}
-                            width={32}
-                            height={32}
-                            style={{ borderRadius: "6px" }}
-                          />
-                          <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
-                            {claim.addTeam.leagueId} {claim.addTeam.name}
-                          </span>
-                          {claim.faabBid != null && (
-                            <span style={{ fontWeight: 700, color: "var(--accent)", fontSize: "0.9rem" }}>
-                              ${claim.faabBid} bid
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span style={{ color: "var(--text-muted)" }}>Unknown team</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 }}>
-                      {claim.dropTeam ? (
-                        <>
-                          <span style={{ fontSize: "1.25rem", color: "#ef4444", fontWeight: 700 }}>−</span>
-                          <Image
-                            src={claim.dropTeam.logoPath}
-                            alt={claim.dropTeam.name}
-                            width={32}
-                            height={32}
-                            style={{ borderRadius: "6px" }}
-                          />
-                          <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
-                            {claim.dropTeam.leagueId} {claim.dropTeam.name}
-                          </span>
-                        </>
-                      ) : (
-                        <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
-                          No drop — filling an empty slot
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                      Submitted {new Date(claim.createdAt).toLocaleString()}
-                    </div>
-
-                    <button
-                      onClick={async () => {
-                        if (!confirm("Cancel this waiver claim?")) return;
-                        try {
-                          const response = await fetch(
-                            `/api/leagues/${leagueId}/waivers/${claim.id}`,
-                            { method: "DELETE" }
-                          );
-
-                          if (response.ok) {
-                            const claimsResponse = await fetch(
-                              `/api/leagues/${leagueId}/waivers?mine=true`
-                            );
-                            if (claimsResponse.ok) {
-                              const data = await claimsResponse.json();
-                              setWaiverClaims(data.waiverClaims || []);
-                            }
-                          } else {
-                            const error = await response.json();
-                            showAlert(error.error || "Failed to cancel waiver claim", "error");
-                          }
-                        } catch (error) {
-                          console.error("Error cancelling waiver claim:", error);
-                          showAlert("Failed to cancel waiver claim. Please try again.", "error");
-                        }
-                      }}
+            <div style={{ padding: "1.5rem", minHeight: "300px" }}>
+              {!rosterData?.fantasyTeam.isOwner ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "var(--text-muted)",
+                    padding: "3rem",
+                  }}
+                >
+                  Pending waiver claims are only visible to the manager who
+                  submitted them.
+                </div>
+              ) : waiverClaimsLoading ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "var(--text-muted)",
+                    padding: "3rem",
+                  }}
+                >
+                  Loading waiver claims...
+                </div>
+              ) : waiverClaims.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    color: "var(--text-muted)",
+                    padding: "3rem",
+                  }}
+                >
+                  No pending waiver claims
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "1rem",
+                  }}
+                >
+                  {waiverClaims.map((claim) => (
+                    <div
+                      key={claim.id}
                       style={{
-                        background: "rgba(239, 68, 68, 0.2)",
-                        border: "1px solid #ef4444",
-                        color: "#ef4444",
-                        padding: "0.5rem 1.25rem",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        fontSize: "0.85rem",
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
+                        background: "rgba(15, 23, 42, 0.6)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: "8px",
+                        padding: "1.25rem 1.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "1.5rem",
                       }}
                     >
-                      Cancel
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          flex: 1,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "1.25rem",
+                            color: "#22c55e",
+                            fontWeight: 700,
+                          }}
+                        >
+                          +
+                        </span>
+                        {claim.addTeam ? (
+                          <>
+                            <Image
+                              src={claim.addTeam.logoPath}
+                              alt={claim.addTeam.name}
+                              width={32}
+                              height={32}
+                              style={{ borderRadius: "6px" }}
+                            />
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                color: "var(--text-main)",
+                              }}
+                            >
+                              {claim.addTeam.leagueId} {claim.addTeam.name}
+                            </span>
+                            {claim.faabBid != null && (
+                              <span
+                                style={{
+                                  fontWeight: 700,
+                                  color: "var(--accent)",
+                                  fontSize: "0.9rem",
+                                }}
+                              >
+                                ${claim.faabBid} bid
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }}>
+                            Unknown team
+                          </span>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.5rem",
+                          flex: 1,
+                        }}
+                      >
+                        {claim.dropTeam ? (
+                          <>
+                            <span
+                              style={{
+                                fontSize: "1.25rem",
+                                color: "#ef4444",
+                                fontWeight: 700,
+                              }}
+                            >
+                              −
+                            </span>
+                            <Image
+                              src={claim.dropTeam.logoPath}
+                              alt={claim.dropTeam.name}
+                              width={32}
+                              height={32}
+                              style={{ borderRadius: "6px" }}
+                            />
+                            <span
+                              style={{
+                                fontWeight: 600,
+                                color: "var(--text-main)",
+                              }}
+                            >
+                              {claim.dropTeam.leagueId} {claim.dropTeam.name}
+                            </span>
+                          </>
+                        ) : (
+                          <span
+                            style={{
+                              color: "var(--text-muted)",
+                              fontStyle: "italic",
+                            }}
+                          >
+                            No drop — filling an empty slot
+                          </span>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "var(--text-muted)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Submitted {new Date(claim.createdAt).toLocaleString()}
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Cancel this waiver claim?")) return;
+                          try {
+                            const response = await fetch(
+                              `/api/leagues/${leagueId}/waivers/${claim.id}`,
+                              { method: "DELETE" },
+                            );
+
+                            if (response.ok) {
+                              const claimsResponse = await fetch(
+                                `/api/leagues/${leagueId}/waivers?mine=true`,
+                              );
+                              if (claimsResponse.ok) {
+                                const data = await claimsResponse.json();
+                                setWaiverClaims(data.waiverClaims || []);
+                              }
+                            } else {
+                              const error = await response.json();
+                              showAlert(
+                                error.error || "Failed to cancel waiver claim",
+                                "error",
+                              );
+                            }
+                          } catch (error) {
+                            console.error(
+                              "Error cancelling waiver claim:",
+                              error,
+                            );
+                            showAlert(
+                              "Failed to cancel waiver claim. Please try again.",
+                              "error",
+                            );
+                          }
+                        }}
+                        style={{
+                          background: "rgba(239, 68, 68, 0.2)",
+                          border: "1px solid #ef4444",
+                          color: "#ef4444",
+                          padding: "0.5rem 1.25rem",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         </>
       )}
@@ -2430,58 +2737,62 @@ export default function MyRosterPage() {
                 No trades found
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {trades.filter(trade => trade.status === "pending" || trade.status === "awaiting_veto").map((trade) => (
-                  <div
-                    key={trade.id}
-                    style={{
-                      background: "rgba(15, 23, 42, 0.6)",
-                      border: "1px solid rgba(255, 255, 255, 0.1)",
-                      borderRadius: "8px",
-                      padding: "1.5rem",
-                    }}
-                  >
-                    {/* Trade Header */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "1rem",
+                }}
+              >
+                {trades
+                  .filter(
+                    (trade) =>
+                      trade.status === "pending" ||
+                      trade.status === "awaiting_veto",
+                  )
+                  .map((trade) => (
                     <div
+                      key={trade.id}
                       style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "0.5rem",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: "1rem",
+                        background: "rgba(15, 23, 42, 0.6)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: "8px",
+                        padding: "1.5rem",
                       }}
                     >
-                      <div>
-                        <span
-                          style={{
-                            fontSize: "0.9rem",
-                            fontWeight: 600,
-                            color:
-                              trade.status === "pending"
-                                ? "#fbbf24"
-                                : trade.status === "awaiting_veto"
-                                ? "#f59e0b"
-                                : trade.status === "accepted"
-                                ? "#22c55e"
-                                : trade.status === "rejected"
-                                ? "#ef4444"
-                                : "var(--text-muted)",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {trade.status === "awaiting_veto" ? "Awaiting Veto" : trade.status}
-                        </span>
-                        <span
-                          style={{
-                            marginLeft: "1rem",
-                            fontSize: "0.85rem",
-                            color: "var(--text-muted)",
-                          }}
-                        >
-                          {new Date(trade.createdAt).toLocaleString()}
-                        </span>
-                        {trade.status === "awaiting_veto" && trade.vetoDeadline && (
+                      {/* Trade Header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "0.5rem",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "1rem",
+                        }}
+                      >
+                        <div>
+                          <span
+                            style={{
+                              fontSize: "0.9rem",
+                              fontWeight: 600,
+                              color:
+                                trade.status === "pending"
+                                  ? "#fbbf24"
+                                  : trade.status === "awaiting_veto"
+                                    ? "#f59e0b"
+                                    : trade.status === "accepted"
+                                      ? "#22c55e"
+                                      : trade.status === "rejected"
+                                        ? "#ef4444"
+                                        : "var(--text-muted)",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {trade.status === "awaiting_veto"
+                              ? "Awaiting Veto"
+                              : trade.status}
+                          </span>
                           <span
                             style={{
                               marginLeft: "1rem",
@@ -2489,384 +2800,441 @@ export default function MyRosterPage() {
                               color: "var(--text-muted)",
                             }}
                           >
-                            Processes automatically at{" "}
-                            {new Date(trade.vetoDeadline).toLocaleString()}
+                            {new Date(trade.createdAt).toLocaleString()}
                           </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Trade Details */}
-                    <div
-                      className="matchup-hero-grid tight"
-                      style={{
-                        alignItems: "center",
-                      }}
-                    >
-                      {/* Proposer Side */}
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "0.85rem",
-                            color: "var(--text-muted)",
-                            marginBottom: "0.5rem",
-                          }}
-                        >
-                          {trade.isProposer ? "You give" : `${trade.proposer.managerName} gives`}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "1rem",
-                            fontWeight: 600,
-                            color: "var(--text-main)",
-                            marginBottom: "0.5rem",
-                          }}
-                        >
-                          {trade.proposer.teamName}
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "0.5rem",
-                          }}
-                        >
-                          {trade.proposer.gives.map((team: any) => (
-                            <div
-                              key={team.id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                padding: "0.5rem",
-                                background: "rgba(255,255,255,0.05)",
-                                borderRadius: "6px",
-                              }}
-                            >
-                              <Image
-                                src={team.logoPath}
-                                alt={team.name}
-                                width={32}
-                                height={32}
-                                style={{ borderRadius: "4px" }}
-                              />
+                          {trade.status === "awaiting_veto" &&
+                            trade.vetoDeadline && (
                               <span
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTeam(team);
-                                  setSelectedTeamRosteredBy({
-                                    rosterName: trade.proposer.teamName,
-                                    managerName: trade.proposer.managerName,
-                                    fantasyTeamId: trade.proposer.teamId,
-                                  });
-                                  setShowModal(true);
-                                }}
-                                onMouseEnter={(e) =>
-                                  (e.currentTarget.style.color = "var(--accent)")
-                                }
-                                onMouseLeave={(e) =>
-                                  (e.currentTarget.style.color = "var(--text-main)")
-                                }
                                 style={{
-                                  fontSize: "0.9rem",
-                                  color: "var(--text-main)",
-                                  cursor: "pointer",
-                                  transition: "color 0.2s",
+                                  marginLeft: "1rem",
+                                  fontSize: "0.85rem",
+                                  color: "var(--text-muted)",
                                 }}
                               >
-                                {team.name}
+                                Processes automatically at{" "}
+                                {new Date(trade.vetoDeadline).toLocaleString()}
                               </span>
-                            </div>
-                          ))}
+                            )}
                         </div>
+                      </div>
 
-                        {trade.proposer.drops && trade.proposer.drops.length > 0 && (
-                          <>
-                            <div
-                              style={{
-                                fontSize: "0.85rem",
-                                color: "var(--text-muted)",
-                                marginTop: "0.75rem",
-                                marginBottom: "0.5rem",
-                              }}
-                            >
-                              {trade.isProposer ? "You also drop" : `${trade.proposer.managerName} also drops`}
-                            </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: "0.5rem",
-                              }}
-                            >
-                              {trade.proposer.drops.map((team: any) => (
-                                <div
-                                  key={team.id}
+                      {/* Trade Details */}
+                      <div
+                        className="matchup-hero-grid tight"
+                        style={{
+                          alignItems: "center",
+                        }}
+                      >
+                        {/* Proposer Side */}
+                        <div>
+                          <div
+                            style={{
+                              fontSize: "0.85rem",
+                              color: "var(--text-muted)",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            {trade.isProposer
+                              ? "You give"
+                              : `${trade.proposer.managerName} gives`}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "1rem",
+                              fontWeight: 600,
+                              color: "var(--text-main)",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            {trade.proposer.teamName}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "0.5rem",
+                            }}
+                          >
+                            {trade.proposer.gives.map((team: TeamSummary) => (
+                              <div
+                                key={team.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "0.5rem",
+                                  padding: "0.5rem",
+                                  background: "rgba(255,255,255,0.05)",
+                                  borderRadius: "6px",
+                                }}
+                              >
+                                <Image
+                                  src={team.logoPath}
+                                  alt={team.name}
+                                  width={32}
+                                  height={32}
+                                  style={{ borderRadius: "4px" }}
+                                />
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTeam(team);
+                                    setSelectedTeamRosteredBy({
+                                      rosterName: trade.proposer.teamName,
+                                      managerName: trade.proposer.managerName,
+                                      fantasyTeamId: trade.proposer.teamId,
+                                    });
+                                    setShowModal(true);
+                                  }}
+                                  onMouseEnter={(e) =>
+                                    (e.currentTarget.style.color =
+                                      "var(--accent)")
+                                  }
+                                  onMouseLeave={(e) =>
+                                    (e.currentTarget.style.color =
+                                      "var(--text-main)")
+                                  }
                                   style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.5rem",
-                                    background: "rgba(239, 68, 68, 0.08)",
-                                    borderRadius: "6px",
+                                    fontSize: "0.9rem",
+                                    color: "var(--text-main)",
+                                    cursor: "pointer",
+                                    transition: "color 0.2s",
                                   }}
                                 >
-                                  <Image
-                                    src={team.logoPath}
-                                    alt={team.name}
-                                    width={32}
-                                    height={32}
-                                    style={{ borderRadius: "4px", opacity: 0.7 }}
-                                  />
-                                  <span style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-                                    {team.name}
-                                  </span>
+                                  {team.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {trade.proposer.drops &&
+                            trade.proposer.drops.length > 0 && (
+                              <>
+                                <div
+                                  style={{
+                                    fontSize: "0.85rem",
+                                    color: "var(--text-muted)",
+                                    marginTop: "0.75rem",
+                                    marginBottom: "0.5rem",
+                                  }}
+                                >
+                                  {trade.isProposer
+                                    ? "You also drop"
+                                    : `${trade.proposer.managerName} also drops`}
                                 </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "0.5rem",
+                                  }}
+                                >
+                                  {trade.proposer.drops.map((team: TeamSummary) => (
+                                    <div
+                                      key={team.id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "0.5rem",
+                                        padding: "0.5rem",
+                                        background: "rgba(239, 68, 68, 0.08)",
+                                        borderRadius: "6px",
+                                      }}
+                                    >
+                                      <Image
+                                        src={team.logoPath}
+                                        alt={team.name}
+                                        width={32}
+                                        height={32}
+                                        style={{
+                                          borderRadius: "4px",
+                                          opacity: 0.7,
+                                        }}
+                                      />
+                                      <span
+                                        style={{
+                                          fontSize: "0.9rem",
+                                          color: "var(--text-muted)",
+                                        }}
+                                      >
+                                        {team.name}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                        </div>
 
-                      {/* Arrow */}
-                      <div
-                        style={{
-                          fontSize: "2rem",
-                          color: "var(--accent)",
-                          fontWeight: 700,
-                        }}
-                      >
-                        ⇄
-                      </div>
-
-                      {/* Receiver Side */}
-                      <div>
+                        {/* Arrow */}
                         <div
                           style={{
-                            fontSize: "0.85rem",
-                            color: "var(--text-muted)",
-                            marginBottom: "0.5rem",
+                            fontSize: "2rem",
+                            color: "var(--accent)",
+                            fontWeight: 700,
                           }}
                         >
-                          {trade.isProposer ? `${trade.receiver.managerName} gives` : "You give"}
+                          ⇄
                         </div>
+
+                        {/* Receiver Side */}
+                        <div>
+                          <div
+                            style={{
+                              fontSize: "0.85rem",
+                              color: "var(--text-muted)",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            {trade.isProposer
+                              ? `${trade.receiver.managerName} gives`
+                              : "You give"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "1rem",
+                              fontWeight: 600,
+                              color: "var(--text-main)",
+                              marginBottom: "0.5rem",
+                            }}
+                          >
+                            {trade.receiver.teamName}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "0.5rem",
+                            }}
+                          >
+                            {trade.receiver.gives.map((team: TeamSummary) => (
+                              <div
+                                key={team.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "0.5rem",
+                                  padding: "0.5rem",
+                                  background: "rgba(255,255,255,0.05)",
+                                  borderRadius: "6px",
+                                }}
+                              >
+                                <Image
+                                  src={team.logoPath}
+                                  alt={team.name}
+                                  width={32}
+                                  height={32}
+                                  style={{ borderRadius: "4px" }}
+                                />
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTeam(team);
+                                    setSelectedTeamRosteredBy({
+                                      rosterName: trade.receiver.teamName,
+                                      managerName: trade.receiver.managerName,
+                                      fantasyTeamId: trade.receiver.teamId,
+                                    });
+                                    setShowModal(true);
+                                  }}
+                                  onMouseEnter={(e) =>
+                                    (e.currentTarget.style.color =
+                                      "var(--accent)")
+                                  }
+                                  onMouseLeave={(e) =>
+                                    (e.currentTarget.style.color =
+                                      "var(--text-main)")
+                                  }
+                                  style={{
+                                    fontSize: "0.9rem",
+                                    color: "var(--text-main)",
+                                    cursor: "pointer",
+                                    transition: "color 0.2s",
+                                  }}
+                                >
+                                  {team.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons for Pending Trades */}
+                      {trade.status === "pending" && !trade.isProposer && (
                         <div
+                          className="trade-action-buttons"
                           style={{
-                            fontSize: "1rem",
-                            fontWeight: 600,
-                            color: "var(--text-main)",
-                            marginBottom: "0.5rem",
+                            display: "flex",
+                            gap: "1rem",
+                            marginTop: "1.5rem",
+                            justifyContent: "flex-end",
                           }}
                         >
-                          {trade.receiver.teamName}
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(
+                                  `/api/leagues/${leagueId}/trades/${trade.id}`,
+                                  {
+                                    method: "PATCH",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({ action: "reject" }),
+                                  },
+                                );
+
+                                if (response.ok) {
+                                  // Refresh trades
+                                  const tradesResponse = await fetch(
+                                    `/api/leagues/${leagueId}/trades?teamId=${teamId}`,
+                                  );
+                                  if (tradesResponse.ok) {
+                                    const data = await tradesResponse.json();
+                                    setTrades(data.trades || []);
+                                  }
+                                } else {
+                                  const error = await response.json();
+                                  showAlert(
+                                    error.error || "Failed to reject trade",
+                                    "error",
+                                  );
+                                }
+                              } catch (error) {
+                                console.error("Error rejecting trade:", error);
+                                showAlert(
+                                  "Failed to reject trade. Please try again.",
+                                  "error",
+                                );
+                              }
+                            }}
+                            style={{
+                              background: "rgba(239, 68, 68, 0.2)",
+                              border: "1px solid #ef4444",
+                              color: "#ef4444",
+                              padding: "0.5rem 1.5rem",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              fontSize: "0.9rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={async () => {
+                              // Store the original trade ID to reject after counter offer
+                              sessionStorage.setItem(
+                                "counterTradeId",
+                                trade.id,
+                              );
+                              sessionStorage.setItem(
+                                "counterTradeLeagueId",
+                                leagueId,
+                              );
+                              sessionStorage.setItem(
+                                "counterTradeTeamId",
+                                teamId || "",
+                              );
+
+                              // Navigate to trade page with the proposer's team
+                              window.location.href = `/leagues/${leagueId}/opponents/${trade.proposer.teamId}/trade`;
+                            }}
+                            className="trade-counter-btn"
+                            style={{
+                              background: "rgba(251, 191, 36, 0.2)",
+                              border: "1px solid #fbbf24",
+                              color: "#fbbf24",
+                              padding: "0.5rem 1.5rem",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              fontSize: "0.9rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Counter
+                          </button>
+                          <button
+                            onClick={() => acceptTrade(trade)}
+                            disabled={acceptingTrade}
+                            style={{
+                              background: "rgba(34, 197, 94, 0.2)",
+                              border: "1px solid #22c55e",
+                              color: "#22c55e",
+                              padding: "0.5rem 1.5rem",
+                              borderRadius: "6px",
+                              cursor: acceptingTrade
+                                ? "not-allowed"
+                                : "pointer",
+                              fontSize: "0.9rem",
+                              fontWeight: 600,
+                              opacity: acceptingTrade ? 0.6 : 1,
+                            }}
+                          >
+                            Accept
+                          </button>
                         </div>
+                      )}
+
+                      {/* Cancel button for trades you sent out */}
+                      {trade.status === "pending" && trade.isProposer && (
                         <div
                           style={{
                             display: "flex",
-                            flexDirection: "column",
-                            gap: "0.5rem",
+                            gap: "1rem",
+                            marginTop: "1.5rem",
+                            justifyContent: "flex-end",
                           }}
                         >
-                          {trade.receiver.gives.map((team: any) => (
-                            <div
-                              key={team.id}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                padding: "0.5rem",
-                                background: "rgba(255,255,255,0.05)",
-                                borderRadius: "6px",
-                              }}
-                            >
-                              <Image
-                                src={team.logoPath}
-                                alt={team.name}
-                                width={32}
-                                height={32}
-                                style={{ borderRadius: "4px" }}
-                              />
-                              <span
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTeam(team);
-                                  setSelectedTeamRosteredBy({
-                                    rosterName: trade.receiver.teamName,
-                                    managerName: trade.receiver.managerName,
-                                    fantasyTeamId: trade.receiver.teamId,
-                                  });
-                                  setShowModal(true);
-                                }}
-                                onMouseEnter={(e) =>
-                                  (e.currentTarget.style.color = "var(--accent)")
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Cancel this trade offer?")) return;
+                              try {
+                                const response = await fetch(
+                                  `/api/leagues/${leagueId}/trades/${trade.id}`,
+                                  { method: "DELETE" },
+                                );
+
+                                if (response.ok) {
+                                  const tradesResponse = await fetch(
+                                    `/api/leagues/${leagueId}/trades?teamId=${teamId}`,
+                                  );
+                                  if (tradesResponse.ok) {
+                                    const data = await tradesResponse.json();
+                                    setTrades(data.trades || []);
+                                  }
+                                } else {
+                                  const error = await response.json();
+                                  showAlert(
+                                    error.error || "Failed to cancel trade",
+                                    "error",
+                                  );
                                 }
-                                onMouseLeave={(e) =>
-                                  (e.currentTarget.style.color = "var(--text-main)")
-                                }
-                                style={{
-                                  fontSize: "0.9rem",
-                                  color: "var(--text-main)",
-                                  cursor: "pointer",
-                                  transition: "color 0.2s",
-                                }}
-                              >
-                                {team.name}
-                              </span>
-                            </div>
-                          ))}
+                              } catch (error) {
+                                console.error("Error cancelling trade:", error);
+                                showAlert(
+                                  "Failed to cancel trade. Please try again.",
+                                  "error",
+                                );
+                              }
+                            }}
+                            style={{
+                              background: "rgba(239, 68, 68, 0.2)",
+                              border: "1px solid #ef4444",
+                              color: "#ef4444",
+                              padding: "0.5rem 1.5rem",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              fontSize: "0.9rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Cancel
+                          </button>
                         </div>
-                      </div>
+                      )}
                     </div>
-
-                    {/* Action Buttons for Pending Trades */}
-                    {trade.status === "pending" && !trade.isProposer && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "1rem",
-                          marginTop: "1.5rem",
-                          justifyContent: "flex-end",
-                        }}
-                      >
-                        <button
-                          onClick={async () => {
-                            try {
-                              const response = await fetch(
-                                `/api/leagues/${leagueId}/trades/${trade.id}`,
-                                {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ action: "reject" }),
-                                }
-                              );
-
-                              if (response.ok) {
-                                // Refresh trades
-                                const tradesResponse = await fetch(
-                                  `/api/leagues/${leagueId}/trades?teamId=${teamId}`
-                                );
-                                if (tradesResponse.ok) {
-                                  const data = await tradesResponse.json();
-                                  setTrades(data.trades || []);
-                                }
-                              } else {
-                                const error = await response.json();
-                                showAlert(error.error || "Failed to reject trade", "error");
-                              }
-                            } catch (error) {
-                              console.error("Error rejecting trade:", error);
-                              showAlert("Failed to reject trade. Please try again.", "error");
-                            }
-                          }}
-                          style={{
-                            background: "rgba(239, 68, 68, 0.2)",
-                            border: "1px solid #ef4444",
-                            color: "#ef4444",
-                            padding: "0.5rem 1.5rem",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "0.9rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Reject
-                        </button>
-                        <button
-                          onClick={async () => {
-                            // Store the original trade ID to reject after counter offer
-                            sessionStorage.setItem("counterTradeId", trade.id);
-                            sessionStorage.setItem("counterTradeLeagueId", leagueId);
-                            sessionStorage.setItem("counterTradeTeamId", teamId || "");
-
-                            // Navigate to trade page with the proposer's team
-                            window.location.href = `/leagues/${leagueId}/opponents/${trade.proposer.teamId}/trade`;
-                          }}
-                          style={{
-                            background: "rgba(251, 191, 36, 0.2)",
-                            border: "1px solid #fbbf24",
-                            color: "#fbbf24",
-                            padding: "0.5rem 1.5rem",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "0.9rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Counter
-                        </button>
-                        <button
-                          onClick={() => acceptTrade(trade)}
-                          disabled={acceptingTrade}
-                          style={{
-                            background: "rgba(34, 197, 94, 0.2)",
-                            border: "1px solid #22c55e",
-                            color: "#22c55e",
-                            padding: "0.5rem 1.5rem",
-                            borderRadius: "6px",
-                            cursor: acceptingTrade ? "not-allowed" : "pointer",
-                            fontSize: "0.9rem",
-                            fontWeight: 600,
-                            opacity: acceptingTrade ? 0.6 : 1,
-                          }}
-                        >
-                          Accept
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Cancel button for trades you sent out */}
-                    {trade.status === "pending" && trade.isProposer && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "1rem",
-                          marginTop: "1.5rem",
-                          justifyContent: "flex-end",
-                        }}
-                      >
-                        <button
-                          onClick={async () => {
-                            if (!confirm("Cancel this trade offer?")) return;
-                            try {
-                              const response = await fetch(
-                                `/api/leagues/${leagueId}/trades/${trade.id}`,
-                                { method: "DELETE" }
-                              );
-
-                              if (response.ok) {
-                                const tradesResponse = await fetch(
-                                  `/api/leagues/${leagueId}/trades?teamId=${teamId}`
-                                );
-                                if (tradesResponse.ok) {
-                                  const data = await tradesResponse.json();
-                                  setTrades(data.trades || []);
-                                }
-                              } else {
-                                const error = await response.json();
-                                showAlert(error.error || "Failed to cancel trade", "error");
-                              }
-                            } catch (error) {
-                              console.error("Error cancelling trade:", error);
-                              showAlert("Failed to cancel trade. Please try again.", "error");
-                            }
-                          }}
-                          style={{
-                            background: "rgba(239, 68, 68, 0.2)",
-                            border: "1px solid #ef4444",
-                            color: "#ef4444",
-                            padding: "0.5rem 1.5rem",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "0.9rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </div>
@@ -2964,7 +3332,11 @@ export default function MyRosterPage() {
             </div>
 
             {/* Roster List */}
-            <div style={{ padding: "clamp(1rem, 4vw, 1.5rem) clamp(1rem, 5vw, 2rem)" }}>
+            <div
+              style={{
+                padding: "clamp(1rem, 4vw, 1.5rem) clamp(1rem, 5vw, 2rem)",
+              }}
+            >
               {fullRoster.filter((slot) => slot.mleTeam !== null).length ===
               0 ? (
                 <div
@@ -2992,7 +3364,7 @@ export default function MyRosterPage() {
                         onClick={() =>
                           !slot.isLocked &&
                           setSelectedDropSlot(
-                            selectedDropSlot?.id === slot.id ? null : slot
+                            selectedDropSlot?.id === slot.id ? null : slot,
                           )
                         }
                         style={{
@@ -3000,14 +3372,14 @@ export default function MyRosterPage() {
                           background: slot.isLocked
                             ? "rgba(239, 68, 68, 0.06)"
                             : selectedDropSlot?.id === slot.id
-                            ? "rgba(242, 182, 50, 0.1)"
-                            : "rgba(255, 255, 255, 0.05)",
+                              ? "rgba(242, 182, 50, 0.1)"
+                              : "rgba(255, 255, 255, 0.05)",
                           border: `2px solid ${
                             slot.isLocked
                               ? "rgba(239, 68, 68, 0.3)"
                               : selectedDropSlot?.id === slot.id
-                              ? "var(--accent)"
-                              : "rgba(255, 255, 255, 0.1)"
+                                ? "var(--accent)"
+                                : "rgba(255, 255, 255, 0.1)"
                           }`,
                           borderRadius: "8px",
                           cursor: slot.isLocked ? "not-allowed" : "pointer",
@@ -3113,7 +3485,7 @@ export default function MyRosterPage() {
                           mleTeamId: selectedDropSlot.mleTeam!.id,
                           week: currentWeek,
                         }),
-                      }
+                      },
                     );
 
                     if (response.ok) {
@@ -3121,13 +3493,13 @@ export default function MyRosterPage() {
                         `${selectedDropSlot.mleTeam!.leagueId} ${
                           selectedDropSlot.mleTeam!.name
                         } has been dropped from your roster`,
-                        "success"
+                        "success",
                       );
                       setShowDropModal(false);
                       setSelectedDropSlot(null);
                       // Refetch roster
                       const rosterResponse = await fetch(
-                        `/api/leagues/${leagueId}/rosters/${teamId}?week=${currentWeek}`
+                        `/api/leagues/${leagueId}/rosters/${teamId}?week=${currentWeek}`,
                       );
                       if (rosterResponse.ok) {
                         const updatedRoster = await rosterResponse.json();
@@ -3137,12 +3509,15 @@ export default function MyRosterPage() {
                       const error = await response.json();
                       showAlert(
                         `Failed to drop team: ${error.error || "Unknown error"}`,
-                        "error"
+                        "error",
                       );
                     }
                   } catch (error) {
                     console.error("Error dropping team:", error);
-                    showAlert("Failed to drop team. Please try again.", "error");
+                    showAlert(
+                      "Failed to drop team. Please try again.",
+                      "error",
+                    );
                   }
                 }}
                 disabled={!selectedDropSlot}
@@ -3233,7 +3608,10 @@ export default function MyRosterPage() {
 
             <button
               onClick={() => {
-                if (selectedTradeDropIndices.length === tradeAcceptDropModal.neededCount) {
+                if (
+                  selectedTradeDropIndices.length ===
+                  tradeAcceptDropModal.neededCount
+                ) {
                   const receiverDrops = selectedTradeDropIndices
                     .map((idx) => rosterData.rosterSlots[idx]?.mleTeam?.id)
                     .filter((id): id is string => !!id);
@@ -3241,7 +3619,7 @@ export default function MyRosterPage() {
                 } else {
                   showAlert(
                     `Please select ${tradeAcceptDropModal.neededCount} team${tradeAcceptDropModal.neededCount === 1 ? "" : "s"} to drop`,
-                    "warning"
+                    "warning",
                   );
                 }
               }}
@@ -3250,7 +3628,8 @@ export default function MyRosterPage() {
                 position: "absolute",
                 top: "1rem",
                 right: "1rem",
-                background: "linear-gradient(135deg, var(--accent) 0%, #d4a832 100%)",
+                background:
+                  "linear-gradient(135deg, var(--accent) 0%, #d4a832 100%)",
                 color: "#1a1a2e",
                 fontWeight: 700,
                 padding: "0.65rem 2rem",
@@ -3266,16 +3645,43 @@ export default function MyRosterPage() {
               {acceptingTrade ? "Accepting..." : "Confirm & Accept"}
             </button>
 
-            <div style={{ padding: "3.5rem 2rem 1.5rem", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>
-              <div style={{ fontSize: "clamp(1.1rem, 5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)" }}>
+            <div
+              style={{
+                padding: "3.5rem 2rem 1.5rem",
+                borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "clamp(1.1rem, 5vw, 1.5rem)",
+                  fontWeight: 700,
+                  color: "var(--text-main)",
+                }}
+              >
                 Make Room to Accept This Trade
               </div>
-              <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
-                Accepting would leave your roster over capacity — pick teams to drop to make it fit.
+              <div
+                style={{
+                  fontSize: "0.9rem",
+                  color: "var(--text-muted)",
+                  marginTop: "0.25rem",
+                }}
+              >
+                Accepting would leave your roster over capacity — pick teams to
+                drop to make it fit.
               </div>
-              <div style={{ fontSize: "0.9rem", color: "var(--accent)", marginTop: "1rem", fontWeight: 600 }}>
-                Select {tradeAcceptDropModal.neededCount} team{tradeAcceptDropModal.neededCount === 1 ? "" : "s"} to drop (
-                {selectedTradeDropIndices.length}/{tradeAcceptDropModal.neededCount} selected)
+              <div
+                style={{
+                  fontSize: "0.9rem",
+                  color: "var(--accent)",
+                  marginTop: "1rem",
+                  fontWeight: 600,
+                }}
+              >
+                Select {tradeAcceptDropModal.neededCount} team
+                {tradeAcceptDropModal.neededCount === 1 ? "" : "s"} to drop (
+                {selectedTradeDropIndices.length}/
+                {tradeAcceptDropModal.neededCount} selected)
               </div>
             </div>
 
@@ -3283,9 +3689,31 @@ export default function MyRosterPage() {
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={{ borderBottom: "2px solid rgba(255, 255, 255, 0.2)" }}>
-                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
-                      <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}></th>
+                    <tr
+                      style={{
+                        borderBottom: "2px solid rgba(255, 255, 255, 0.2)",
+                      }}
+                    >
+                      <th
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          textAlign: "left",
+                          fontSize: "0.85rem",
+                          color: "var(--text-muted)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Team
+                      </th>
+                      <th
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          textAlign: "center",
+                          fontSize: "0.85rem",
+                          color: "var(--text-muted)",
+                          fontWeight: 600,
+                        }}
+                      ></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3293,21 +3721,30 @@ export default function MyRosterPage() {
                       if (!slot.mleTeam) return null;
                       // A team already going out as part of the trade itself
                       // can't also be picked to drop — it's already leaving.
-                      const alreadyGiven = tradeAcceptDropModal.trade.receiver.gives.some(
-                        (t: any) => t.id === slot.mleTeam!.id
-                      );
+                      const alreadyGiven =
+                        tradeAcceptDropModal.trade.receiver.gives.some(
+                          (t: TeamSummary) => t.id === slot.mleTeam!.id,
+                        );
                       const selected = selectedTradeDropIndices.includes(index);
                       return (
                         <tr
                           key={slot.id}
                           style={{
                             borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
-                            backgroundColor: selected ? "rgba(242, 182, 50, 0.1)" : "transparent",
+                            backgroundColor: selected
+                              ? "rgba(242, 182, 50, 0.1)"
+                              : "transparent",
                             opacity: alreadyGiven ? 0.4 : 1,
                           }}
                         >
                           <td style={{ padding: "0.75rem 0.5rem" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                              }}
+                            >
                               <Image
                                 src={slot.mleTeam.logoPath}
                                 alt={slot.mleTeam.name}
@@ -3315,22 +3752,40 @@ export default function MyRosterPage() {
                                 height={24}
                                 style={{ borderRadius: "4px" }}
                               />
-                              <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
+                              <span
+                                style={{
+                                  fontWeight: 600,
+                                  fontSize: "0.9rem",
+                                  color: "var(--text-main)",
+                                }}
+                              >
                                 {slot.mleTeam.leagueId} {slot.mleTeam.name}
                               </span>
                               {alreadyGiven && (
-                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                <span
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
                                   (already in this trade)
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
+                          <td
+                            style={{
+                              padding: "0.75rem 0.5rem",
+                              textAlign: "center",
+                            }}
+                          >
                             <button
                               onClick={() =>
                                 !alreadyGiven &&
                                 setSelectedTradeDropIndices((prev) =>
-                                  prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+                                  prev.includes(index)
+                                    ? prev.filter((i) => i !== index)
+                                    : [...prev, index],
                                 )
                               }
                               disabled={alreadyGiven}
@@ -3339,8 +3794,12 @@ export default function MyRosterPage() {
                                 height: "24px",
                                 border: "2px solid var(--accent)",
                                 borderRadius: "4px",
-                                background: selected ? "var(--accent)" : "transparent",
-                                cursor: alreadyGiven ? "not-allowed" : "pointer",
+                                background: selected
+                                  ? "var(--accent)"
+                                  : "transparent",
+                                cursor: alreadyGiven
+                                  ? "not-allowed"
+                                  : "pointer",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
@@ -3372,7 +3831,9 @@ export default function MyRosterPage() {
             rosteredBy: selectedTeamRosteredBy,
           }}
           fantasyLeagueId={leagueId}
-          currentUserFantasyTeamId={rosterData?.fantasyTeam.isOwner ? teamId : null}
+          currentUserFantasyTeamId={
+            rosterData?.fantasyTeam.isOwner ? teamId : null
+          }
           onClose={() => {
             setShowModal(false);
             setSelectedTeam(null);

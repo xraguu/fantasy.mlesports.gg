@@ -138,14 +138,20 @@ export default function TeamModal({
   >(null);
   const [loadingMatchup, setLoadingMatchup] = useState(false);
 
+  // Every fetch below only ever cares about the team's id, never any other
+  // field on it — depending on that id alone (rather than the whole `team`
+  // object) avoids refiring every one of these on a parent re-render that
+  // passes an equivalent-but-newly-constructed `team` object.
+  const teamId = team?.id;
+
   // Fetch players when team changes
   useEffect(() => {
     const fetchPlayers = async () => {
-      if (!team) return;
+      if (!teamId) return;
 
       try {
         setLoadingPlayers(true);
-        const response = await fetch(`/api/teams/${team.id}/players`);
+        const response = await fetch(`/api/teams/${teamId}/players`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch players");
@@ -162,16 +168,16 @@ export default function TeamModal({
     };
 
     fetchPlayers();
-  }, [team?.id]);
+  }, [teamId]);
 
   // Fetch staff when team changes
   useEffect(() => {
     const fetchStaff = async () => {
-      if (!team) return;
+      if (!teamId) return;
 
       try {
         setLoadingStaff(true);
-        const response = await fetch(`/api/teams/${team.id}/staff`);
+        const response = await fetch(`/api/teams/${teamId}/staff`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch staff");
@@ -198,18 +204,18 @@ export default function TeamModal({
     };
 
     fetchStaff();
-  }, [team?.id]);
+  }, [teamId]);
 
   // Fetch the real, always-consistent 2s/3s records + MLE standing + fantasy
   // rank when the team changes — independent of whatever record/rank the
   // opening page happened to pass in for whichever mode it was sorted by.
   useEffect(() => {
     const fetchOverview = async () => {
-      if (!team) return;
+      if (!teamId) return;
 
       try {
         setLoadingOverview(true);
-        const response = await fetch(`/api/mle-teams/${team.id}/overview`);
+        const response = await fetch(`/api/mle-teams/${teamId}/overview`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch team overview");
@@ -226,12 +232,12 @@ export default function TeamModal({
     };
 
     fetchOverview();
-  }, [team?.id]);
+  }, [teamId]);
 
   // Fetch weekly breakdown when team changes
   useEffect(() => {
     const fetchWeeklyStats = async () => {
-      if (!team || !fantasyLeagueId) {
+      if (!teamId || !fantasyLeagueId) {
         setWeeklyStats([]);
         setLoadingWeeklyStats(false);
         return;
@@ -240,7 +246,7 @@ export default function TeamModal({
       try {
         setLoadingWeeklyStats(true);
         const response = await fetch(
-          `/api/leagues/${fantasyLeagueId}/mle-teams/${team.id}/weekly-breakdown`
+          `/api/leagues/${fantasyLeagueId}/mle-teams/${teamId}/weekly-breakdown`
         );
 
         if (!response.ok) {
@@ -258,17 +264,17 @@ export default function TeamModal({
     };
 
     fetchWeeklyStats();
-  }, [team?.id, fantasyLeagueId]);
+  }, [teamId, fantasyLeagueId]);
 
   // Fetch the real MLE-vs-MLE match details when a week is selected
   useEffect(() => {
-    if (!selectedWeek || !team || !fantasyLeagueId) return;
+    if (!selectedWeek || !teamId || !fantasyLeagueId) return;
 
     const fetchMatchData = async () => {
       try {
         setLoadingMatchup(true);
         const response = await fetch(
-          `/api/leagues/${fantasyLeagueId}/mle-teams/${team.id}/match-details?week=${selectedWeek}`
+          `/api/leagues/${fantasyLeagueId}/mle-teams/${teamId}/match-details?week=${selectedWeek}`
         );
 
         if (!response.ok) {
@@ -286,7 +292,7 @@ export default function TeamModal({
     };
 
     fetchMatchData();
-  }, [selectedWeek, team?.id, fantasyLeagueId]);
+  }, [selectedWeek, teamId, fantasyLeagueId]);
 
   if (!team) return null;
 

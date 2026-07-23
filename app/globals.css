@@ -823,6 +823,20 @@ main {
   }
 }
 
+/* Pending-trade Reject/Counter/Accept row (My Roster's Trades tab): all
+   three fit on one line on desktop. On mobile, force Counter onto its own
+   line above the Reject/Accept pair instead of letting all three squeeze
+   into one row and overflow the page. */
+@media (max-width: 700px) {
+  .trade-action-buttons {
+    flex-wrap: wrap;
+  }
+  .trade-action-buttons .trade-counter-btn {
+    flex-basis: 100%;
+    order: -1;
+  }
+}
+
 /* Trade grid: one unified row per roster slot (my team | position | their
    team) instead of three separate parallel lists. Desktop keeps the same
    3-column look as before (see .matchup-row-grid for the same idea used on

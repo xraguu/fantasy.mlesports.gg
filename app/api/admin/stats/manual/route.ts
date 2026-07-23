@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     const week = searchParams.get("week");
     const teamId = searchParams.get("teamId");
 
-    const where: any = {};
+    const where: Prisma.ManualStatsOverrideWhereInput = {};
     if (week) where.week = parseInt(week);
     if (teamId) where.teamId = teamId;
 

@@ -46,7 +46,7 @@ async function main() {
   console.log(`   Teams: ${league.fantasyTeams.length}`);
   console.log(`   Roster Config: ${JSON.stringify(league.rosterConfig)}\n`);
 
-  const rosterConfig = league.rosterConfig as any || { "2s": 2, "3s": 2, "flx": 1, "be": 3 };
+  const rosterConfig = (league.rosterConfig as Record<string, number>) || { "2s": 2, "3s": 2, "flx": 1, "be": 3 };
 
   // Process each team
   for (const team of league.fantasyTeams) {

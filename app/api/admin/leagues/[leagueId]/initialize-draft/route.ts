@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { generateDraftPickOrder } from "@/lib/draftPickOrder";
+import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 // POST /api/admin/leagues/[leagueId]/initialize-draft - Initialize draft picks for the league
 export async function POST(
@@ -61,12 +62,12 @@ export async function POST(
     }
 
     // Calculate number of rounds (8 teams per fantasy team based on default roster config)
-    const rosterConfig = league.rosterConfig as any;
+    const rosterConfig = league.rosterConfig as RosterConfigShape;
     const totalRosterSlots =
-      (rosterConfig["2s"] || 0) +
-      (rosterConfig["3s"] || 0) +
-      (rosterConfig["flx"] || 0) +
-      (rosterConfig["be"] || 0);
+      (rosterConfig?.["2s"] || 0) +
+      (rosterConfig?.["3s"] || 0) +
+      (rosterConfig?.flx || 0) +
+      (rosterConfig?.be || 0);
     const numRounds = totalRosterSlots;
 
     // Generate draft picks

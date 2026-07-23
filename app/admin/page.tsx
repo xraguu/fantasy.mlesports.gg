@@ -42,6 +42,8 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -55,6 +57,13 @@ export default function AdminDashboard() {
       .catch((err) => console.error("Failed to load dashboard data:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  const filteredActivity = activity.filter((entry) => {
+    const entryDate = new Date(entry.createdAt);
+    if (dateFrom && entryDate < new Date(`${dateFrom}T00:00:00`)) return false;
+    if (dateTo && entryDate > new Date(`${dateTo}T23:59:59.999`)) return false;
+    return true;
+  });
 
   const statBoxes = [
     { label: "Total Leagues", value: stats?.totalLeagues },
@@ -100,24 +109,85 @@ export default function AdminDashboard() {
 
       {/* Recent Activity */}
       <div className="card" style={{ padding: "1.5rem", marginTop: "2rem" }}>
-        <h2
+        <div
           style={{
-            fontSize: "1.25rem",
-            fontWeight: 700,
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "1rem",
             marginBottom: "1rem",
-            color: "var(--text-main)",
           }}
         >
-          Recent Admin Activity
-        </h2>
+          <h2
+            style={{
+              fontSize: "1.25rem",
+              fontWeight: 700,
+              color: "var(--text-main)",
+              margin: 0,
+            }}
+          >
+            Recent Admin Activity
+          </h2>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
+            <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+              From{" "}
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                style={{
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "6px",
+                  color: "var(--text-main)",
+                  padding: "0.35rem 0.5rem",
+                  fontSize: "0.85rem",
+                  marginLeft: "0.35rem",
+                }}
+              />
+            </label>
+            <label style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+              To{" "}
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                style={{
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "6px",
+                  color: "var(--text-main)",
+                  padding: "0.35rem 0.5rem",
+                  fontSize: "0.85rem",
+                  marginLeft: "0.35rem",
+                }}
+              />
+            </label>
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+                className="btn btn-ghost"
+                style={{ fontSize: "0.8rem", padding: "0.35rem 0.75rem" }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
         <div style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
           {loading ? (
             <p>Loading...</p>
           ) : activity.length === 0 ? (
             <p>No admin activity recorded yet.</p>
+          ) : filteredActivity.length === 0 ? (
+            <p>No admin activity in the selected date range.</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {activity.map((entry) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "32rem", overflowY: "auto", paddingRight: "0.5rem" }}>
+              {filteredActivity.map((entry) => (
                 <div
                   key={entry.id}
                   style={{

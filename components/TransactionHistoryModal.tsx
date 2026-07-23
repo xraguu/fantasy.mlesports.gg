@@ -26,6 +26,7 @@ interface TransactionItem {
   proposerGivesTeams?: TeamRef[];
   receiverGivesTeams?: TeamRef[];
   proposerDropsTeams?: TeamRef[];
+  receiverDropsTeams?: TeamRef[];
   status: string;
   timestamp: string;
 }
@@ -216,8 +217,16 @@ export default function TransactionHistoryModal({
                         </div>
                         {(t.receiverGivesTeams ?? []).map((team) => (
                           <div key={`r-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                            <span style={{ color: "#22c55e", fontWeight: 700 }}>+</span>
                             <Image src={team.logoPath} alt={team.name} width={22} height={22} style={{ borderRadius: "4px" }} />
                             <span style={{ color: "var(--text-main)" }}>{team.leagueId} {team.name}</span>
+                          </div>
+                        ))}
+                        {(t.proposerDropsTeams ?? []).map((team) => (
+                          <div key={`pdrop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                            <span style={{ color: "#ef4444", fontWeight: 700 }}>−</span>
+                            <Image src={team.logoPath} alt={team.name} width={22} height={22} style={{ borderRadius: "4px", opacity: 0.6 }} />
+                            <span style={{ color: "rgba(255,255,255,0.5)" }}>{team.leagueId} {team.name}</span>
                           </div>
                         ))}
                       </div>
@@ -227,8 +236,16 @@ export default function TransactionHistoryModal({
                         </div>
                         {(t.proposerGivesTeams ?? []).map((team) => (
                           <div key={`p-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                            <span style={{ color: "#22c55e", fontWeight: 700 }}>+</span>
                             <Image src={team.logoPath} alt={team.name} width={22} height={22} style={{ borderRadius: "4px" }} />
                             <span style={{ color: "var(--text-main)" }}>{team.leagueId} {team.name}</span>
+                          </div>
+                        ))}
+                        {(t.receiverDropsTeams ?? []).map((team) => (
+                          <div key={`rdrop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                            <span style={{ color: "#ef4444", fontWeight: 700 }}>−</span>
+                            <Image src={team.logoPath} alt={team.name} width={22} height={22} style={{ borderRadius: "4px", opacity: 0.6 }} />
+                            <span style={{ color: "rgba(255,255,255,0.5)" }}>{team.leagueId} {team.name}</span>
                           </div>
                         ))}
                       </div>

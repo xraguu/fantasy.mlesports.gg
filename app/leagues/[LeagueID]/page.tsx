@@ -33,7 +33,7 @@ export default function LeaguePage() {
 
         // Get user's team from the league data by matching owner ID
         const userTeam = data.league?.fantasyTeams?.find(
-          (team: any) => team.ownerUserId === session.user.id
+          (team: { id: string; ownerUserId: string }) => team.ownerUserId === session.user.id
         );
 
         if (userTeam) {

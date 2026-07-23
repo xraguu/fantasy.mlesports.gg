@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAlert } from "@/components/AlertProvider";
 import { setAdminViewingLeague } from "@/lib/adminLeagueView";
 
@@ -42,12 +42,7 @@ export default function ManageLeaguesPage() {
     playoffTeams: 4,
   });
 
-  // Fetch leagues on mount
-  useEffect(() => {
-    fetchLeagues();
-  }, []);
-
-  const fetchLeagues = async () => {
+  const fetchLeagues = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/leagues");
       if (!response.ok) throw new Error("Failed to fetch leagues");
@@ -63,7 +58,12 @@ export default function ManageLeaguesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showAlert]);
+
+  // Fetch leagues on mount
+  useEffect(() => {
+    fetchLeagues();
+  }, [fetchLeagues]);
 
   const handleCreateLeague = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,7 +79,6 @@ export default function ManageLeaguesPage() {
         throw new Error(error.error || "Failed to create league");
       }
 
-      const data = await response.json();
       showAlert("League created successfully!", "success");
       setShowCreateModal(false);
 
@@ -96,9 +95,9 @@ export default function ManageLeaguesPage() {
 
       // Refresh leagues
       fetchLeagues();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating league:", error);
-      showAlert(error.message || "Failed to create league", "error");
+      showAlert(error instanceof Error ? error.message : "Failed to create league", "error");
     }
   };
 

@@ -7,9 +7,7 @@
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __statsRefreshScheduled: boolean | undefined;
-  // eslint-disable-next-line no-var
   var __draftSweepScheduled: boolean | undefined;
 }
 

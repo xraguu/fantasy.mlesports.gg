@@ -56,7 +56,6 @@ export async function GET(
 
     const weeks = await Promise.all(
       weeklyStats.map(async (stat) => {
-        const weekConfig = weekDates.find((w) => w.week === stat.week);
         let opponentName: string | null = null;
         let opponentStats: { goals: number; shots: number } | null = null;
 

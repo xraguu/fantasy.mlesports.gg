@@ -11,6 +11,15 @@ import { cascadeRosterForward, TOTAL_WEEKS } from "@/lib/rosterCascade";
 class LockedSlotError extends Error {}
 class ConflictError extends Error {}
 
+// Shape of one entry in the client-submitted `roster` array — not a Prisma
+// type, since this is the request body before it's been validated/persisted.
+interface IncomingRosterSlot {
+  position: string;
+  slotIndex: number;
+  mleTeam?: { id: string } | null;
+  fantasyPoints?: number;
+}
+
 /**
  * PUT /api/leagues/[leagueId]/roster/update
  * Update roster slots for a fantasy team
@@ -108,7 +117,7 @@ export async function PUT(
     // closure, a bug we haven't found yet). Without this, nothing stops a
     // payload that duplicates a team across two slots from being saved
     // verbatim.
-    const filledIncoming = roster.filter((slot: any) => slot.mleTeam);
+    const filledIncoming = roster.filter((slot: IncomingRosterSlot) => slot.mleTeam);
     const seenTeamIds = new Set<string>();
     for (const slot of filledIncoming) {
       if (seenTeamIds.has(slot.mleTeam.id)) {
@@ -124,7 +133,7 @@ export async function PUT(
     // into a different slot) needs its existing DB row deleted — RosterSlot
     // has no "empty" representation, so leaving that row in place would
     // duplicate the team across both the old and new slot.
-    const emptiedIncoming = roster.filter((slot: any) => !slot.mleTeam);
+    const emptiedIncoming = roster.filter((slot: IncomingRosterSlot) => !slot.mleTeam);
 
     // Everything below — the diff against current state and the writes
     // themselves — runs as one transaction so a concurrent save (e.g. a
@@ -155,14 +164,14 @@ export async function PUT(
         // spuriously get rejected over some other, untouched, already-locked
         // slot that just happened to be present in the full payload.
         const slotsToUpdate = filledIncoming
-          .map((slot: any) => {
+          .map((slot: IncomingRosterSlot) => {
             const existingSlot = existingSlots.find(
               (s) => s.position === slot.position && s.slotIndex === slot.slotIndex
             );
             return {
               slot,
               existingSlot,
-              isActuallyChanging: !existingSlot || existingSlot.mleTeamId !== slot.mleTeam.id,
+              isActuallyChanging: !existingSlot || existingSlot.mleTeamId !== slot.mleTeam!.id,
             };
           })
           .filter((entry) => entry.isActuallyChanging);
@@ -171,14 +180,14 @@ export async function PUT(
         // here into a different slot — need their existing row deleted.
         // Only real if there's actually a row there to clear.
         const slotsToEmpty = emptiedIncoming
-          .map((slot: any) => {
+          .map((slot: IncomingRosterSlot) => {
             const existingSlot = existingSlots.find(
               (s) => s.position === slot.position && s.slotIndex === slot.slotIndex
             );
             return { slot, existingSlot };
           })
           .filter(
-            (entry): entry is { slot: any; existingSlot: NonNullable<typeof entry.existingSlot> } =>
+            (entry): entry is { slot: IncomingRosterSlot; existingSlot: NonNullable<typeof entry.existingSlot> } =>
               Boolean(entry.existingSlot)
           );
 
@@ -212,7 +221,7 @@ export async function PUT(
         for (const { slot } of slotsToUpdate) {
           const clash = existingSlots.find(
             (s) =>
-              s.mleTeamId === slot.mleTeam.id &&
+              s.mleTeamId === slot.mleTeam!.id &&
               !updatingSlotKeys.has(`${s.position}-${s.slotIndex}`)
           );
           if (clash) {
@@ -229,7 +238,7 @@ export async function PUT(
           if (existingSlot) {
             const result = await tx.rosterSlot.updateMany({
               where: { id: existingSlot.id, mleTeamId: existingSlot.mleTeamId },
-              data: { mleTeamId: slot.mleTeam.id },
+              data: { mleTeamId: slot.mleTeam!.id },
             });
             if (result.count === 0) {
               throw new ConflictError(
@@ -250,7 +259,7 @@ export async function PUT(
               data: {
                 id: generateRosterSlotId(fantasyTeamId, week, slot.position, slot.slotIndex),
                 fantasyTeamId: fantasyTeamId,
-                mleTeamId: slot.mleTeam.id,
+                mleTeamId: slot.mleTeam!.id,
                 week: week,
                 position: slot.position,
                 slotIndex: slot.slotIndex,

@@ -28,8 +28,8 @@ async function main() {
         },
       });
       console.log(`✓ Created: ${created.displayName} (Discord ID: ${user.discordId})`);
-    } catch (error: any) {
-      console.log(`✗ Failed to create ${user.displayName}: ${error.message || 'Unknown error'}`);
+    } catch (error) {
+      console.log(`✗ Failed to create ${user.displayName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

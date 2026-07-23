@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { runAutoLockSweep } from "@/lib/autoLock";
 
 const POSITION_ORDER: Record<string, number> = { "2s": 0, "3s": 1, flx: 2, be: 3 };
+
+interface LockLineupSlot {
+  id: string;
+  position: string;
+  slotIndex: number;
+  isLocked: boolean;
+  mleTeam: { id: string; name: string; leagueId: string; logoPath: string } | null;
+}
 
 /**
  * GET /api/admin/weeks/lock-lineups
@@ -43,7 +52,7 @@ export async function GET(req: NextRequest) {
     await runAutoLockSweep(leagueId && leagueId !== "all" ? leagueId : undefined);
 
     // Build where clause
-    const whereClause: any = { week: weekNumber };
+    const whereClause: Prisma.RosterSlotWhereInput = { week: weekNumber };
     if (leagueId && leagueId !== "all") {
       whereClause.fantasyTeam = { fantasyLeagueId: leagueId };
     }
@@ -110,7 +119,7 @@ export async function GET(req: NextRequest) {
 
     // Convert map to array and add locked status
     const lineups = Array.from(teamMap.values()).map((team) => {
-      team.slots.sort((a: any, b: any) => {
+      team.slots.sort((a: LockLineupSlot, b: LockLineupSlot) => {
         const posDiff = (POSITION_ORDER[a.position] ?? 99) - (POSITION_ORDER[b.position] ?? 99);
         if (posDiff !== 0) return posDiff;
         return a.slotIndex - b.slotIndex;
@@ -118,15 +127,15 @@ export async function GET(req: NextRequest) {
 
       // Bench slots never lock, so "fully locked" is judged only on the
       // lockable (non-bench) slots — otherwise no team could ever show as locked.
-      const lockableSlots = team.slots.filter((slot: any) => slot.position !== "be");
-      const allLocked = lockableSlots.length > 0 && lockableSlots.every((slot: any) => slot.isLocked);
-      const anyLocked = lockableSlots.some((slot: any) => slot.isLocked);
+      const lockableSlots = team.slots.filter((slot: LockLineupSlot) => slot.position !== "be");
+      const allLocked = lockableSlots.length > 0 && lockableSlots.every((slot: LockLineupSlot) => slot.isLocked);
+      const anyLocked = lockableSlots.some((slot: LockLineupSlot) => slot.isLocked);
 
       return {
         ...team,
         locked: allLocked,
         partiallyLocked: anyLocked && !allLocked,
-        lockedCount: team.slots.filter((slot: any) => slot.isLocked).length,
+        lockedCount: team.slots.filter((slot: LockLineupSlot) => slot.isLocked).length,
         totalSlots: team.slots.length,
       };
     });
@@ -230,7 +239,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Otherwise, lock/unlock all teams in the week (optionally filtered by league)
-    const whereClause: any = { week: weekNumber };
+    const whereClause: Prisma.RosterSlotWhereInput = { week: weekNumber };
     if (leagueId && leagueId !== "all") {
       whereClause.fantasyTeam = { fantasyLeagueId: leagueId };
     }

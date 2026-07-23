@@ -53,7 +53,7 @@ export async function POST(
       );
     }
 
-    const draftStatus = (league as any).draftStatus || "not_started";
+    const draftStatus = league.draftStatus || "not_started";
     if (draftStatus !== "in_progress") {
       return NextResponse.json(
         { error: "Draft is not currently in progress" },

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 interface LogAdminActivityInput {
   adminUserId: string;
@@ -18,7 +19,7 @@ export async function logAdminActivity(input: LogAdminActivityInput): Promise<vo
         description: input.description,
         targetType: input.targetType,
         targetId: input.targetId,
-        metadata: input.metadata as any,
+        metadata: input.metadata as Prisma.InputJsonValue,
       },
     });
   } catch (error) {

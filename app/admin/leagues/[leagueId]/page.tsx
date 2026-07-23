@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 import { setAdminViewingLeague } from "@/lib/adminLeagueView";
 
@@ -111,12 +112,7 @@ export default function AdminLeagueManagementPage() {
   const [pendingAdd, setPendingAdd] = useState<Record<string, string>>({});
   const [rosterActionKey, setRosterActionKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchLeague();
-    fetchAllUsers();
-  }, [leagueId]);
-
-  const fetchLeague = async () => {
+  const fetchLeague = useCallback(async () => {
     try {
       const response = await fetch(`/api/admin/leagues/${leagueId}`);
       if (!response.ok) throw new Error("Failed to fetch league");
@@ -129,9 +125,9 @@ export default function AdminLeagueManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [leagueId, showAlert]);
 
-  const fetchAllUsers = async () => {
+  const fetchAllUsers = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/users");
       if (!response.ok) throw new Error("Failed to fetch users");
@@ -140,7 +136,12 @@ export default function AdminLeagueManagementPage() {
     } catch (error) {
       console.error("Error fetching users:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchLeague();
+    fetchAllUsers();
+  }, [fetchLeague, fetchAllUsers]);
 
   const handleAddUsers = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1230,12 +1231,12 @@ export default function AdminLeagueManagementPage() {
                   }}
                 >
                   {team.owner.avatarUrl && (
-                    <img
+                    <Image
                       src={team.owner.avatarUrl}
                       alt={team.owner.displayName}
+                      width={32}
+                      height={32}
                       style={{
-                        width: "32px",
-                        height: "32px",
                         borderRadius: "50%",
                       }}
                     />
@@ -1362,12 +1363,12 @@ export default function AdminLeagueManagementPage() {
                       }}
                     >
                       {team.owner.avatarUrl && (
-                        <img
+                        <Image
                           src={team.owner.avatarUrl}
                           alt={team.owner.displayName}
+                          width={32}
+                          height={32}
                           style={{
-                            width: "32px",
-                            height: "32px",
                             borderRadius: "50%",
                           }}
                         />
@@ -1614,12 +1615,12 @@ export default function AdminLeagueManagementPage() {
                                 gap: "0.5rem",
                               }}
                             >
-                              <img
+                              <Image
                                 src={slot.mleTeam.logoPath}
                                 alt={slot.mleTeam.name}
+                                width={24}
+                                height={24}
                                 style={{
-                                  width: "24px",
-                                  height: "24px",
                                   borderRadius: "4px",
                                 }}
                               />

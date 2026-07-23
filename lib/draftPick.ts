@@ -2,13 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { generateRosterSlotId } from "@/lib/id-generator";
 import { initializeWaiverPriorityFromDraftOrder } from "@/lib/waiverPriority";
 import { adjustRegularSeasonForLateDraft } from "@/lib/scheduleGenerator";
+import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 /**
  * The order draft picks fill a roster in — starters before bench ("top of
  * the roster" down), driven by the league's own configured slot counts
  * rather than a hardcoded shape.
  */
-function buildOrderedPositions(rosterConfig: any): string[] {
+function buildOrderedPositions(rosterConfig: RosterConfigShape): string[] {
   return [
     ...Array(rosterConfig?.["2s"] || 0).fill("2s"),
     ...Array(rosterConfig?.["3s"] || 0).fill("3s"),
@@ -89,7 +90,7 @@ export async function executeDraftPick(
       where: { id: leagueId },
       select: { rosterConfig: true, draftPickTimeSeconds: true },
     });
-    const orderedPositions = buildOrderedPositions(league?.rosterConfig);
+    const orderedPositions = buildOrderedPositions(league?.rosterConfig as RosterConfigShape);
 
     const existingSlots = await tx.rosterSlot.findMany({
       where: { fantasyTeamId: pick.fantasyTeamId, week: 1 },

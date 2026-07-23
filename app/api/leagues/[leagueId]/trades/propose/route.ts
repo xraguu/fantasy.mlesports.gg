@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
-import { getRosterCapacity } from "@/lib/rosterSlotAssignment";
+import { getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 import { isWeekLocked } from "@/lib/autoLock";
 
 /**
@@ -196,7 +196,7 @@ export async function POST(
     // offered a trade that's better for them than what they have room for
     // right now — accepting it is what prompts THEM to pick teams to drop
     // (see the accept route and receiverDrops), not proposing it.
-    const capacity = getRosterCapacity(league?.rosterConfig);
+    const capacity = getRosterCapacity(league?.rosterConfig as RosterConfigShape);
     const proposerCount = await prisma.rosterSlot.count({
       where: { fantasyTeamId: proposerTeamId, week: currentWeek },
     });

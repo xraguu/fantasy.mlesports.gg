@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * GET /api/admin/activity
- * Most recent admin activity log entries.
+ * The full admin activity log, newest first — the dashboard's own UI
+ * handles scrolling and date filtering client-side rather than this route
+ * paging or filtering server-side.
  */
 export async function GET() {
   try {
@@ -15,7 +17,6 @@ export async function GET() {
 
     const logs = await prisma.adminActivityLog.findMany({
       orderBy: { createdAt: "desc" },
-      take: 15,
       include: {
         admin: {
           select: { displayName: true },

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { assignTeamToRosterSlot, getRosterCapacity } from "@/lib/rosterSlotAssignment";
+import { assignTeamToRosterSlot, getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 import { markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
 
 export const TRADE_VETO_WINDOW_MS = 12 * 60 * 60 * 1000;
@@ -100,7 +100,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
     // (a waiver claim, another trade), and assignTeamToRosterSlot's
     // capacity-overflow fallback (an extra unrenderable bench slot) is only
     // meant to be unreachable, not a real fallback path.
-    const capacity = getRosterCapacity(league.rosterConfig);
+    const capacity = getRosterCapacity(league.rosterConfig as RosterConfigShape);
     const [proposerCount, receiverCount] = await Promise.all([
       tx.rosterSlot.count({ where: { fantasyTeamId: trade.proposerTeamId, week: currentWeek } }),
       tx.rosterSlot.count({ where: { fantasyTeamId: trade.receiverTeamId, week: currentWeek } }),
@@ -160,7 +160,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
         fantasyTeamId: trade.proposerTeamId,
         week: currentWeek,
         mleTeamId,
-        rosterConfig: league.rosterConfig,
+        rosterConfig: league.rosterConfig as RosterConfigShape,
         season: league.season,
       });
     }
@@ -169,7 +169,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
         fantasyTeamId: trade.receiverTeamId,
         week: currentWeek,
         mleTeamId,
-        rosterConfig: league.rosterConfig,
+        rosterConfig: league.rosterConfig as RosterConfigShape,
         season: league.season,
       });
     }

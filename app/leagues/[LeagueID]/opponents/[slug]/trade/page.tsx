@@ -19,13 +19,32 @@ interface RosterTeam {
   mleTeamId: string;
 }
 
+interface TradeRosterSlotTeam {
+  id: string;
+  name: string;
+  leagueId: string;
+  logoPath: string;
+  primaryColor: string;
+  secondaryColor: string;
+  // Not actually returned by the roster API (which only nests these under
+  // per-mode `stats["2s"|"3s"]`) — always falls back to 0/"0-0" below.
+  fpts?: number;
+  record?: string;
+}
+
+interface TradeRosterSlot {
+  id: string;
+  position: string;
+  mleTeam: TradeRosterSlotTeam;
+}
+
 interface RosterData {
   fantasyTeam: {
     id: string;
     displayName: string;
     ownerDisplayName: string;
   };
-  rosterSlots: any[];
+  rosterSlots: TradeRosterSlot[];
   league: {
     rosterConfig: {
       "2s": number;
@@ -64,7 +83,7 @@ export default function TradePage() {
     rosteredBy: { rosterName: string; managerName: string; fantasyTeamId: string };
   } | null>(null);
 
-  const openTeamModal = (slot: any, side: "mine" | "opponent") => {
+  const openTeamModal = (slot: TradeRosterSlot, side: "mine" | "opponent") => {
     if (!slot?.mleTeam) return;
     const roster = side === "mine" ? myRoster : opponentRoster;
     if (!roster) return;
@@ -253,7 +272,7 @@ export default function TradePage() {
     return position.toUpperCase();
   };
 
-  const myTeams = myRoster.rosterSlots.map(slot => ({
+  const myTeams: RosterTeam[] = myRoster.rosterSlots.map(slot => ({
     id: slot.id,
     slot: getSlotDisplay(slot.position),
     name: `${slot.mleTeam.leagueId} ${slot.mleTeam.name}`,
@@ -264,7 +283,7 @@ export default function TradePage() {
     mleTeamId: slot.mleTeam.id,
   }));
 
-  const opponentTeams = opponentRoster.rosterSlots.map(slot => ({
+  const opponentTeams: RosterTeam[] = opponentRoster.rosterSlots.map(slot => ({
     id: slot.id,
     slot: getSlotDisplay(slot.position),
     name: `${slot.mleTeam.leagueId} ${slot.mleTeam.name}`,

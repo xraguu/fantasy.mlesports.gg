@@ -76,10 +76,14 @@ function getOpponentStandingsColor(rank: number, totalTeams: number): string {
 function ordinal(n: number): string {
   if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
   switch (n % 10) {
-    case 1: return `${n}st`;
-    case 2: return `${n}nd`;
-    case 3: return `${n}rd`;
-    default: return `${n}th`;
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
   }
 }
 
@@ -144,7 +148,9 @@ export default function OpponentsPage() {
   const [opponents, setOpponents] = useState<OpponentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedManagerId, setSelectedManagerId] = useState<string | null>(teamIdParam);
+  const [selectedManagerId, setSelectedManagerId] = useState<string | null>(
+    teamIdParam,
+  );
   const [currentWeek, setCurrentWeek] = useState(1);
   // Whether the one-time "snap to the league's real current week" has
   // already happened — tracked separately from `currentWeek === 1`, which
@@ -156,7 +162,7 @@ export default function OpponentsPage() {
   const [activeTab, setActiveTab] = useState<"lineup" | "stats">("lineup");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<({
+  const [selectedTeam, setSelectedTeam] = useState<{
     id: string;
     name: string;
     leagueId: string;
@@ -170,8 +176,12 @@ export default function OpponentsPage() {
     rank?: number;
     record?: string;
     status?: string;
-    rosteredBy?: { rosterName: string; managerName: string; fantasyTeamId?: string };
-  }) | null>(null);
+    rosteredBy?: {
+      rosterName: string;
+      managerName: string;
+      fantasyTeamId?: string;
+    };
+  } | null>(null);
 
   // Track game mode for stats tab (2s or 3s)
   const [gameMode, setGameMode] = useState<"2s" | "3s">("2s");
@@ -183,7 +193,9 @@ export default function OpponentsPage() {
   // or FAAB budget depending on it) and the transactions modal's open/mode
   // state (shared between the "N transactions" and "N pending" clickables).
   const [waiverSystem, setWaiverSystem] = useState<string | null>(null);
-  const [transactionsModal, setTransactionsModal] = useState<"completed" | "pending" | null>(null);
+  const [transactionsModal, setTransactionsModal] = useState<
+    "completed" | "pending" | null
+  >(null);
 
   // Fetch opponents data
   useEffect(() => {
@@ -191,7 +203,7 @@ export default function OpponentsPage() {
       try {
         setLoading(true);
         const response = await fetch(
-          `/api/leagues/${leagueId}/opponents?week=${currentWeek}${isAdminViewing ? "&adminView=true" : ""}`
+          `/api/leagues/${leagueId}/opponents?week=${currentWeek}${isAdminViewing ? "&adminView=true" : ""}`,
         );
 
         if (!response.ok) {
@@ -200,11 +212,16 @@ export default function OpponentsPage() {
 
         const data = await response.json();
         setOpponents(data.opponents || []);
-        if (data.league?.waiverSystem) setWaiverSystem(data.league.waiverSystem);
+        if (data.league?.waiverSystem)
+          setWaiverSystem(data.league.waiverSystem);
 
         // Snap to the league's real current week on first load only — once
         // the user has navigated weeks manually, leave their choice alone.
-        if (!hasSnappedToCurrent.current && data.league?.currentWeek && data.league.currentWeek !== 1) {
+        if (
+          !hasSnappedToCurrent.current &&
+          data.league?.currentWeek &&
+          data.league.currentWeek !== 1
+        ) {
           hasSnappedToCurrent.current = true;
           setCurrentWeek(data.league.currentWeek);
         }
@@ -217,7 +234,8 @@ export default function OpponentsPage() {
           } else if (managerParam) {
             // If manager param provided, find opponent by manager name
             const opponent = data.opponents.find(
-              (opp: OpponentData) => opp.name === decodeURIComponent(managerParam)
+              (opp: OpponentData) =>
+                opp.name === decodeURIComponent(managerParam),
             );
             if (opponent) {
               setSelectedManagerId(opponent.id);
@@ -233,7 +251,9 @@ export default function OpponentsPage() {
 
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load opponents");
+        setError(
+          err instanceof Error ? err.message : "Failed to load opponents",
+        );
       } finally {
         setLoading(false);
       }
@@ -242,10 +262,17 @@ export default function OpponentsPage() {
     if (leagueId) {
       fetchOpponents();
     }
-  }, [leagueId, currentWeek, selectedManagerId, teamIdParam, managerParam, isAdminViewing]);
+  }, [
+    leagueId,
+    currentWeek,
+    selectedManagerId,
+    teamIdParam,
+    managerParam,
+    isAdminViewing,
+  ]);
 
   // Derived values
-  const selectedManager = opponents.find(m => m.id === selectedManagerId);
+  const selectedManager = opponents.find((m) => m.id === selectedManagerId);
   const roster = selectedManager || null;
 
   // Initialize slot modes when roster changes
@@ -267,8 +294,20 @@ export default function OpponentsPage() {
   };
 
   // Stats tab sorting state
-  const [statsSortColumn, setStatsSortColumn] = useState<"fprk" | "fpts" | "avg" | "last" | "goals" | "shots" | "saves" | "assists" | "demos">("fprk");
-  const [statsSortDirection, setStatsSortDirection] = useState<"asc" | "desc">("asc");
+  const [statsSortColumn, setStatsSortColumn] = useState<
+    | "fprk"
+    | "fpts"
+    | "avg"
+    | "last"
+    | "goals"
+    | "shots"
+    | "saves"
+    | "assists"
+    | "demos"
+  >("fprk");
+  const [statsSortDirection, setStatsSortDirection] = useState<"asc" | "desc">(
+    "asc",
+  );
 
   const handleStatsSort = (column: typeof statsSortColumn) => {
     if (statsSortColumn === column) {
@@ -282,15 +321,17 @@ export default function OpponentsPage() {
   // Sorted roster teams for stats tab (skip empty slots — only actual rostered teams)
   const sortedRosterTeams = useMemo(() => {
     if (!roster || !roster.teams) return [];
-    return roster.teams.filter((team) => team.name).sort((a, b) => {
-      const aValue = a[statsSortColumn];
-      const bValue = b[statsSortColumn];
-      if (statsSortDirection === "asc") {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
+    return roster.teams
+      .filter((team) => team.name)
+      .sort((a, b) => {
+        const aValue = a[statsSortColumn];
+        const bValue = b[statsSortColumn];
+        if (statsSortDirection === "asc") {
+          return aValue > bValue ? 1 : -1;
+        } else {
+          return aValue < bValue ? 1 : -1;
+        }
+      });
   }, [statsSortColumn, statsSortDirection, roster]);
 
   const handleTeamClick = (rosterTeam: OpponentRoster) => {
@@ -310,7 +351,11 @@ export default function OpponentsPage() {
         primaryColor: rosterTeam.primaryColor,
         secondaryColor: rosterTeam.secondaryColor,
         status: "rostered",
-        rosteredBy: { rosterName: roster.teamName, managerName: roster.name, fantasyTeamId: roster.id },
+        rosteredBy: {
+          rosterName: roster.teamName,
+          managerName: roster.name,
+          fantasyTeamId: roster.id,
+        },
       });
       setShowModal(true);
     }
@@ -319,15 +364,31 @@ export default function OpponentsPage() {
   // Loading and error states
   if (loading) {
     return (
-      <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>Loading opponents...</div>
+      <div
+        style={{
+          minHeight: "50vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>
+          Loading opponents...
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div
+        style={{
+          minHeight: "50vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <div style={{ color: "#ef4444", fontSize: "1.1rem" }}>
           Error: {error}
         </div>
@@ -337,16 +398,34 @@ export default function OpponentsPage() {
 
   if (opponents.length === 0) {
     return (
-      <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>No opponents found in this league</div>
+      <div
+        style={{
+          minHeight: "50vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>
+          No opponents found in this league
+        </div>
       </div>
     );
   }
 
   if (!roster) {
     return (
-      <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>Select an opponent to view their roster</div>
+      <div
+        style={{
+          minHeight: "50vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ color: "var(--text-muted)", fontSize: "1.1rem" }}>
+          Select an opponent to view their roster
+        </div>
       </div>
     );
   }
@@ -365,7 +444,11 @@ export default function OpponentsPage() {
         <TransactionHistoryModal
           open={transactionsModal !== null}
           onClose={() => setTransactionsModal(null)}
-          title={transactionsModal === "pending" ? "Pending Transactions" : "Transaction History"}
+          title={
+            transactionsModal === "pending"
+              ? "Pending Transactions"
+              : "Transaction History"
+          }
           leagueId={leagueId}
           teamId={roster.id}
           managerName={roster.name}
@@ -374,8 +457,25 @@ export default function OpponentsPage() {
       )}
 
       {/* Page Header with Dropdown */}
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
-        <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <h1
+          className="page-heading"
+          style={{
+            fontSize: "clamp(1.5rem, 6vw, 2.5rem)",
+            color: "var(--accent)",
+            fontWeight: 700,
+            margin: 0,
+          }}
+        >
           {isAdminViewing ? "Managers" : "Opponents"}
         </h1>
 
@@ -396,7 +496,7 @@ export default function OpponentsPage() {
               alignItems: "center",
               gap: "0.5rem",
               minWidth: "200px",
-              justifyContent: "space-between"
+              justifyContent: "space-between",
             }}
           >
             <span>{roster.name}</span>
@@ -418,7 +518,7 @@ export default function OpponentsPage() {
                 overflowY: "auto",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
-                zIndex: 1000
+                zIndex: 1000,
               }}
             >
               {opponents.map((opponent) => (
@@ -431,12 +531,15 @@ export default function OpponentsPage() {
                   style={{
                     width: "100%",
                     padding: "0.75rem 1rem",
-                    background: opponent.id === selectedManagerId ? "rgba(255,255,255,0.1)" : "transparent",
+                    background:
+                      opponent.id === selectedManagerId
+                        ? "rgba(255,255,255,0.1)"
+                        : "transparent",
                     border: "none",
                     color: "#ffffff",
                     textAlign: "left",
                     cursor: "pointer",
-                    transition: "background 0.2s ease"
+                    transition: "background 0.2s ease",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = "rgba(255,255,255,0.1)";
@@ -450,7 +553,12 @@ export default function OpponentsPage() {
                   <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>
                     {opponent.name}
                   </div>
-                  <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.6)" }}>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "rgba(255,255,255,0.6)",
+                    }}
+                  >
                     {opponent.teamName}
                   </div>
                 </button>
@@ -461,45 +569,118 @@ export default function OpponentsPage() {
       </div>
 
       {/* Team Overview Card */}
-      <section className="card" style={{
-        marginBottom: "1.5rem",
-        padding: "1.5rem 2rem"
-      }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "1.25rem", justifyContent: "space-between", alignItems: "center" }}>
+      <section
+        className="card"
+        style={{
+          marginBottom: "1.5rem",
+          padding: "1.5rem 2rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "1.25rem",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           {/* Team Info */}
           <div>
-            <h2 style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", fontSize: "clamp(1.15rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)", marginBottom: "0.5rem", marginTop: 0 }}>
+            <h2
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "clamp(1.15rem, 4.5vw, 1.5rem)",
+                fontWeight: 700,
+                color: "var(--text-main)",
+                marginBottom: "0.5rem",
+                marginTop: 0,
+              }}
+            >
               <span style={{ whiteSpace: "nowrap" }}>{roster.teamName}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", whiteSpace: "nowrap" }}>
-                <span style={{ color: "var(--accent)" }}>
-                  {roster.record}
-                </span>
-                <span style={{ color: "var(--text-muted)", fontSize: "1.2rem" }}>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span style={{ color: "var(--accent)" }}>{roster.record}</span>
+                <span
+                  style={{ color: "var(--text-muted)", fontSize: "1.2rem" }}
+                >
                   {roster.place}
                 </span>
               </span>
             </h2>
-            <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>{roster.name}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 1.5rem", marginTop: "0.5rem", fontSize: "1rem" }}>
-              <span style={{ whiteSpace: "nowrap", fontWeight: 600, color: "var(--text-main)" }}>{roster.totalPoints} Fantasy Points</span>
-              <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>{roster.avgPoints} Avg Fantasy Points</span>
+            <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
+              {roster.name}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.4rem 1.5rem",
+                marginTop: "0.5rem",
+                fontSize: "1rem",
+              }}
+            >
+              <span
+                style={{
+                  whiteSpace: "nowrap",
+                  fontWeight: 600,
+                  color: "var(--text-main)",
+                }}
+              >
+                {roster.totalPoints} Fantasy Points
+              </span>
+              <span
+                style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}
+              >
+                {roster.avgPoints} Avg Fantasy Points
+              </span>
             </div>
             {isAdminViewing && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem 1.5rem", marginTop: "0.5rem", fontSize: "0.9rem" }}>
-                <span style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.4rem 1.5rem",
+                  marginTop: "0.5rem",
+                  fontSize: "0.9rem",
+                }}
+              >
+                <span
+                  style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}
+                >
                   {waiverSystem === "faab"
                     ? `$${roster.faabRemaining ?? 0} FAAB Remaining`
                     : `Waiver Priority: #${roster.waiverPriority ?? "—"}`}
                 </span>
                 <span
                   onClick={() => setTransactionsModal("completed")}
-                  style={{ whiteSpace: "nowrap", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+                  style={{
+                    whiteSpace: "nowrap",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
                 >
-                  {roster.completedTransactionCount} Transaction{roster.completedTransactionCount === 1 ? "" : "s"}
+                  {roster.completedTransactionCount} Transaction
+                  {roster.completedTransactionCount === 1 ? "" : "s"}
                 </span>
                 <span
                   onClick={() => setTransactionsModal("pending")}
-                  style={{ whiteSpace: "nowrap", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}
+                  style={{
+                    whiteSpace: "nowrap",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
                 >
                   {roster.pendingTransactionCount} Pending
                 </span>
@@ -508,25 +689,55 @@ export default function OpponentsPage() {
           </div>
 
           {/* Matchup Info */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "1.5rem",
+              alignItems: "center",
+            }}
+          >
             {/* Last Matchup */}
             {roster.lastMatchup && (
               <div
-                onClick={() => router.push(`/leagues/${leagueId}/scoreboard?week=${roster.lastMatchup!.week}&matchup=${roster.lastMatchup!.id}`)}
+                onClick={() =>
+                  router.push(
+                    `/leagues/${leagueId}/scoreboard?week=${roster.lastMatchup!.week}&matchup=${roster.lastMatchup!.id}`,
+                  )
+                }
                 style={{ textAlign: "center", cursor: "pointer" }}
               >
-                <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                <div
+                  style={{
+                    color: "var(--text-muted)",
+                    fontSize: "0.85rem",
+                    fontStyle: "italic",
+                    marginBottom: "0.5rem",
+                  }}
+                >
                   Last Matchup
                 </div>
                 <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
-                  <span style={{ color: "var(--text-main)" }}>{roster.lastMatchup.myTeam}</span>{" "}
-                  <span style={{ color: "var(--accent)", fontWeight: 700, marginLeft: "0.5rem" }}>
+                  <span style={{ color: "var(--text-main)" }}>
+                    {roster.lastMatchup.myTeam}
+                  </span>{" "}
+                  <span
+                    style={{
+                      color: "var(--accent)",
+                      fontWeight: 700,
+                      marginLeft: "0.5rem",
+                    }}
+                  >
                     {roster.lastMatchup.myScore}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
-                  <span style={{ color: "var(--text-muted)" }}>{roster.lastMatchup.opponent}</span>{" "}
-                  <span style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {roster.lastMatchup.opponent}
+                  </span>{" "}
+                  <span
+                    style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
+                  >
                     {roster.lastMatchup.opponentScore}
                   </span>
                 </div>
@@ -534,27 +745,56 @@ export default function OpponentsPage() {
             )}
 
             {roster.lastMatchup && roster.currentMatchup && (
-              <div style={{ width: "1px", height: "60px", backgroundColor: "rgba(255,255,255,0.1)" }}></div>
+              <div
+                style={{
+                  width: "1px",
+                  height: "60px",
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                }}
+              ></div>
             )}
 
             {/* Current Matchup */}
             {roster.currentMatchup && (
               <div
-                onClick={() => router.push(`/leagues/${leagueId}/scoreboard?week=${roster.currentMatchup!.week}&matchup=${roster.currentMatchup!.id}`)}
+                onClick={() =>
+                  router.push(
+                    `/leagues/${leagueId}/scoreboard?week=${roster.currentMatchup!.week}&matchup=${roster.currentMatchup!.id}`,
+                  )
+                }
                 style={{ textAlign: "center", cursor: "pointer" }}
               >
-                <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                <div
+                  style={{
+                    color: "var(--text-muted)",
+                    fontSize: "0.85rem",
+                    fontStyle: "italic",
+                    marginBottom: "0.5rem",
+                  }}
+                >
                   Current Matchup
                 </div>
                 <div style={{ fontSize: "0.95rem", marginBottom: "0.25rem" }}>
-                  <span style={{ color: "var(--text-main)" }}>{roster.currentMatchup.myTeam}</span>{" "}
-                  <span style={{ color: "var(--accent)", fontWeight: 700, marginLeft: "0.5rem" }}>
+                  <span style={{ color: "var(--text-main)" }}>
+                    {roster.currentMatchup.myTeam}
+                  </span>{" "}
+                  <span
+                    style={{
+                      color: "var(--accent)",
+                      fontWeight: 700,
+                      marginLeft: "0.5rem",
+                    }}
+                  >
                     {roster.currentMatchup.myScore}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
-                  <span style={{ color: "var(--text-muted)" }}>{roster.currentMatchup.opponent}</span>{" "}
-                  <span style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {roster.currentMatchup.opponent}
+                  </span>{" "}
+                  <span
+                    style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
+                  >
                     {roster.currentMatchup.opponentScore}
                   </span>
                 </div>
@@ -562,7 +802,13 @@ export default function OpponentsPage() {
             )}
 
             {!roster.lastMatchup && !roster.currentMatchup && (
-              <div style={{ color: "var(--text-muted)", fontSize: "0.9rem", fontStyle: "italic" }}>
+              <div
+                style={{
+                  color: "var(--text-muted)",
+                  fontSize: "0.9rem",
+                  fontStyle: "italic",
+                }}
+              >
                 No matchup data available
               </div>
             )}
@@ -571,18 +817,31 @@ export default function OpponentsPage() {
       </section>
 
       {/* Tabs */}
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "0.75rem",
+          marginBottom: "1.5rem",
+        }}
+      >
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <button
             onClick={() => setActiveTab("lineup")}
-            className={activeTab === "lineup" ? "btn btn-primary" : "btn btn-ghost"}
+            className={
+              activeTab === "lineup" ? "btn btn-primary" : "btn btn-ghost"
+            }
             style={{ fontSize: "1rem" }}
           >
             Lineup
           </button>
           <button
             onClick={() => setActiveTab("stats")}
-            className={activeTab === "stats" ? "btn btn-primary" : "btn btn-ghost"}
+            className={
+              activeTab === "stats" ? "btn btn-primary" : "btn btn-ghost"
+            }
             style={{ fontSize: "1rem" }}
           >
             Stats
@@ -603,18 +862,27 @@ export default function OpponentsPage() {
       {activeTab === "lineup" && (
         <section className="card">
           {/* Week Navigation */}
-          <div style={{
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "0.75rem",
-            padding: "1rem 1.5rem",
-            borderBottom: "1px solid rgba(255,255,255,0.1)"
-          }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "0.75rem",
+              padding: "1rem 1.5rem",
+              borderBottom: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "1rem",
+              }}
+            >
               <button
-                onClick={() => setCurrentWeek(prev => getPrevWeek(prev))}
+                onClick={() => setCurrentWeek((prev) => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
                 style={{
                   background: "transparent",
@@ -642,7 +910,7 @@ export default function OpponentsPage() {
               </span>
 
               <button
-                onClick={() => setCurrentWeek(prev => getNextWeek(prev))}
+                onClick={() => setCurrentWeek((prev) => getNextWeek(prev))}
                 disabled={currentWeek === 10}
                 style={{
                   background: "transparent",
@@ -655,7 +923,9 @@ export default function OpponentsPage() {
                   fontSize: "1rem",
                 }}
               >
-                {currentWeek === 10 ? "►" : `Week ${getNextWeek(currentWeek)} ►`}
+                {currentWeek === 10
+                  ? "►"
+                  : `Week ${getNextWeek(currentWeek)} ►`}
               </button>
             </div>
           </div>
@@ -666,15 +936,114 @@ export default function OpponentsPage() {
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
                   <th style={{ padding: "0.75rem 0.5rem", width: "50px" }}></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Slot</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Score</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Opp" full="Opponent" /></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Oprk" full="Opponent Rank" /></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Fprk" full="Fantasy Points Rank" /></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Fpts" full="Fantasy Points" /></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Avg" full="Average Fantasy Points" /></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="Last" full="Last Week's Fantasy Points" /></th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "left",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Slot
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "left",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Team
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "center",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Score
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "left",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <HeaderTooltip
+                      label="Opp"
+                      full="Opponent / Game Record (MLE Rank)"
+                    />
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "center",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <HeaderTooltip
+                      label="Oprk"
+                      full="Opponent Fantasy Points Rank"
+                    />
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "center",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <HeaderTooltip label="Fprk" full="Fantasy Points Rank" />
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "right",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <HeaderTooltip label="Fpts" full="TotalFantasy Points" />
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "right",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" />
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "right",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <HeaderTooltip
+                      label="Last"
+                      full="Last Week's Fantasy Points"
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -688,19 +1057,37 @@ export default function OpponentsPage() {
                       key={index}
                       style={{
                         borderBottom: "1px solid rgba(255,255,255,0.05)",
-                        backgroundColor: isBench ? "rgba(255,255,255,0.02)" : "transparent",
-                        borderTop: isBench && index === 5 ? "2px solid rgba(255,255,255,0.15)" : "none"
+                        backgroundColor: isBench
+                          ? "rgba(255,255,255,0.02)"
+                          : "transparent",
+                        borderTop:
+                          isBench && index === 5
+                            ? "2px solid rgba(255,255,255,0.15)"
+                            : "none",
                       }}
                     >
-                      <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", justifyContent: "center" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.25rem",
+                            justifyContent: "center",
+                          }}
+                        >
                           {!isEmpty && (
                             <>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const newModes = [...slotModes];
-                                  newModes[index] = slotModes[index] === "2s" ? "3s" : "2s";
+                                  newModes[index] =
+                                    slotModes[index] === "2s" ? "3s" : "2s";
                                   setSlotModes(newModes);
                                 }}
                                 style={{
@@ -712,35 +1099,65 @@ export default function OpponentsPage() {
                                   fontWeight: 600,
                                   color: "var(--accent)",
                                   cursor: "pointer",
-                                  transition: "all 0.2s ease"
+                                  transition: "all 0.2s ease",
                                 }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = "rgba(242, 182, 50, 0.2)"}
-                                onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+                                onMouseEnter={(e) =>
+                                  (e.currentTarget.style.background =
+                                    "rgba(242, 182, 50, 0.2)")
+                                }
+                                onMouseLeave={(e) =>
+                                  (e.currentTarget.style.background =
+                                    "rgba(255,255,255,0.1)")
+                                }
                               >
                                 ⇄
                               </button>
-                              <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--accent)" }}>
+                              <span
+                                style={{
+                                  fontSize: "0.7rem",
+                                  fontWeight: 600,
+                                  color: "var(--accent)",
+                                }}
+                              >
                                 {currentMode}
                               </span>
                             </>
                           )}
                         </div>
                       </td>
-                      <td style={{
-                        padding: "0.75rem 1rem",
-                        fontWeight: 700,
-                        fontSize: "0.9rem",
-                        color: isBench ? "var(--text-muted)" : "var(--accent)"
-                      }}>
-                        {team.slot === "flx" || team.slot === "be" ? team.slot.toUpperCase() : team.slot}
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          fontWeight: 700,
+                          fontSize: "0.9rem",
+                          color: isBench
+                            ? "var(--text-muted)"
+                            : "var(--accent)",
+                        }}
+                      >
+                        {team.slot === "flx" || team.slot === "be"
+                          ? team.slot.toUpperCase()
+                          : team.slot}
                       </td>
                       <td style={{ padding: "0.75rem 1rem" }}>
                         {isEmpty ? (
-                          <span style={{ color: "var(--text-muted)", fontSize: "0.95rem", fontStyle: "italic" }}>
+                          <span
+                            style={{
+                              color: "var(--text-muted)",
+                              fontSize: "0.95rem",
+                              fontStyle: "italic",
+                            }}
+                          >
                             Empty
                           </span>
                         ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                            }}
+                          >
                             {/* Team Logo */}
                             {team.logoPath && (
                               <Image
@@ -759,10 +1176,16 @@ export default function OpponentsPage() {
                                   fontSize: "1rem",
                                   cursor: "pointer",
                                   color: "var(--text-main)",
-                                  transition: "color 0.2s"
+                                  transition: "color 0.2s",
                                 }}
-                                onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
-                                onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-main)"}
+                                onMouseEnter={(e) =>
+                                  (e.currentTarget.style.color =
+                                    "var(--accent)")
+                                }
+                                onMouseLeave={(e) =>
+                                  (e.currentTarget.style.color =
+                                    "var(--text-main)")
+                                }
                               >
                                 {team.name}
                               </div>
@@ -770,16 +1193,27 @@ export default function OpponentsPage() {
                           </div>
                         )}
                       </td>
-                      <td style={{
-                        padding: "0.75rem 1rem",
-                        textAlign: "center",
-                        fontWeight: 700,
-                        fontSize: "1rem",
-                        color: team.score > 0 ? "var(--accent)" : "var(--text-muted)"
-                      }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "center",
+                          fontWeight: 700,
+                          fontSize: "1rem",
+                          color:
+                            team.score > 0
+                              ? "var(--accent)"
+                              : "var(--text-muted)",
+                        }}
+                      >
                         {team.score > 0 ? team.score.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          fontSize: "0.9rem",
+                          color: "var(--text-muted)",
+                        }}
+                      >
                         {team.opponentTeam ? (
                           <span
                             onClick={(e) => {
@@ -787,12 +1221,17 @@ export default function OpponentsPage() {
                               setSelectedTeam({
                                 ...team.opponentTeam!,
                                 status: undefined,
-                              } as any);
+                              });
                               setShowModal(true);
                             }}
                             style={{ cursor: "pointer" }}
-                            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
-                            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.textDecoration =
+                                "underline")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.textDecoration = "none")
+                            }
                           >
                             {team.opponent} {team.opponentGameRecord}
                             {team.opponentStanding && (
@@ -800,7 +1239,10 @@ export default function OpponentsPage() {
                                 {" "}
                                 <span
                                   style={{
-                                    color: getOpponentStandingsColor(team.opponentStanding.rank, team.opponentStanding.totalTeams),
+                                    color: getOpponentStandingsColor(
+                                      team.opponentStanding.rank,
+                                      team.opponentStanding.totalTeams,
+                                    ),
                                     fontWeight: 600,
                                   }}
                                 >
@@ -813,19 +1255,53 @@ export default function OpponentsPage() {
                           "-"
                         )}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "center",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.oprk || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.9rem", fontWeight: 600 }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "center",
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                        }}
+                      >
                         {team.fprk || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 600, fontSize: "0.95rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontWeight: 600,
+                          fontSize: "0.95rem",
+                        }}
+                      >
                         {team.fpts ? team.fpts.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          color: "var(--text-muted)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.avg ? team.avg.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          color: "var(--text-muted)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.last ? team.last.toFixed(1) : "-"}
                       </td>
                     </tr>
@@ -841,18 +1317,27 @@ export default function OpponentsPage() {
       {activeTab === "stats" && (
         <section className="card">
           {/* Week Navigation and 2s/3s Switch */}
-          <div style={{
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "0.75rem",
-            padding: "1rem 1.5rem",
-            borderBottom: "1px solid rgba(255,255,255,0.1)"
-          }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "1rem" }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "0.75rem",
+              padding: "1rem 1.5rem",
+              borderBottom: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: "1rem",
+              }}
+            >
               <button
-                onClick={() => setCurrentWeek(prev => getPrevWeek(prev))}
+                onClick={() => setCurrentWeek((prev) => getPrevWeek(prev))}
                 disabled={currentWeek === 1}
                 style={{
                   background: "transparent",
@@ -880,7 +1365,7 @@ export default function OpponentsPage() {
               </span>
 
               <button
-                onClick={() => setCurrentWeek(prev => getNextWeek(prev))}
+                onClick={() => setCurrentWeek((prev) => getNextWeek(prev))}
                 disabled={currentWeek === 10}
                 style={{
                   background: "transparent",
@@ -893,7 +1378,9 @@ export default function OpponentsPage() {
                   fontSize: "1rem",
                 }}
               >
-                {currentWeek === 10 ? "►" : `Week ${getNextWeek(currentWeek)} ►`}
+                {currentWeek === 10
+                  ? "►"
+                  : `Week ${getNextWeek(currentWeek)} ►`}
               </button>
             </div>
 
@@ -949,9 +1436,39 @@ export default function OpponentsPage() {
               <thead>
                 <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
                   <th style={{ padding: "0.75rem 0.5rem", width: "50px" }}></th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Rank</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Score</th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "left",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Rank
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "left",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Team
+                  </th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "center",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Score
+                  </th>
                   <th
                     onClick={() => handleStatsSort("fprk")}
                     style={{
@@ -961,10 +1478,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    <HeaderTooltip label="Fprk" full="Fantasy Points Rank" /> {statsSortColumn === "fprk" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Fprk" full="Fantasy Points Rank" />{" "}
+                    {statsSortColumn === "fprk" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("fpts")}
@@ -975,10 +1494,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    <HeaderTooltip label="Fpts" full="Fantasy Points" /> {statsSortColumn === "fpts" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Total" full="Total Fantasy Points" />{" "}
+                    {statsSortColumn === "fpts" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("avg")}
@@ -989,10 +1510,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    <HeaderTooltip label="Avg" full="Average Fantasy Points" /> {statsSortColumn === "avg" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Avg" full="Average Fantasy Points" />{" "}
+                    {statsSortColumn === "avg" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("last")}
@@ -1003,10 +1526,15 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    <HeaderTooltip label="Last" full="Last Week's Fantasy Points" /> {statsSortColumn === "last" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip
+                      label="Last"
+                      full="Last Week's Fantasy Points"
+                    />{" "}
+                    {statsSortColumn === "last" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("goals")}
@@ -1017,10 +1545,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    Goals {statsSortColumn === "goals" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    Goals{" "}
+                    {statsSortColumn === "goals" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("shots")}
@@ -1031,10 +1561,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    Shots {statsSortColumn === "shots" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    Shots{" "}
+                    {statsSortColumn === "shots" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("saves")}
@@ -1045,10 +1577,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    Saves {statsSortColumn === "saves" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    Saves{" "}
+                    {statsSortColumn === "saves" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("assists")}
@@ -1059,10 +1593,12 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    Assists {statsSortColumn === "assists" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    Assists{" "}
+                    {statsSortColumn === "assists" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
                   <th
                     onClick={() => handleStatsSort("demos")}
@@ -1073,12 +1609,24 @@ export default function OpponentsPage() {
                       color: "var(--text-muted)",
                       fontWeight: 600,
                       cursor: "pointer",
-                      userSelect: "none"
+                      userSelect: "none",
                     }}
                   >
-                    <HeaderTooltip label="Demos" full="Demolitions" /> {statsSortColumn === "demos" && (statsSortDirection === "asc" ? "▲" : "▼")}
+                    <HeaderTooltip label="Demos" full="Demolitions" />{" "}
+                    {statsSortColumn === "demos" &&
+                      (statsSortDirection === "asc" ? "▲" : "▼")}
                   </th>
-                  <th style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Record</th>
+                  <th
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "center",
+                      fontSize: "0.85rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Record
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1089,24 +1637,54 @@ export default function OpponentsPage() {
                     <tr
                       key={index}
                       style={{
-                        borderBottom: "1px solid rgba(255,255,255,0.05)"
+                        borderBottom: "1px solid rgba(255,255,255,0.05)",
                       }}
                     >
-                      <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
-                        <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--accent)" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          textAlign: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            color: "var(--accent)",
+                          }}
+                        >
                           {gameMode}
                         </span>
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", fontWeight: 700, fontSize: "0.9rem", color: "var(--accent)" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          fontWeight: 700,
+                          fontSize: "0.9rem",
+                          color: "var(--accent)",
+                        }}
+                      >
                         {index + 1}
                       </td>
                       <td style={{ padding: "0.75rem 1rem" }}>
                         {isEmpty ? (
-                          <span style={{ color: "var(--text-muted)", fontSize: "0.95rem", fontStyle: "italic" }}>
+                          <span
+                            style={{
+                              color: "var(--text-muted)",
+                              fontSize: "0.95rem",
+                              fontStyle: "italic",
+                            }}
+                          >
                             Empty
                           </span>
                         ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                            }}
+                          >
                             {/* Team Logo (smaller for stats tab) */}
                             {team.logoPath && (
                               <Image
@@ -1125,22 +1703,48 @@ export default function OpponentsPage() {
                                   fontSize: "0.95rem",
                                   cursor: "pointer",
                                   color: "var(--text-main)",
-                                  transition: "color 0.2s"
+                                  transition: "color 0.2s",
                                 }}
-                                onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent)"}
-                                onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-main)"}
+                                onMouseEnter={(e) =>
+                                  (e.currentTarget.style.color =
+                                    "var(--accent)")
+                                }
+                                onMouseLeave={(e) =>
+                                  (e.currentTarget.style.color =
+                                    "var(--text-main)")
+                                }
                               >
                                 {team.name}
                               </div>
-                              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
-                                {team.opponent && team.opponentGameRecord && team.opponentFantasyRank ? (
+                              <div
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "var(--text-muted)",
+                                  marginTop: "0.15rem",
+                                }}
+                              >
+                                {team.opponent &&
+                                team.opponentGameRecord &&
+                                team.opponentFantasyRank ? (
                                   <>
-                                    vs. {team.opponent} {team.opponentGameRecord}{" "}
-                                    <span style={{ color: getFantasyRankColor(team.opponentFantasyRank) }}>
+                                    vs. {team.opponent}{" "}
+                                    {team.opponentGameRecord}{" "}
+                                    <span
+                                      style={{
+                                        color: getFantasyRankColor(
+                                          team.opponentFantasyRank,
+                                        ),
+                                      }}
+                                    >
                                       ({team.opponentFantasyRank}
-                                      {team.opponentFantasyRank === 1 ? "st" :
-                                       team.opponentFantasyRank === 2 ? "nd" :
-                                       team.opponentFantasyRank === 3 ? "rd" : "th"})
+                                      {team.opponentFantasyRank === 1
+                                        ? "st"
+                                        : team.opponentFantasyRank === 2
+                                          ? "nd"
+                                          : team.opponentFantasyRank === 3
+                                            ? "rd"
+                                            : "th"}
+                                      )
                                     </span>
                                   </>
                                 ) : (
@@ -1151,43 +1755,110 @@ export default function OpponentsPage() {
                           </div>
                         )}
                       </td>
-                      <td style={{
-                        padding: "0.75rem 1rem",
-                        textAlign: "center",
-                        fontWeight: 700,
-                        fontSize: "1rem",
-                        color: "var(--accent)"
-                      }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "center",
+                          fontWeight: 700,
+                          fontSize: "1rem",
+                          color: "var(--accent)",
+                        }}
+                      >
                         {team.score > 0 ? team.score.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.9rem", fontWeight: 600 }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "center",
+                          fontSize: "0.9rem",
+                          fontWeight: 600,
+                        }}
+                      >
                         {team.fprk || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 600, fontSize: "0.95rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontWeight: 600,
+                          fontSize: "0.95rem",
+                        }}
+                      >
                         {team.fpts ? team.fpts.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          color: "var(--text-muted)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.avg ? team.avg.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          color: "var(--text-muted)",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.last ? team.last.toFixed(1) : "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.goals || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.shots || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.saves || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.assists || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "right",
+                          fontSize: "0.9rem",
+                        }}
+                      >
                         {team.demos || "-"}
                       </td>
-                      <td style={{ padding: "0.75rem 1rem", textAlign: "center", fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                      <td
+                        style={{
+                          padding: "0.75rem 1rem",
+                          textAlign: "center",
+                          fontSize: "0.9rem",
+                          color: "var(--text-muted)",
+                        }}
+                      >
                         {team.teamRecord || "-"}
                       </td>
                     </tr>

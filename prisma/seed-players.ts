@@ -102,7 +102,7 @@ async function main() {
     const record = records[i];
 
     // Clean leading/trailing quotes from field values
-    let name = record.name?.replace(/^"+|"+$/g, '').trim();
+    const name = record.name?.replace(/^"+|"+$/g, '').trim();
     const salaryStr = record.salary?.trim();
     const memberId = record.member_id?.trim();
     const skillGroup = record.skill_group?.trim();

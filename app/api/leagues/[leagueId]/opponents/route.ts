@@ -5,6 +5,7 @@ import { getTeamSeasonStats, GamemodeLens, lensForPosition, getWithinLeagueStand
 import { getFantasyStandings, formatPlacement } from "@/lib/standings";
 import { runAutoLockSweep } from "@/lib/autoLock";
 import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
+import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 /**
  * GET /api/leagues/[leagueId]/opponents
@@ -61,12 +62,12 @@ export async function GET(
 
     // Parse roster config to know how many slots each position has
     // (position values are lowercase everywhere in this app: "2s"/"3s"/"flx"/"be")
-    const rosterConfig = league.rosterConfig as any;
+    const rosterConfig = league.rosterConfig as RosterConfigShape;
     const expectedSlots = [
-      ...Array(rosterConfig["2s"] || 0).fill("2s"),
-      ...Array(rosterConfig["3s"] || 0).fill("3s"),
-      ...Array(rosterConfig.flx || 0).fill("flx"),
-      ...Array(rosterConfig.be || 0).fill("be"),
+      ...Array(rosterConfig?.["2s"] || 0).fill("2s"),
+      ...Array(rosterConfig?.["3s"] || 0).fill("3s"),
+      ...Array(rosterConfig?.flx || 0).fill("flx"),
+      ...Array(rosterConfig?.be || 0).fill("be"),
     ];
 
     // Get all fantasy teams in the league (excluding current user's team,
@@ -269,7 +270,7 @@ export async function GET(
       });
 
       // Build roster array with all expected slots (including empty ones)
-      let seenCounts: Record<string, number> = {};
+      const seenCounts: Record<string, number> = {};
       const roster = expectedSlots.map((slotName) => {
         const slotIndex = seenCounts[slotName] ?? 0;
         seenCounts[slotName] = slotIndex + 1;

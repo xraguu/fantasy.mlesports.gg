@@ -185,7 +185,7 @@ export default function DatabaseToolsPage() {
       >
         <p style={{ fontSize: "0.9rem", color: "var(--text-main)", lineHeight: 1.6 }}>
           Backups, restores, and database maintenance are managed at the hosting/infra
-          level (DigitalOcean managed Postgres), not from this panel. There's no
+          level (DigitalOcean managed Postgres), not from this panel. There&apos;s no
           app-level backup/restore, optimize, cache, or data-reset tooling here — those
           controls previously shown on this page were non-functional placeholders and
           have been removed.

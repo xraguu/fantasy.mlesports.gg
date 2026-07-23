@@ -60,7 +60,7 @@ export async function POST(
     }
 
     // Check if any of the slots being updated are locked
-    const slotIds = updates.map((u: any) => u.slotId);
+    const slotIds = updates.map((u: { slotId: string }) => u.slotId);
     const slots = await prisma.rosterSlot.findMany({
       where: {
         id: { in: slotIds },

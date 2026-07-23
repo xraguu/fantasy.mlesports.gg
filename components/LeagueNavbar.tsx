@@ -3,9 +3,15 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useParams, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { useSession } from "next-auth/react";
 import { isAdminViewingLeague, clearAdminViewingLeague } from "@/lib/adminLeagueView";
+
+// This flag is only ever set/cleared by an explicit click in this same tab
+// (see lib/adminLeagueView.ts) — there's no cross-tab or async change to
+// subscribe to, so the subscribe callback is a no-op.
+const subscribeToNothing = () => () => {};
+const getServerSnapshot = () => false;
 
 export default function LeagueNavbar() {
   const pathname = usePathname();
@@ -19,12 +25,14 @@ export default function LeagueNavbar() {
   const [seasonStarted, setSeasonStarted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileOpenPathname, setMobileOpenPathname] = useState(pathname);
-  // Read client-side only (sessionStorage doesn't exist during SSR) — starts
-  // false and flips true in an effect.
-  const [viewingViaAdminPanel, setViewingViaAdminPanel] = useState(false);
-  useEffect(() => {
-    if (leagueId) setViewingViaAdminPanel(isAdminViewingLeague(leagueId));
-  }, [leagueId]);
+  // Read client-side only (sessionStorage doesn't exist during SSR) — the
+  // server snapshot is always false, then React re-renders with the real
+  // value immediately after hydration.
+  const viewingViaAdminPanel = useSyncExternalStore(
+    subscribeToNothing,
+    () => (leagueId ? isAdminViewingLeague(leagueId) : false),
+    getServerSnapshot,
+  );
 
   // Fetch the user's fantasy team ID and league data. Client-side navigation
   // within this league (e.g. the draft room redirecting to My Roster the
@@ -42,7 +50,7 @@ export default function LeagueNavbar() {
           const data = await response.json();
           // Find the user's team from all fantasy teams in the league
           const myTeam = data.league?.fantasyTeams?.find(
-            (team: any) => team.ownerUserId === session.user.id
+            (team: { id: string; ownerUserId: string }) => team.ownerUserId === session.user.id
           );
           if (myTeam) {
             setMyTeamId(myTeam.id);

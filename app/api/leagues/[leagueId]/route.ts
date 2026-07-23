@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { etDateTime } from "@/lib/timezone";
@@ -132,7 +133,7 @@ export async function PATCH(
     } = body;
 
     // Build update data object
-    const updateData: any = {};
+    const updateData: Prisma.FantasyLeagueUpdateInput = {};
 
     if (name !== undefined) updateData.name = name;
     if (maxTeams !== undefined) updateData.maxTeams = maxTeams;

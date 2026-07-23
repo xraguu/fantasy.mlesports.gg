@@ -61,6 +61,7 @@ export async function GET(
       t.proposerGives.forEach((id) => mleTeamIds.add(id));
       t.receiverGives.forEach((id) => mleTeamIds.add(id));
       t.proposerDrops.forEach((id) => mleTeamIds.add(id));
+      t.receiverDrops.forEach((id) => mleTeamIds.add(id));
     });
 
     const mleTeams = await prisma.mLETeam.findMany({
@@ -96,6 +97,7 @@ export async function GET(
       proposerGivesTeams: resolveTeams(trade.proposerGives),
       receiverGivesTeams: resolveTeams(trade.receiverGives),
       proposerDropsTeams: resolveTeams(trade.proposerDrops),
+      receiverDropsTeams: resolveTeams(trade.receiverDrops),
       status: trade.status === "awaiting_veto" ? "Awaiting veto window" : "Awaiting response",
       timestamp: trade.createdAt,
     }));
