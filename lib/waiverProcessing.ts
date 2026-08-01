@@ -345,28 +345,6 @@ function parseTimeToMinutes(time: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-function nowInEastern(): { dayOfWeek: string; minutesOfDay: number } {
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const dayOfWeek = parts.find((p) => p.type === "weekday")?.value ?? "";
-  let hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
-  const minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
-  if (hour === 24) hour = 0;
-  return { dayOfWeek, minutesOfDay: hour * 60 + minute };
-}
-
-function isPastAScheduledWaiverTimeToday(schedule: WaiverScheduleEntry[]): boolean {
-  if (!Array.isArray(schedule) || schedule.length === 0) return false;
-  const { dayOfWeek, minutesOfDay } = nowInEastern();
-  return schedule.some((entry) => entry.day === dayOfWeek && minutesOfDay >= parseTimeToMinutes(entry.time));
-}
-
 /**
  * The most recent scheduled waiver-processing instant (day + time, ET) that
  * has already happened, given a season's configured schedule (Admin
@@ -454,8 +432,17 @@ export async function runWaiverProcessingSweep(leagueId?: string): Promise<void>
     }
   }
 
+  // Gated on "has any scheduled instant in the last 7 days already passed"
+  // (same lookback `mostRecentScheduledInstant` uses just above for period
+  // release), not "is today specifically a scheduled day" — the narrower
+  // same-day-only check used to mean a missed day (nobody loading a
+  // waivers-touching page on that exact ET calendar day) silently skipped
+  // that whole scheduled instant until the same weekday came around again,
+  // leaving claims stuck pending for a week or more. This one, like
+  // processPendingWaiverClaims itself, is safe to re-evaluate as true on
+  // every sweep pass — it only ever touches claims still "pending."
   const dueLeagueIds = leagues
-    .filter((l) => isPastAScheduledWaiverTimeToday(settingsBySeason.get(l.season) ?? []))
+    .filter((l) => mostRecentScheduledInstant(settingsBySeason.get(l.season) ?? []) !== null)
     .map((l) => l.id);
 
   for (const dueLeagueId of dueLeagueIds) {
