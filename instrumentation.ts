@@ -28,6 +28,7 @@ export async function register() {
 
     const { runStatsRefresh } = await import("@/lib/statsRefresh");
     const { runAutoLockSweep } = await import("@/lib/autoLock");
+    const { runWaiverProcessingSweep } = await import("@/lib/waiverProcessing");
 
     const refresh = async () => {
       try {
@@ -42,6 +43,16 @@ export async function register() {
         await runAutoLockSweep();
       } catch (error) {
         console.error("[stats-refresh] Scheduled auto-lock sweep failed:", error);
+      }
+
+      try {
+        // Same "don't depend on someone loading a page" reasoning as the
+        // auto-lock sweep above — a league nobody visits around its
+        // Tuesday/Thursday waiver window otherwise leaves claims sitting
+        // pending until someone eventually does.
+        await runWaiverProcessingSweep();
+      } catch (error) {
+        console.error("[stats-refresh] Scheduled waiver processing sweep failed:", error);
       }
 
       try {
