@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import HeaderTooltip from "@/components/HeaderTooltip";
+import { getPlayoffBracketShape } from "@/lib/playoffBracketShape";
 
 interface TopTeam {
   id: string;
@@ -40,6 +41,7 @@ export default function StandingsPage() {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [maxTeams, setMaxTeams] = useState<number | null>(null);
+  const [currentWeek, setCurrentWeek] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +49,15 @@ export default function StandingsPage() {
   // lib/scheduleGenerator.ts's moneySeedCount) — 12-team leagues send their
   // top 6 to the money bracket, 8/10-team leagues send their top 4.
   const playoffCutoff = maxTeams === 12 ? 6 : 4;
+
+  // The season's actual last week — regular season weeks plus every
+  // playoff round (see lib/playoffBracketShape.ts, the same client-safe
+  // shape the Playoffs page renders from). Final Results only makes sense
+  // to show once the league has actually reached that week; before then
+  // the bracket can't have finished yet regardless of what its games show.
+  const regularSeasonWeeks = maxTeams === 12 ? 7 : 8;
+  const finalWeek = maxTeams !== null ? regularSeasonWeeks + getPlayoffBracketShape(maxTeams).length : null;
+  const seasonComplete = currentWeek !== null && finalWeek !== null && currentWeek >= finalWeek;
 
   // Fetch standings data
   useEffect(() => {
@@ -62,6 +73,7 @@ export default function StandingsPage() {
         const data = await response.json();
         setStandings(data.standings || []);
         setMaxTeams(data.league?.maxTeams ?? null);
+        setCurrentWeek(data.league?.currentWeek ?? null);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load standings");
@@ -81,6 +93,10 @@ export default function StandingsPage() {
 
   const handlePlayoffsClick = () => {
     router.push(`/leagues/${leagueId}/standings/playoffs`);
+  };
+
+  const handleFinalResultsClick = () => {
+    router.push(`/leagues/${leagueId}/standings/final`);
   };
 
   // Loading state
@@ -107,21 +123,41 @@ export default function StandingsPage() {
     <>
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
         <h1 className="page-heading" style={{ fontSize: "clamp(1.5rem, 6vw, 2.5rem)", color: "var(--accent)", fontWeight: 700, margin: 0 }}>Standings</h1>
-        <button
-          onClick={handlePlayoffsClick}
-          style={{
-            backgroundColor: "var(--accent)",
-            color: "#1a1a2e",
-            padding: "0.5rem 1.5rem",
-            borderRadius: "2rem",
-            fontWeight: 700,
-            fontSize: "1rem",
-            border: "none",
-            cursor: "pointer"
-          }}
-        >
-          Playoffs
-        </button>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          {seasonComplete && (
+            <button
+              onClick={handleFinalResultsClick}
+              style={{
+                backgroundColor: "var(--accent)",
+                color: "#1a1a2e",
+                padding: "0.5rem 1.5rem",
+                borderRadius: "2rem",
+                fontWeight: 700,
+                fontSize: "1rem",
+                border: "none",
+                boxShadow: "0 4px 14px rgba(242, 182, 50, 0.4)",
+                cursor: "pointer"
+              }}
+            >
+              Final Results
+            </button>
+          )}
+          <button
+            onClick={handlePlayoffsClick}
+            style={{
+              backgroundColor: "var(--accent)",
+              color: "#1a1a2e",
+              padding: "0.5rem 1.5rem",
+              borderRadius: "2rem",
+              fontWeight: 700,
+              fontSize: "1rem",
+              border: "none",
+              cursor: "pointer"
+            }}
+          >
+            Playoffs
+          </button>
+        </div>
       </div>
 
       <section className="card">

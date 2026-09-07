@@ -707,3 +707,71 @@ export async function getProjectedFirstRound(leagueId: string): Promise<Projecte
       : toPairs(generateTop4BracketRound1(consolationSeeds, 0)),
   };
 }
+
+/**
+ * Final 1..maxTeams placement, once the playoff bracket has completely
+ * finished (its last round's matchups are all played). Derived structurally
+ * from the final round's real matchup order rather than re-deriving winners
+ * from scratch: every bracket generator above arranges the final round's
+ * matches in a fixed order — money: Championship, 3rd Place[, 5th Place for
+ * 12-team]; consolation: 5th/7th[/9th] Place for 8/10-team, or 7th/9th/11th
+ * Place for 12-team (see getPlayoffBracketShape's labels, which describe
+ * this exact same order) — so within each bracket, matchup index i (0-based,
+ * ordered by id like every other real-round read in this app) decides ranks
+ * (seedOffset + 2i+1) for the winner and (seedOffset + 2i+2) for the loser,
+ * with seedOffset 0 for money and moneySeedCount for consolation.
+ *
+ * Throws if the league size isn't bracket-eligible, or the final playoff
+ * week hasn't been generated/fully scored yet — callers should catch that
+ * and surface it as "season isn't finished yet" rather than a hard error.
+ */
+export async function getFinalStandingsPlacement(
+  leagueId: string
+): Promise<Map<string, number>> {
+  const league = await prisma.fantasyLeague.findUnique({
+    where: { id: leagueId },
+    select: { maxTeams: true },
+  });
+  if (!league) throw new Error("League not found");
+  if (![8, 10, 12].includes(league.maxTeams)) {
+    throw new Error("Final results aren't supported for this league size");
+  }
+
+  const regularSeasonWeeks = league.maxTeams === 12 ? 7 : 8;
+  const finalRoundNumber = league.maxTeams === 12 ? 3 : 2;
+  const finalWeek = regularSeasonWeeks + finalRoundNumber;
+  const moneySeedCount = league.maxTeams === 12 ? 6 : 4;
+
+  const { moneySeeds } = await getMoneyConsolationSeeds(leagueId);
+  const moneySeedSet = new Set(moneySeeds);
+
+  const finalMatchups = await prisma.matchup.findMany({
+    where: { fantasyLeagueId: leagueId, week: finalWeek, isPlayoff: true },
+    orderBy: { id: "asc" },
+  });
+
+  const moneyMatchups = finalMatchups.filter((m) => moneySeedSet.has(m.homeTeamId));
+  const consolationMatchups = finalMatchups.filter((m) => !moneySeedSet.has(m.homeTeamId));
+  const expectedMoneyCount = moneySeedCount / 2;
+  const expectedConsolationCount = (league.maxTeams - moneySeedCount) / 2;
+
+  if (
+    moneyMatchups.length !== expectedMoneyCount ||
+    consolationMatchups.length !== expectedConsolationCount ||
+    finalMatchups.some((m) => m.homeScore === null || m.awayScore === null)
+  ) {
+    throw new Error("The season isn't finished yet — the final playoff round hasn't been played.");
+  }
+
+  const placement = new Map<string, number>();
+  const assign = (m: (typeof finalMatchups)[number], seedOffset: number, index: number) => {
+    const winnerId = m.homeScore! >= m.awayScore! ? m.homeTeamId : m.awayTeamId;
+    const loserId = m.homeScore! >= m.awayScore! ? m.awayTeamId : m.homeTeamId;
+    placement.set(winnerId, seedOffset + 2 * index + 1);
+    placement.set(loserId, seedOffset + 2 * index + 2);
+  };
+  moneyMatchups.forEach((m, i) => assign(m, 0, i));
+  consolationMatchups.forEach((m, i) => assign(m, moneySeedCount, i));
+
+  return placement;
+}
