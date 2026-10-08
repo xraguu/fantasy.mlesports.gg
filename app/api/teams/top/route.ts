@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentSeasonWeek } from "@/lib/currentWeek";
+import { etDateTime } from "@/lib/timezone";
+import type { WeekDateConfig } from "@/lib/weekMatchRange";
 import { getTeamSeasonStats, GamemodeLens, compareByFpts } from "@/lib/teamSeasonStats";
 
 /**
@@ -18,7 +20,25 @@ export async function GET() {
     // actually is. `getCurrentSeasonWeek` is the same real "what week is
     // it right now" the automatic stats refresh itself uses.
     const current = await getCurrentSeasonWeek();
-    const throughWeek = current?.week ?? 1;
+    if (!current) {
+      return NextResponse.json({ throughWeek: null, twoS: [], threeS: [], combined: [] });
+    }
+
+    // TeamWeeklyStats is keyed by week number only (no season), so any week
+    // of the current season whose matches haven't started yet still holds
+    // LAST season's rows for that week number. Count only through the latest
+    // week that has actually started — and before the season's first match
+    // there's no data for it at all, so the table stays empty.
+    const settings = await prisma.seasonSettings.findFirst({ where: { season: current.season } });
+    const weekDates = (settings?.weekDates as WeekDateConfig[] | undefined) ?? [];
+    const now = new Date();
+    const startedWeeks = weekDates
+      .filter((wd) => wd.week <= current.week && wd.matchStart && now >= etDateTime(wd.matchStart, 0, 0))
+      .map((wd) => wd.week);
+    if (startedWeeks.length === 0) {
+      return NextResponse.json({ throughWeek: null, twoS: [], threeS: [], combined: [] });
+    }
+    const throughWeek = Math.max(...startedWeeks);
 
     const teams = await prisma.mLETeam.findMany({
       select: {
