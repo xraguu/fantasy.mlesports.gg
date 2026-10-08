@@ -669,10 +669,15 @@ export default function AdminLeagueManagementPage() {
     }
   };
 
-  // Filter out users who are already in the league
-  const availableUsers = allUsers.filter(
-    (user) => !league?.fantasyTeams.some((team) => team.owner.id === user.id),
-  );
+  // Filter out users who are already in the league, alphabetized for the
+  // manager dropdowns (the users API returns newest-first)
+  const availableUsers = allUsers
+    .filter(
+      (user) => !league?.fantasyTeams.some((team) => team.owner.id === user.id),
+    )
+    .sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" }),
+    );
 
   const remainingSlots = league
     ? league.maxTeams - league._count.fantasyTeams
