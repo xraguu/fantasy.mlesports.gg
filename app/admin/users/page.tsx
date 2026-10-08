@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
+import HeaderTooltip from "@/components/HeaderTooltip";
+
+interface UserLeague {
+  id: string;
+  name: string;
+}
 
 interface User {
   id: string;
@@ -13,6 +19,7 @@ interface User {
   status: "active" | "suspended";
   createdAt: string;
   updatedAt: string;
+  leagues: UserLeague[]; // active (non-archived) leagues only
 }
 
 export default function ManageUsersPage() {
@@ -21,6 +28,7 @@ export default function ManageUsersPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("all");
+  const [filterLeague, setFilterLeague] = useState("all");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -48,8 +56,17 @@ export default function ManageUsersPage() {
       user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.discordId.includes(searchTerm);
     const matchesRole = filterRole === "all" || user.role === filterRole;
-    return matchesSearch && matchesRole;
+    const matchesLeague =
+      filterLeague === "all" || user.leagues.some((league) => league.id === filterLeague);
+    return matchesSearch && matchesRole && matchesLeague;
   });
+
+  // Every league at least one user is in, for the league filter
+  const leagueOptions = [
+    ...new Map(
+      users.flatMap((user) => user.leagues).map((league) => [league.id, league]),
+    ).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
 
   const updateUserStatus = async (userId: string, status: "active" | "suspended") => {
     try {
@@ -410,6 +427,26 @@ export default function ManageUsersPage() {
           <option value="admin">Admins</option>
           <option value="user">Users</option>
         </select>
+        <select
+          value={filterLeague}
+          onChange={(e) => setFilterLeague(e.target.value)}
+          style={{
+            padding: "0.75rem 1rem",
+            background: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: "6px",
+            color: "var(--text-main)",
+            fontSize: "0.95rem",
+            fontWeight: 600,
+          }}
+        >
+          <option value="all">All Leagues</option>
+          {leagueOptions.map((league) => (
+            <option key={league.id} value={league.id}>
+              {league.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Users Table */}
@@ -450,6 +487,17 @@ export default function ManageUsersPage() {
                   }}
                 >
                   Discord ID
+                </th>
+                <th
+                  style={{
+                    padding: "0.75rem 0.5rem",
+                    textAlign: "center",
+                    fontSize: "0.85rem",
+                    color: "var(--text-muted)",
+                    fontWeight: 600,
+                  }}
+                >
+                  Leagues
                 </th>
                 <th
                   style={{
@@ -527,6 +575,22 @@ export default function ManageUsersPage() {
                     }}
                   >
                     {user.discordId}
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.75rem 0.5rem",
+                      textAlign: "center",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {user.leagues.length > 0 ? (
+                      <HeaderTooltip
+                        label={String(user.leagues.length)}
+                        full={user.leagues.map((league) => league.name)}
+                      />
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>0</span>
+                    )}
                   </td>
                   <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                     <span

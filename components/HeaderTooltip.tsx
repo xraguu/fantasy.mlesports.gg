@@ -13,7 +13,8 @@ interface Position {
 /**
  * Wraps an abbreviated table column header (e.g. "Fprk") so hovering it
  * shows the spelled-out label (e.g. "Fantasy Points Rank") in a small
- * tooltip. Meant to be dropped straight inside a <th>.
+ * tooltip. Meant to be dropped straight inside a <th>. `full` can also be a
+ * list, shown one item per line (e.g. a count that expands to names).
  *
  * Renders the tooltip through a portal into document.body, positioned with
  * `fixed` coordinates computed from the trigger's real screen position on
@@ -28,8 +29,9 @@ export default function HeaderTooltip({
   full,
 }: {
   label: string;
-  full: string;
+  full: string | string[];
 }) {
+  const lines = Array.isArray(full) ? full : [full];
   const [pos, setPos] = useState<Position | null>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
 
@@ -41,7 +43,8 @@ export default function HeaderTooltip({
     // No DOM measurement of the tooltip itself yet (it isn't rendered
     // until `pos` is set) — a rough per-character estimate is close enough
     // at this font size to decide whether it'd clip a screen edge.
-    const estimatedWidth = full.length * 6.5 + 26;
+    const estimatedWidth = Math.max(...lines.map((line) => line.length)) * 6.5 + 26;
+    const estimatedHeight = lines.length * 18 + 14;
 
     let align: Position["align"] = "center";
     const centeredLeft = rect.left + rect.width / 2 - estimatedWidth / 2;
@@ -52,7 +55,7 @@ export default function HeaderTooltip({
     }
 
     const placement: Position["placement"] =
-      rect.top < 56 ? "below" : "above";
+      rect.top < Math.max(56, estimatedHeight + gap + 8) ? "below" : "above";
 
     setPos({
       top: placement === "above" ? rect.top - gap : rect.bottom + gap,
@@ -129,7 +132,11 @@ export default function HeaderTooltip({
               pointerEvents: "none",
             }}
           >
-            {full}
+            {lines.map((line, i) => (
+              <span key={i} style={{ display: "block" }}>
+                {line}
+              </span>
+            ))}
           </span>,
           document.body
         )}
