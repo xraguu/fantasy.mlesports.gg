@@ -99,7 +99,16 @@ export async function PATCH(
     // Prepare update data
     const updateData: Prisma.FantasyLeagueUpdateInput = {};
 
-    if (name) updateData.name = name;
+    if (name !== undefined) {
+      const trimmedName = typeof name === "string" ? name.trim() : "";
+      if (!trimmedName || trimmedName.length > 50) {
+        return NextResponse.json(
+          { error: "League name must be 1–50 characters" },
+          { status: 400 }
+        );
+      }
+      updateData.name = trimmedName;
+    }
     if (currentWeek !== undefined) updateData.currentWeek = parseInt(currentWeek);
     if (maxTeams !== undefined) {
       const parsedMaxTeams = parseInt(maxTeams);
@@ -145,10 +154,14 @@ export async function PATCH(
       data: updateData,
     });
 
+    const renamed = league.name !== updatedLeague.name;
+    const otherFields = Object.keys(updateData).filter((field) => field !== "name");
     await logAdminActivity({
       adminUserId: session.user.id!,
       action: "league.update",
-      description: `Updated league "${updatedLeague.name}" (${Object.keys(updateData).join(", ")})`,
+      description: renamed
+        ? `Renamed league "${league.name}" to "${updatedLeague.name}"${otherFields.length > 0 ? ` (also updated ${otherFields.join(", ")})` : ""}`
+        : `Updated league "${updatedLeague.name}" (${Object.keys(updateData).join(", ")})`,
       targetType: "FantasyLeague",
       targetId: leagueId,
       metadata: updateData,

@@ -101,6 +101,9 @@ export default function AdminLeagueManagementPage() {
   const [savingDoubleWin, setSavingDoubleWin] = useState(false);
   const [pickTimeSeconds, setPickTimeSeconds] = useState(90);
   const [savingPickTime, setSavingPickTime] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   const [editRosterTeam, setEditRosterTeam] = useState<FantasyTeam | null>(
     null,
@@ -219,6 +222,37 @@ export default function AdminLeagueManagementPage() {
       );
     } finally {
       setSavingDoubleWin(false);
+    }
+  };
+
+  const handleRenameLeague = async () => {
+    if (!league) return;
+    const name = nameDraft.trim();
+    if (name === league.name) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      const response = await fetch(`/api/admin/leagues/${leagueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to rename league");
+      }
+
+      setLeague({ ...league, name });
+      setEditingName(false);
+      showAlert("League renamed.", "success");
+    } catch (error) {
+      console.error("Error renaming league:", error);
+      showAlert(error instanceof Error ? error.message : "Failed to rename league", "error");
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -815,16 +849,75 @@ export default function AdminLeagueManagementPage() {
         >
           ← Back to Leagues
         </button>
-        <h1
-          style={{
-            fontSize: "clamp(1.4rem, 6vw, 2rem)",
-            fontWeight: 700,
-            color: "var(--accent)",
-            marginBottom: "0.5rem",
-          }}
-        >
-          {league.name}
-        </h1>
+        {editingName ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRenameLeague();
+            }}
+            style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", marginBottom: "0.5rem" }}
+          >
+            <input
+              type="text"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              maxLength={50}
+              autoFocus
+              disabled={savingName}
+              aria-label="League name"
+              style={{
+                flex: "1 1 16rem",
+                minWidth: 0,
+                padding: "0.5rem 0.75rem",
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "6px",
+                color: "var(--text-main)",
+                fontSize: "1.1rem",
+                fontWeight: 600,
+              }}
+            />
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={savingName || nameDraft.trim().length === 0}
+            >
+              {savingName ? "Saving..." : "Save"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setEditingName(false)}
+              disabled={savingName}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
+            <h1
+              style={{
+                fontSize: "clamp(1.4rem, 6vw, 2rem)",
+                fontWeight: 700,
+                color: "var(--accent)",
+                margin: 0,
+              }}
+            >
+              {league.name}
+            </h1>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                setNameDraft(league.name);
+                setEditingName(true);
+              }}
+              style={{ padding: "0.35rem 0.85rem", fontSize: "0.85rem" }}
+            >
+              Rename
+            </button>
+          </div>
+        )}
         <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
           Season {league.season} •{" "}
           {league.draftType === "snake" ? "Snake" : "Linear"} Draft •{" "}
