@@ -4,8 +4,15 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { runAutoLockSweep } from "@/lib/autoLock";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
 const POSITION_ORDER: Record<string, number> = { "2s": 0, "3s": 1, flx: 2, be: 3 };
+
+/** Non-archived leagues only: season at or after the current one. */
+async function activeLeagueFilter(): Promise<Prisma.FantasyLeagueWhereInput> {
+  const currentSeason = await getCurrentSeason();
+  return currentSeason !== null ? { season: { gte: currentSeason } } : {};
+}
 
 interface LockLineupSlot {
   id: string;
@@ -51,10 +58,13 @@ export async function GET(req: NextRequest) {
 
     await runAutoLockSweep(leagueId && leagueId !== "all" ? leagueId : undefined);
 
-    // Build where clause
+    // Build where clause — "All Leagues" means every active league, never
+    // archived ones (season older than the current one).
     const whereClause: Prisma.RosterSlotWhereInput = { week: weekNumber };
     if (leagueId && leagueId !== "all") {
       whereClause.fantasyTeam = { fantasyLeagueId: leagueId };
+    } else {
+      whereClause.fantasyTeam = { league: await activeLeagueFilter() };
     }
 
     // Get all roster slots for the week
@@ -238,10 +248,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Otherwise, lock/unlock all teams in the week (optionally filtered by league)
+    // Otherwise, lock/unlock all teams in the week (optionally filtered by
+    // league) — "all" never reaches into archived leagues.
     const whereClause: Prisma.RosterSlotWhereInput = { week: weekNumber };
     if (leagueId && leagueId !== "all") {
       whereClause.fantasyTeam = { fantasyLeagueId: leagueId };
+    } else {
+      whereClause.fantasyTeam = { league: await activeLeagueFilter() };
     }
     if (isLocked) {
       // bench slots never lock — managers can always work the bench

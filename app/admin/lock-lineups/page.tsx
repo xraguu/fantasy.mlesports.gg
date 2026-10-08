@@ -30,6 +30,7 @@ interface Lineup {
 interface LeagueOption {
   id: string;
   name: string;
+  season: number;
   currentWeek: number;
 }
 
@@ -90,7 +91,15 @@ export default function LockLineupsPage() {
         if (!response.ok) throw new Error("Failed to fetch leagues");
 
         const data = await response.json();
-        setLeagues(data.leagues || []);
+        // Archived leagues (season older than the current one) can't be
+        // picked here — same boundary as Manage Leagues / League Archive.
+        const activeLeagues = ((data.leagues || []) as LeagueOption[]).filter(
+          (l) => data.currentSeason == null || l.season >= data.currentSeason
+        );
+        setLeagues(activeLeagues);
+        // The week selector defaults from a league's current week; with no
+        // active leagues at all there's nothing to take it from.
+        if (activeLeagues.length === 0) setCurrentWeek(1);
       } catch (error) {
         console.error("Error fetching leagues:", error);
       }

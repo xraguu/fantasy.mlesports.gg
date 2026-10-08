@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { processExpiredTradeVetoWindows, tradeVetoDeadline } from "@/lib/tradeExecution";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
 /**
  * GET /api/admin/transactions
@@ -36,8 +37,14 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const leagueId = url.searchParams.get("leagueId");
 
-    // Get all fantasy leagues
+    // Archived leagues (season older than the current one) are left out
+    // entirely — not in the league filter, and none of their waivers,
+    // trades, or history.
+    const currentSeason = await getCurrentSeason();
+    const activeSeason = currentSeason !== null ? { season: { gte: currentSeason } } : {};
+
     const leagues = await prisma.fantasyLeague.findMany({
+      where: activeSeason,
       select: {
         id: true,
         name: true,
@@ -49,7 +56,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Build where clause for filtering by league
-    const leagueFilter = leagueId ? { fantasyLeagueId: leagueId } : {};
+    const leagueFilter = leagueId ? { fantasyLeagueId: leagueId } : { league: activeSeason };
 
     // Get pending waiver claims
     const pendingWaivers = await prisma.waiverClaim.findMany({
