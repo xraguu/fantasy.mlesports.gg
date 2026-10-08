@@ -3,10 +3,34 @@
 import { useEffect, useState } from "react";
 
 interface DashboardStats {
-  totalLeagues: number;
-  activeManagers: number;
-  currentWeek: number | null;
-  pendingTransactions: number;
+  currentWeek: {
+    season: number;
+    week: number;
+    totalWeeks: number;
+    status: "upcoming" | "matchesSoon" | "inProgress" | "complete";
+    date: string | null;
+  } | null;
+  unscoredMatchups: number;
+  overdueWaiverClaims: number;
+  activeLeagues: { total: number; drafted: number };
+}
+
+// Week dates are stored as plain "YYYY-MM-DD" calendar days.
+function formatDay(day: string): string {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function weekDetail(week: NonNullable<DashboardStats["currentWeek"]>): string {
+  switch (week.status) {
+    case "upcoming":
+      return `Season ${week.season} starts ${week.date ? formatDay(week.date) : "soon"}`;
+    case "matchesSoon":
+      return `Matches start ${week.date ? formatDay(week.date) : "soon"}`;
+    case "inProgress":
+      return week.date ? `Week ends ${formatDay(week.date)}` : "In progress";
+    case "complete":
+      return `Season ${week.season} complete`;
+  }
 }
 
 interface ActivityEntry {
@@ -47,7 +71,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/admin/dashboard").then((res) => res.json()),
+      fetch("/api/admin/dashboard").then((res) => (res.ok ? res.json() : null)),
       fetch("/api/admin/activity").then((res) => res.json()),
     ])
       .then(([dashboardData, activityData]) => {
@@ -65,11 +89,30 @@ export default function AdminDashboard() {
     return true;
   });
 
-  const statBoxes = [
-    { label: "Total Leagues", value: stats?.totalLeagues },
-    { label: "Active Managers", value: stats?.activeManagers },
-    { label: "Current Week", value: stats?.currentWeek ?? "N/A" },
-    { label: "Pending Transactions", value: stats?.pendingTransactions },
+  // "health" boxes should always read 0 — green when they do, red when not.
+  const statBoxes: { label: string; value: string | number | undefined; detail: string; health?: boolean }[] = [
+    {
+      label: "Current Week",
+      value: stats?.currentWeek ? `Week ${stats.currentWeek.week} of ${stats.currentWeek.totalWeeks}` : "N/A",
+      detail: stats?.currentWeek ? weekDetail(stats.currentWeek) : "No week dates configured",
+    },
+    {
+      label: "Unscored Matchups",
+      value: stats?.unscoredMatchups,
+      detail: "In finished weeks — should be 0",
+      health: true,
+    },
+    {
+      label: "Overdue Waiver Claims",
+      value: stats?.overdueWaiverClaims,
+      detail: "Past their scheduled processing time — should be 0",
+      health: true,
+    },
+    {
+      label: "Active Leagues",
+      value: stats?.activeLeagues.total,
+      detail: stats ? `${stats.activeLeagues.drafted} of ${stats.activeLeagues.total} drafted` : "",
+    },
   ];
 
   return (
@@ -98,11 +141,21 @@ export default function AdminDashboard() {
               style={{
                 fontSize: "clamp(1.4rem, 6vw, 2rem)",
                 fontWeight: 700,
-                color: "var(--accent)",
+                color:
+                  box.health && !loading && typeof box.value === "number"
+                    ? box.value === 0
+                      ? "#22c55e"
+                      : "#f87171"
+                    : "var(--accent)",
               }}
             >
               {loading ? "..." : box.value ?? "N/A"}
             </div>
+            {!loading && box.detail && (
+              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.35rem" }}>
+                {box.detail}
+              </div>
+            )}
           </div>
         ))}
       </div>

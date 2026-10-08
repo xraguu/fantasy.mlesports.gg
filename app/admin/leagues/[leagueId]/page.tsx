@@ -101,6 +101,13 @@ export default function AdminLeagueManagementPage() {
   const [savingDoubleWin, setSavingDoubleWin] = useState(false);
   const [pickTimeSeconds, setPickTimeSeconds] = useState(90);
   const [savingPickTime, setSavingPickTime] = useState(false);
+  const [setupDraft, setSetupDraft] = useState({
+    maxTeams: 12,
+    draftType: "snake",
+    waiverSystem: "rolling",
+    faabBudget: 100,
+  });
+  const [savingSetup, setSavingSetup] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -122,6 +129,12 @@ export default function AdminLeagueManagementPage() {
       const data = await response.json();
       setLeague(data.league);
       setPickTimeSeconds(data.league.draftPickTimeSeconds || 90);
+      setSetupDraft({
+        maxTeams: data.league.maxTeams,
+        draftType: data.league.draftType,
+        waiverSystem: data.league.waiverSystem,
+        faabBudget: data.league.faabBudget ?? 100,
+      });
     } catch (error) {
       console.error("Error fetching league:", error);
       showAlert("Failed to load league", "error");
@@ -222,6 +235,38 @@ export default function AdminLeagueManagementPage() {
       );
     } finally {
       setSavingDoubleWin(false);
+    }
+  };
+
+  const handleSaveSetup = async () => {
+    if (!league) return;
+    setSavingSetup(true);
+    try {
+      const response = await fetch(`/api/admin/leagues/${leagueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          maxTeams: setupDraft.maxTeams,
+          draftType: setupDraft.draftType,
+          waiverSystem: setupDraft.waiverSystem,
+          ...(setupDraft.waiverSystem === "faab" ? { faabBudget: setupDraft.faabBudget } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update league setup");
+      }
+
+      // A size change can regenerate the schedule and a waiver change resets
+      // every team's FAAB, so reload rather than patching local state.
+      await fetchLeague();
+      showAlert("League setup saved.", "success");
+    } catch (error) {
+      console.error("Error updating league setup:", error);
+      showAlert(error instanceof Error ? error.message : "Failed to update league setup", "error");
+    } finally {
+      setSavingSetup(false);
     }
   };
 
@@ -633,6 +678,17 @@ export default function AdminLeagueManagementPage() {
     ? league.maxTeams - league._count.fantasyTeams
     : 0;
 
+  const setupLocked = league?.draftStatus !== "not_started";
+  const setupChanged =
+    !!league &&
+    (setupDraft.maxTeams !== league.maxTeams ||
+      setupDraft.draftType !== league.draftType ||
+      setupDraft.waiverSystem !== league.waiverSystem ||
+      (setupDraft.waiverSystem === "faab" && setupDraft.faabBudget !== league.faabBudget));
+  const faabBudgetValid =
+    setupDraft.waiverSystem !== "faab" ||
+    (Number.isInteger(setupDraft.faabBudget) && setupDraft.faabBudget >= 1 && setupDraft.faabBudget <= 10000);
+
   if (loading) {
     return (
       <div
@@ -921,7 +977,9 @@ export default function AdminLeagueManagementPage() {
         <div style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
           Season {league.season} •{" "}
           {league.draftType === "snake" ? "Snake" : "Linear"} Draft •{" "}
-          {league.waiverSystem === "faab" ? "FAAB" : league.waiverSystem}{" "}
+          {league.waiverSystem === "faab"
+            ? "FAAB"
+            : league.waiverSystem.charAt(0).toUpperCase() + league.waiverSystem.slice(1)}{" "}
           Waivers
         </div>
       </div>
@@ -1136,6 +1194,121 @@ export default function AdminLeagueManagementPage() {
         >
           Delete League
         </button>
+      </div>
+
+      {/* League Setup — size, draft type, waiver type */}
+      <div className="card" style={{ padding: "1.5rem", marginBottom: "2rem" }}>
+        <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--text-main)", marginBottom: "0.25rem" }}>
+          League Setup
+        </div>
+        <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+          Number of managers, draft type, and waiver type. Changing the size clears any
+          schedule already generated and regenerates it once the league is full; changing the
+          waiver type resets every team&apos;s FAAB budget.{" "}
+          {setupLocked && (
+            <span style={{ color: "#ef4444" }}>
+              Locked — cannot be changed after the draft has started or been skipped.
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "1rem" }}>
+          {(
+            [
+              {
+                label: "Managers",
+                value: setupDraft.maxTeams,
+                onChange: (v: string) => setSetupDraft({ ...setupDraft, maxTeams: parseInt(v) }),
+                options: [8, 10, 12].map((n) => ({
+                  value: n,
+                  label: `${n} managers`,
+                  disabled: n < league._count.fantasyTeams,
+                })),
+              },
+              {
+                label: "Draft Type",
+                value: setupDraft.draftType,
+                onChange: (v: string) => setSetupDraft({ ...setupDraft, draftType: v }),
+                options: [
+                  { value: "snake", label: "Snake Draft" },
+                  { value: "linear", label: "Linear Draft" },
+                ],
+              },
+              {
+                label: "Waiver Type",
+                value: setupDraft.waiverSystem,
+                onChange: (v: string) => setSetupDraft({ ...setupDraft, waiverSystem: v }),
+                options: [
+                  { value: "rolling", label: "Rolling Waivers" },
+                  { value: "faab", label: "FAAB (Free Agent Budget)" },
+                  { value: "fixed", label: "Fixed Order" },
+                ],
+              },
+            ] as {
+              label: string;
+              value: string | number;
+              onChange: (v: string) => void;
+              options: { value: string | number; label: string; disabled?: boolean }[];
+            }[]
+          ).map((field) => (
+            <label key={field.label} style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              {field.label}
+              <select
+                value={field.value}
+                onChange={(e) => field.onChange(e.target.value)}
+                disabled={setupLocked || savingSetup}
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "6px",
+                  color: "var(--text-main)",
+                  fontSize: "0.9rem",
+                }}
+              >
+                {field.options.map((opt) => (
+                  <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                    {opt.label}
+                    {opt.disabled ? " (too few)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          {setupDraft.waiverSystem === "faab" && (
+            <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              FAAB Budget ($)
+              <input
+                type="number"
+                min={1}
+                max={10000}
+                step={1}
+                value={Number.isNaN(setupDraft.faabBudget) ? "" : setupDraft.faabBudget}
+                onChange={(e) => setSetupDraft({ ...setupDraft, faabBudget: parseInt(e.target.value) })}
+                disabled={setupLocked || savingSetup}
+                style={{
+                  width: "7rem",
+                  padding: "0.5rem 0.75rem",
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "6px",
+                  color: "var(--text-main)",
+                  fontSize: "0.9rem",
+                }}
+              />
+            </label>
+          )}
+          <button
+            className="btn"
+            onClick={handleSaveSetup}
+            disabled={setupLocked || savingSetup || !setupChanged || !faabBudgetValid}
+            style={{
+              opacity: setupLocked || savingSetup || !setupChanged || !faabBudgetValid ? 0.5 : 1,
+              cursor: setupLocked || savingSetup || !setupChanged || !faabBudgetValid ? "not-allowed" : "pointer",
+            }}
+          >
+            {savingSetup ? "Saving..." : "Save"}
+          </button>
+        </div>
       </div>
 
       {/* Double-Win Toggle */}

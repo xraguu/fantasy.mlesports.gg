@@ -380,6 +380,40 @@ function mostRecentScheduledInstant(schedule: WaiverScheduleEntry[]): Date | nul
   return latest;
 }
 
+// The periodic sweep (instrumentation.ts) only runs every 120 minutes, so a
+// claim can legitimately still be pending for up to ~2h after its scheduled
+// processing time — only count it as overdue once that window has passed.
+const OVERDUE_GRACE_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Pending claims in the given leagues that should already have been
+ * processed: submitted before their season's most recent scheduled
+ * processing time, with that time more than OVERDUE_GRACE_MS ago. Should
+ * always be 0 — anything else means the processing sweep isn't running.
+ */
+export async function countOverdueWaiverClaims(leagueIds: string[]): Promise<number> {
+  if (leagueIds.length === 0) return 0;
+  const leagues = await prisma.fantasyLeague.findMany({
+    where: { id: { in: leagueIds } },
+    select: { id: true, season: true },
+  });
+
+  let overdue = 0;
+  for (const season of new Set(leagues.map((l) => l.season))) {
+    const settings = await prisma.seasonSettings.findFirst({ where: { season } });
+    const cutoff = mostRecentScheduledInstant((settings?.waiverSchedule as WaiverScheduleEntry[] | undefined) ?? []);
+    if (!cutoff || Date.now() - cutoff.getTime() < OVERDUE_GRACE_MS) continue;
+    overdue += await prisma.waiverClaim.count({
+      where: {
+        status: "pending",
+        createdAt: { lte: cutoff },
+        fantasyLeagueId: { in: leagues.filter((l) => l.season === season).map((l) => l.id) },
+      },
+    });
+  }
+  return overdue;
+}
+
 /**
  * Releases every team still sitting in the post-drop waiver clearance
  * window as of the most recent scheduled waiver-processing instant — it had
