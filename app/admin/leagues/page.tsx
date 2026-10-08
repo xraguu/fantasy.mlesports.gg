@@ -101,10 +101,15 @@ export default function ManageLeaguesPage() {
     }
   };
 
-  const filteredLeagues = leagues.filter((league) =>
-    league.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    league.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Archived (past-season) leagues live on the dedicated League Archive page
+  // instead — same "archived = season < currentSeason" boundary that page
+  // itself uses, so a league is never missing from both or shown on both.
+  const filteredLeagues = leagues
+    .filter((league) => currentSeason == null || league.season >= currentSeason)
+    .filter((league) =>
+      league.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      league.id.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
   if (loading) {
     return (

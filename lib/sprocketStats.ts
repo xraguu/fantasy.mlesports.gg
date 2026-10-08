@@ -5,7 +5,7 @@ import { getWeekMatchRange } from "./weekMatchRange";
 export const SPROCKET_BASE_URL =
   "https://sprocket-public-datasets.nyc3.cdn.digitaloceanspaces.com/datasets";
 
-const LEAGUE_NAME_TO_ID: Record<string, string> = {
+export const LEAGUE_NAME_TO_ID: Record<string, string> = {
   "Foundation League": "FL",
   "Academy League": "AL",
   "Champion League": "CL",
@@ -15,11 +15,11 @@ const LEAGUE_NAME_TO_ID: Record<string, string> = {
 
 // player_stats_sXX.csv and matches.csv use two different gamemode vocabularies
 // for the same two modes — map both onto the "2s"/"3s" keys used everywhere else.
-const PLAYER_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
+export const PLAYER_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
   RL_DOUBLES: "2s",
   RL_STANDARD: "3s",
 };
-const MATCH_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
+export const MATCH_GAMEMODE_TO_KEY: Record<string, "2s" | "3s"> = {
   Doubles: "2s",
   Standard: "3s",
 };

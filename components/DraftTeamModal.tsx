@@ -22,11 +22,21 @@ interface DraftTeamModalProps {
   onClose: () => void;
 }
 
+// Same shape GET /api/teams/[teamId]/staff returns: FM, GM, and AGMs are
+// franchise-wide; captains are only this specific team's.
 interface TeamStaff {
   franchiseManager: { id: string; name: string } | null;
   generalManager: { id: string; name: string } | null;
-  captain: { id: string; name: string } | null;
+  assistantGeneralManagers: { id: string; name: string }[];
+  captains: { id: string; name: string }[];
 }
+
+const EMPTY_STAFF: TeamStaff = {
+  franchiseManager: null,
+  generalManager: null,
+  assistantGeneralManagers: [],
+  captains: [],
+};
 
 interface TeamHistoricalStats {
   fpts: number;
@@ -46,11 +56,7 @@ export default function DraftTeamModal({
   team,
   onClose,
 }: DraftTeamModalProps) {
-  const [staff, setStaff] = useState<TeamStaff>({
-    franchiseManager: null,
-    generalManager: null,
-    captain: null,
-  });
+  const [staff, setStaff] = useState<TeamStaff>(EMPTY_STAFF);
   const [loadingStaff, setLoadingStaff] = useState(true);
   const [players, setPlayers] = useState<PlayerWithStats[]>([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
@@ -146,18 +152,10 @@ export default function DraftTeamModal({
         }
 
         const data = await response.json();
-        setStaff(data.staff || {
-          franchiseManager: null,
-          generalManager: null,
-          captain: null,
-        });
+        setStaff(data.staff || EMPTY_STAFF);
       } catch (error) {
         console.error("Error fetching staff:", error);
-        setStaff({
-          franchiseManager: null,
-          generalManager: null,
-          captain: null,
-        });
+        setStaff(EMPTY_STAFF);
       } finally {
         setLoadingStaff(false);
       }
@@ -252,7 +250,7 @@ export default function DraftTeamModal({
               <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", marginTop: "0.75rem" }}>
                 Loading staff...
               </div>
-            ) : (staff.franchiseManager || staff.generalManager || staff.captain) ? (
+            ) : (staff.franchiseManager || staff.generalManager || staff.assistantGeneralManagers.length > 0 || staff.captains.length > 0) ? (
               <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
                 {staff.franchiseManager && (
                   <div>
@@ -298,7 +296,7 @@ export default function DraftTeamModal({
                     </div>
                   </div>
                 )}
-                {staff.captain && (
+                {staff.assistantGeneralManagers.length > 0 && (
                   <div>
                     <div
                       style={{
@@ -307,7 +305,7 @@ export default function DraftTeamModal({
                         marginBottom: "0.25rem",
                       }}
                     >
-                      Team Captain
+                      {staff.assistantGeneralManagers.length > 1 ? "Assistant General Managers" : "Assistant General Manager"}
                     </div>
                     <div
                       style={{
@@ -316,7 +314,29 @@ export default function DraftTeamModal({
                         fontWeight: 600,
                       }}
                     >
-                      {staff.captain.name}
+                      {staff.assistantGeneralManagers.map((agm) => agm.name).join(", ")}
+                    </div>
+                  </div>
+                )}
+                {staff.captains.length > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: "0.75rem",
+                        color: "rgba(255,255,255,0.7)",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
+                      {staff.captains.length > 1 ? "Team Captains" : "Team Captain"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.95rem",
+                        color: "#ffffff",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {staff.captains.map((c) => c.name).join(", ")}
                     </div>
                   </div>
                 )}

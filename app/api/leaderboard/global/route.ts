@@ -3,17 +3,23 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { getFantasyStandings, getDoubleWinResultsByTeam, DoubleWinWeekResult, compareStandings } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
 /**
  * GET /api/leaderboard/global
- * Get top performing fantasy managers across all leagues
+ * Get top performing fantasy managers across all active (non-archived) leagues
  */
 export async function GET() {
   try {
     const session = await auth();
 
+    // Archived leagues (season older than the current one — same boundary
+    // as the League Archive page and the Past Leagues modal) don't count.
+    const currentSeason = await getCurrentSeason();
+
     // Get all fantasy teams (with matchup counts, to know who's actually played)
     const fantasyTeams = await prisma.fantasyTeam.findMany({
+      where: currentSeason !== null ? { league: { season: { gte: currentSeason } } } : undefined,
       include: {
         owner: {
           select: {

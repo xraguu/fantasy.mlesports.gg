@@ -4,25 +4,20 @@ import { useState, useEffect } from "react";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
 
-interface ImportedTeam {
-  teamId: string;
-  name: string;
-  goals: number;
-  wins: number;
-  isManualOverride: boolean;
+interface CsvImportSource {
+  key: string;
+  label: string;
+  description: string;
+  files: { name: string; available: boolean; lastModified: string | null }[];
+  available: boolean;
 }
 
-interface ImportResult {
-  season: number;
-  week: number;
-  import: {
-    imported: number;
-    skipped: number;
-    manualOverrides: number;
-    matchesFound: number;
-    errors: string[];
-    teams: ImportedTeam[];
-  };
+interface CsvImportResult {
+  key: string;
+  label: string;
+  stats: { label: string; value: number }[];
+  notes: string[];
+  error?: string;
 }
 
 interface RecalculateResult {
@@ -53,11 +48,28 @@ interface ManualOverride {
 
 export default function ManualStatsPage() {
   const showAlert = useAlert();
-  // Re-import state — always the current week, same import the cron runs
-  // every 120 minutes; this button just runs it on demand.
+  // Re-import state — each Sprocket dataset can be refreshed on its own or
+  // together; availability comes from a live check of Sprocket's CDN.
+  const [importSources, setImportSources] = useState<CsvImportSource[] | null>(null);
+  const [sourcesError, setSourcesError] = useState<string | null>(null);
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importResults, setImportResults] = useState<CsvImportResult[] | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/stats/csv-import")
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to check Sprocket datasets");
+        setImportSources(data.sources);
+      })
+      .catch((err) => setSourcesError(err instanceof Error ? err.message : "Failed to check Sprocket datasets"));
+  }, []);
+
+  const toggleSource = (key: string) => {
+    setSelectedSources((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
 
   // Recalculate state — a separate action, for an admin-chosen week (e.g.
   // to fix a specific week's scores after a roster correction, without
@@ -185,13 +197,17 @@ export default function ManualStatsPage() {
 
   const runImport = async () => {
     setImporting(true);
-    setImportResult(null);
+    setImportResults(null);
     setImportError(null);
     try {
-      const res = await fetch("/api/admin/stats/import", { method: "POST" });
+      const res = await fetch("/api/admin/stats/csv-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sources: selectedSources }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
-      setImportResult(data);
+      setImportResults(data.results);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -243,25 +259,78 @@ export default function ManualStatsPage() {
 
   return (
     <div>
-      {/* Re-import stats */}
+      {/* Re-import data from Sprocket */}
       <div className="card" style={{ padding: "2rem", marginBottom: "2rem" }}>
         <h2 style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--accent)", marginBottom: "0.5rem" }}>
-          Re-import Stats
+          Re-import Data
         </h2>
         <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "1.5rem" }}>
-          Sprocket stats re-import runs automatically every 120 minutes for the current week — no admin
-          action needed. Use this button to force a re-import right now instead of waiting for the next
-          scheduled run (e.g. right after a match finishes). This does not recalculate fantasy scores —
-          use Recalculate Scores below for that.
+          Pull the latest version of any Sprocket dataset — pick one or several. Live weekly stats also
+          re-import automatically every 120 minutes; the rest only change when you re-import them here.
+          None of these recalculate fantasy scores — use Recalculate Scores below for that.
         </p>
+
+        {sourcesError ? (
+          <div style={{ color: "#f87171", marginBottom: "1.5rem" }}>{sourcesError}</div>
+        ) : !importSources ? (
+          <div style={{ color: "var(--text-muted)", marginBottom: "1.5rem" }}>Checking Sprocket datasets...</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.5rem" }}>
+            {importSources.map((source) => {
+              const checked = selectedSources.includes(source.key);
+              const [primary, ...supporting] = source.files;
+              return (
+                <label
+                  key={source.key}
+                  style={{
+                    display: "flex",
+                    gap: "0.85rem",
+                    alignItems: "flex-start",
+                    padding: "1rem",
+                    borderRadius: "8px",
+                    background: checked ? "rgba(242, 182, 50, 0.08)" : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${checked ? "rgba(242, 182, 50, 0.5)" : "rgba(255,255,255,0.08)"}`,
+                    cursor: source.available ? "pointer" : "not-allowed",
+                    opacity: source.available ? 1 : 0.55,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={!source.available || importing}
+                    onChange={() => toggleSource(source.key)}
+                    style={{ marginTop: "0.25rem", accentColor: "var(--accent)", flexShrink: 0 }}
+                  />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: "var(--text-main)" }}>
+                      {source.label}{" "}
+                      <span style={{ fontWeight: 500, fontSize: "0.85rem", color: "var(--accent)" }}>{primary.name}</span>
+                    </div>
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>{source.description}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.35rem" }}>
+                      {primary.available
+                        ? `Updated on Sprocket ${primary.lastModified ? new Date(primary.lastModified).toLocaleString() : "(date unknown)"}`
+                        : `${primary.name} isn't published on Sprocket yet`}
+                      {supporting.length > 0 && ` · also reads ${supporting.map((f) => f.name).join(", ")}`}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        )}
 
         <button
           className="btn btn-primary"
           onClick={runImport}
-          disabled={importing}
+          disabled={importing || selectedSources.length === 0}
           style={{ padding: "0.75rem 2rem", fontWeight: 700, marginBottom: "1.5rem" }}
         >
-          {importing ? "Importing..." : "Re-import Now"}
+          {importing
+            ? "Importing..."
+            : selectedSources.length === 0
+              ? "Re-import Selected"
+              : `Re-import Selected (${selectedSources.length})`}
         </button>
 
         {importError && (
@@ -270,33 +339,34 @@ export default function ManualStatsPage() {
           </div>
         )}
 
-        {importResult && (
-          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "1.25rem" }}>
-            <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
-              Season {importResult.season}, Week {importResult.week}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
-              {[
-                { label: "Matches Found", value: importResult.import.matchesFound },
-                { label: "Teams Imported", value: importResult.import.imported, color: "#22c55e" },
-                { label: "Manual Overrides", value: importResult.import.manualOverrides, color: "var(--accent)" },
-                { label: "Import Skipped", value: importResult.import.skipped, color: importResult.import.skipped > 0 ? "#f87171" : undefined },
-              ].map(({ label, value, color }) => (
-                <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
-                  <div style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: color || "var(--text-main)" }}>{value}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</div>
+        {importResults && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {importResults.map((result) => (
+              <div key={result.key} style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "1.25rem" }}>
+                <div style={{ fontWeight: 700, color: result.error ? "#f87171" : "var(--text-main)", marginBottom: "0.75rem" }}>
+                  {result.label} {result.error ? "— failed" : "— done"}
                 </div>
-              ))}
-            </div>
-
-            {importResult.import.errors.length > 0 && (
-              <div>
-                <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#f87171", marginBottom: "0.5rem" }}>Import errors ({importResult.import.errors.length})</div>
-                {importResult.import.errors.map((e, i) => (
-                  <div key={i} style={{ fontSize: "0.8rem", color: "#f87171", padding: "0.25rem 0" }}>{e}</div>
-                ))}
+                {result.error ? (
+                  <div style={{ fontSize: "0.85rem", color: "#f87171" }}>{result.error}</div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "1rem" }}>
+                    {result.stats.map(({ label, value }) => (
+                      <div key={label} style={{ textAlign: "center", padding: "0.75rem", background: "rgba(255,255,255,0.05)", borderRadius: "6px" }}>
+                        <div style={{ fontSize: "clamp(1.1rem, 4.5vw, 1.5rem)", fontWeight: 700, color: "var(--text-main)" }}>{value}</div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {result.notes.length > 0 && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    {result.notes.map((note, i) => (
+                      <div key={i} style={{ fontSize: "0.8rem", color: "var(--text-muted)", padding: "0.15rem 0" }}>{note}</div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </div>
         )}
       </div>

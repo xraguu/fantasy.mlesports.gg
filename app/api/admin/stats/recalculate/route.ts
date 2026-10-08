@@ -8,7 +8,7 @@ import { runAutoLockSweep } from "@/lib/autoLock";
  * POST /api/admin/stats/recalculate
  * Recalculates fantasy scores for an admin-chosen week from whatever
  * TeamWeeklyStats/RosterSlot data already exists — does not re-import
- * Sprocket stats first (use /api/admin/stats/import for that). Lets an
+ * Sprocket stats first (use /api/admin/stats/csv-import for that). Lets an
  * admin fix a specific week's scores (e.g. after a roster correction)
  * without disturbing every other week.
  */

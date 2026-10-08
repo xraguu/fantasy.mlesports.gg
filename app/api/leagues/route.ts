@@ -13,8 +13,9 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Only show the current season's leagues in "My Leagues" — past-season
-    // leagues are still viewable via the admin League Archive page.
+    // Only show non-archived leagues in "Your Leagues" — archived (past-
+    // season) leagues are listed in the Past Leagues modal instead (see
+    // GET /api/leagues/past, which uses the exact complement of this filter).
     const currentSeason = await getCurrentSeason();
 
     // Get all leagues where user has a fantasy team
@@ -25,7 +26,7 @@ export async function GET() {
             ownerUserId: session.user.id,
           },
         },
-        ...(currentSeason !== null ? { season: currentSeason } : {}),
+        ...(currentSeason !== null ? { season: { gte: currentSeason } } : {}),
       },
       include: {
         fantasyTeams: {

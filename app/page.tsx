@@ -7,6 +7,7 @@ import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import InfoGuideModal from "@/components/InfoGuideModal";
 import ManagerOverviewModal from "@/components/ManagerOverviewModal";
+import PastLeaguesModal from "@/components/PastLeaguesModal";
 import HeaderTooltip from "@/components/HeaderTooltip";
 
 type SortKey =
@@ -144,6 +145,7 @@ export default function HomePage() {
   const [selectedTeam, setSelectedTeam] = useState<TopTeam | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showPastLeagues, setShowPastLeagues] = useState(false);
   const [selectedManagerOverview, setSelectedManagerOverview] = useState<{
     leagueId: string;
     fantasyTeamId: string;
@@ -402,6 +404,8 @@ export default function HomePage() {
         onClose={() => setShowInfoModal(false)}
       />
 
+      {showPastLeagues && <PastLeaguesModal onClose={() => setShowPastLeagues(false)} />}
+
       {/* Manager Overview Modal - opened from either leaderboard */}
       {selectedManagerOverview && (
         <ManagerOverviewModal
@@ -608,6 +612,7 @@ export default function HomePage() {
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               alignItems: "center",
               justifyContent: "space-between",
               gap: "1rem",
@@ -647,7 +652,7 @@ export default function HomePage() {
                   display: "flex",
                   gap: "0.75rem",
                   flexWrap: "nowrap",
-                  flex: 1,
+                  flex: "1 1 12rem",
                   minWidth: 0,
                   paddingBottom: "0.25rem",
                 }}
@@ -678,6 +683,21 @@ export default function HomePage() {
                 })}
               </div>
             )}
+
+            <button
+              onClick={() => setShowPastLeagues(true)}
+              className="btn btn-ghost"
+              style={{
+                padding: "0.75rem 1.25rem",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+                marginLeft: "auto",
+              }}
+            >
+              Past Leagues
+            </button>
           </div>
         </section>
 
@@ -697,7 +717,7 @@ export default function HomePage() {
               <h2 className="card-title">Manager Stats</h2>
               <span className="card-subtitle">
                 {managerStatsTab === "global"
-                  ? "Top 10 performers across all leagues"
+                  ? "Top 10 performers across all active leagues"
                   : "Full standings for the selected league"}
               </span>
             </div>

@@ -8,6 +8,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Discord({
       clientId: process.env.AUTH_DISCORD_ID!,
       clientSecret: process.env.AUTH_DISCORD_SECRET!,
+      // Discord now sends `iss=https://discord.com` on its OAuth callback.
+      // Without a declared issuer Auth.js compares it against a placeholder
+      // ("https://authjs.dev") and rejects every sign-in.
+      issuer: "https://discord.com",
     }),
   ],
   callbacks: {
