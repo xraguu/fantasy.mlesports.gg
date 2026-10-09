@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
+import UserSearchSelect from "@/components/UserSearchSelect";
 import { setAdminViewingLeague } from "@/lib/adminLeagueView";
 
 interface User {
@@ -161,6 +162,10 @@ export default function AdminLeagueManagementPage() {
 
   const handleAddUsers = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (bulkRows.some((row) => !row.userId)) {
+      showAlert("Pick a manager for every row (or remove the empty ones)", "error");
+      return;
+    }
     try {
       const response = await fetch(
         `/api/admin/leagues/${leagueId}/teams/bulk`,
@@ -805,29 +810,13 @@ export default function AdminLeagueManagementPage() {
                           borderRadius: "6px",
                         }}
                       >
-                        <select
+                        <UserSearchSelect
+                          users={rowAvailableUsers}
                           value={row.userId}
-                          onChange={(e) =>
-                            updateBulkRow(index, "userId", e.target.value)
+                          onChange={(userId) =>
+                            updateBulkRow(index, "userId", userId)
                           }
-                          style={{
-                            padding: "0.6rem",
-                            background: "rgba(255,255,255,0.1)",
-                            border: "1px solid rgba(255,255,255,0.2)",
-                            borderRadius: "6px",
-                            color: "var(--text-main)",
-                            fontSize: "0.9rem",
-                            cursor: "pointer",
-                          }}
-                          required
-                        >
-                          <option value="">-- Select a user --</option>
-                          {rowAvailableUsers.map((user) => (
-                            <option key={user.id} value={user.id}>
-                              {user.displayName}
-                            </option>
-                          ))}
-                        </select>
+                        />
                         <button
                           type="button"
                           onClick={() => removeBulkRow(index)}

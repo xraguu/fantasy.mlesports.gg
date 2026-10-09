@@ -22,6 +22,58 @@ interface User {
   leagues: UserLeague[]; // active (non-archived) leagues only
 }
 
+type SortColumn = "name" | "joined" | "leagues";
+interface SortState {
+  column: SortColumn;
+  direction: "asc" | "desc";
+}
+
+// Direction a column starts in when first clicked: names A–Z, newest
+// members first, most leagues first
+const DEFAULT_DIRECTION: Record<SortColumn, SortState["direction"]> = {
+  name: "asc",
+  joined: "desc",
+  leagues: "desc",
+};
+
+function SortHeader({
+  column,
+  label,
+  align = "left",
+  sort,
+  onSort,
+}: {
+  column: SortColumn;
+  label: string;
+  align?: "left" | "center";
+  sort: SortState;
+  onSort: (column: SortColumn) => void;
+}) {
+  const active = sort.column === column;
+  return (
+    <th
+      onClick={() => onSort(column)}
+      style={{
+        padding: "0.75rem 0.5rem",
+        textAlign: align,
+        fontSize: "0.85rem",
+        color: active ? "var(--accent)" : "var(--text-muted)",
+        fontWeight: 600,
+        cursor: "pointer",
+        userSelect: "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+      {active && (
+        <span style={{ fontSize: "0.75rem", marginLeft: "0.25rem" }}>
+          {sort.direction === "asc" ? "▲" : "▼"}
+        </span>
+      )}
+    </th>
+  );
+}
+
 export default function ManageUsersPage() {
   const showAlert = useAlert();
   const [users, setUsers] = useState<User[]>([]);
@@ -29,6 +81,7 @@ export default function ManageUsersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRole, setFilterRole] = useState("all");
   const [filterLeague, setFilterLeague] = useState("all");
+  const [sort, setSort] = useState<SortState>({ column: "joined", direction: "desc" });
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -59,6 +112,30 @@ export default function ManageUsersPage() {
     const matchesLeague =
       filterLeague === "all" || user.leagues.some((league) => league.id === filterLeague);
     return matchesSearch && matchesRole && matchesLeague;
+  });
+
+  const handleSort = (column: SortColumn) => {
+    setSort((prev) =>
+      prev.column === column
+        ? { column, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { column, direction: DEFAULT_DIRECTION[column] },
+    );
+  };
+
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    let result: number;
+    if (sort.column === "name") {
+      result = a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+    } else if (sort.column === "joined") {
+      result = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    } else {
+      // Ties on league count fall back to name, A–Z either way
+      result =
+        a.leagues.length - b.leagues.length ||
+        (sort.direction === "asc" ? 1 : -1) *
+          a.displayName.localeCompare(b.displayName, undefined, { sensitivity: "base" });
+    }
+    return sort.direction === "asc" ? result : -result;
   });
 
   // Every league at least one user is in, for the league filter
@@ -466,17 +543,7 @@ export default function ManageUsersPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
-                <th
-                  style={{
-                    padding: "0.75rem 0.5rem",
-                    textAlign: "left",
-                    fontSize: "0.85rem",
-                    color: "var(--text-muted)",
-                    fontWeight: 600,
-                  }}
-                >
-                  Display Name
-                </th>
+                <SortHeader column="name" label="Display Name" sort={sort} onSort={handleSort} />
                 <th
                   style={{
                     padding: "0.75rem 0.5rem",
@@ -488,17 +555,7 @@ export default function ManageUsersPage() {
                 >
                   Discord ID
                 </th>
-                <th
-                  style={{
-                    padding: "0.75rem 0.5rem",
-                    textAlign: "center",
-                    fontSize: "0.85rem",
-                    color: "var(--text-muted)",
-                    fontWeight: 600,
-                  }}
-                >
-                  Leagues
-                </th>
+                <SortHeader column="leagues" label="Leagues" align="center" sort={sort} onSort={handleSort} />
                 <th
                   style={{
                     padding: "0.75rem 0.5rem",
@@ -510,17 +567,7 @@ export default function ManageUsersPage() {
                 >
                   Role
                 </th>
-                <th
-                  style={{
-                    padding: "0.75rem 0.5rem",
-                    textAlign: "left",
-                    fontSize: "0.85rem",
-                    color: "var(--text-muted)",
-                    fontWeight: 600,
-                  }}
-                >
-                  Joined
-                </th>
+                <SortHeader column="joined" label="Joined" sort={sort} onSort={handleSort} />
                 <th
                   style={{
                     padding: "0.75rem 0.5rem",
@@ -546,7 +593,7 @@ export default function ManageUsersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((user) => (
+              {sortedUsers.map((user) => (
                 <tr
                   key={user.id}
                   style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
