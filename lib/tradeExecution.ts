@@ -14,8 +14,14 @@ export function tradeVetoDeadline(acceptedAt: Date): Date {
  * "accepted", and writes the two Transaction history rows. Used both by the
  * 12-hour auto-process sweep and (defensively) inline if a veto attempt
  * arrives after the window has already closed.
+ *
+ * `atLockStart`: the trade is being pushed through early because its
+ * league's lineups are locking for the match weekend (see
+ * executeAwaitingTradesAtLock). Its teams may already show as locked —
+ * that's the lock arriving, not a reason to cancel — and both trade
+ * history rows note it went through early.
  */
-export async function executeTrade(tradeId: string): Promise<void> {
+export async function executeTrade(tradeId: string, options: { atLockStart?: boolean } = {}): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const trade = await tx.trade.findUnique({ where: { id: tradeId } });
     if (!trade) throw new Error("Trade not found");
@@ -88,7 +94,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
         await cancelTrade("Cancelled — a team involved is no longer on the roster it was on when the trade was proposed");
         return { executed: false as const };
       }
-      if (slot.isLocked) {
+      if (slot.isLocked && !options.atLockStart) {
         await cancelTrade("Cancelled — a team involved became locked before the trade could execute");
         return { executed: false as const };
       }
@@ -100,6 +106,10 @@ export async function executeTrade(tradeId: string): Promise<void> {
     // (a waiver claim, another trade), and assignTeamToRosterSlot's
     // capacity-overflow fallback (an extra unrenderable bench slot) is only
     // meant to be unreachable, not a real fallback path.
+    const earlyReason = options.atLockStart
+      ? "Processed early — matches started before the 12-hour veto window ended"
+      : null;
+
     const capacity = getRosterCapacity(league.rosterConfig as RosterConfigShape);
     const [proposerCount, receiverCount] = await Promise.all([
       tx.rosterSlot.count({ where: { fantasyTeamId: trade.proposerTeamId, week: currentWeek } }),
@@ -162,6 +172,10 @@ export async function executeTrade(tradeId: string): Promise<void> {
         mleTeamId,
         rosterConfig: league.rosterConfig as RosterConfigShape,
         season: league.season,
+        // Trades can only be accepted before the lock, so incoming teams
+        // may take the starting slots the outgoing teams left even when the
+        // trade goes through as matches start.
+        ignoreLock: true,
       });
     }
     for (const mleTeamId of trade.proposerGives) {
@@ -171,6 +185,10 @@ export async function executeTrade(tradeId: string): Promise<void> {
         mleTeamId,
         rosterConfig: league.rosterConfig as RosterConfigShape,
         season: league.season,
+        // Trades can only be accepted before the lock, so incoming teams
+        // may take the starting slots the outgoing teams left even when the
+        // trade goes through as matches start.
+        ignoreLock: true,
       });
     }
 
@@ -189,6 +207,7 @@ export async function executeTrade(tradeId: string): Promise<void> {
         tradePartnerTeamId: trade.receiverTeamId,
         tradePartnerGave: trade.receiverGives,
         status: "approved",
+        reason: earlyReason,
         processedAt: new Date(),
       },
     });
@@ -203,12 +222,38 @@ export async function executeTrade(tradeId: string): Promise<void> {
         tradePartnerTeamId: trade.proposerTeamId,
         tradePartnerGave: trade.proposerGives,
         status: "approved",
+        reason: earlyReason,
         processedAt: new Date(),
       },
     });
 
     return { executed: true as const };
   });
+}
+
+/**
+ * Pushes every trade still in its veto window through right away, for a
+ * league whose lineups are about to lock — a trade accepted shortly before
+ * matches start goes through as the match weekend begins instead of being
+ * cancelled when its teams lock. Called by the lock sweep (lib/autoLock.ts)
+ * just before it locks the week. Returns how many trades it tried.
+ */
+export async function executeAwaitingTradesAtLock(leagueId: string): Promise<number> {
+  const trades = await prisma.trade.findMany({
+    where: { fantasyLeagueId: leagueId, status: "awaiting_veto" },
+    select: { id: true },
+    orderBy: { acceptedAt: "asc" },
+  });
+
+  for (const trade of trades) {
+    try {
+      await executeTrade(trade.id, { atLockStart: true });
+    } catch (error) {
+      console.error(`Failed to process trade ${trade.id} at lineup lock:`, error);
+    }
+  }
+
+  return trades.length;
 }
 
 /**

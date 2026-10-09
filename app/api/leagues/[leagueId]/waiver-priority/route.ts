@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
+import { getNextWaiverRun, runWaiverProcessingSweep } from "@/lib/waiverProcessing";
 
 /**
  * GET /api/leagues/[leagueId]/waiver-priority
@@ -25,6 +25,7 @@ export async function GET(
       where: { id: leagueId },
       select: {
         waiverSystem: true,
+        season: true,
         fantasyTeams: {
           select: {
             id: true,
@@ -55,7 +56,11 @@ export async function GET(
           : (a.waiverPriority ?? 999) - (b.waiverPriority ?? 999)
       );
 
-    return NextResponse.json({ waiverSystem: league.waiverSystem, teams });
+    // When claims submitted now will be processed (Admin Settings' waiver
+    // schedule for this league's season)
+    const nextWaiverRun = await getNextWaiverRun(league.season);
+
+    return NextResponse.json({ waiverSystem: league.waiverSystem, teams, nextWaiverRun });
   } catch (error) {
     console.error("Error fetching waiver priority:", error);
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "./rosterLocks";
+import { RosterFullError } from "./rosterSlotAssignment";
 import { markTeamDroppedForWaivers, clearWaiverPeriod } from "./waiverPeriods";
 import { moveTeamToBackOfWaiverLine } from "./waiverPriority";
 import { assignTeamToRosterSlot, type RosterConfigShape } from "./rosterSlotAssignment";
@@ -16,12 +17,15 @@ export interface ProcessWaiversResult {
 
 export type ClaimWithTeam = Awaited<ReturnType<typeof fetchPendingClaims>>[number];
 
-export async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: string }) {
+export async function fetchPendingClaims(filter: { claimIds?: string[]; leagueId?: string; submittedBy?: Date }) {
   const whereClause: Prisma.WaiverClaimWhereInput = { status: "pending" };
   if (filter.claimIds) {
     whereClause.id = { in: filter.claimIds };
   } else if (filter.leagueId) {
     whereClause.fantasyLeagueId = filter.leagueId;
+  }
+  if (filter.submittedBy) {
+    whereClause.createdAt = { lte: filter.submittedBy };
   }
 
   return prisma.waiverClaim.findMany({
@@ -151,6 +155,10 @@ async function executeClaim(claim: ClaimWithTeam): Promise<boolean> {
         dropTeamId: claim.dropTeamId,
         rosterConfig: claim.fantasyTeam.league.rosterConfig as RosterConfigShape,
         season: claim.fantasyTeam.league.season,
+        // Claims are only checked for roster room when they run, and a roster
+        // can fill up after submission (or the only open spot can be a
+        // locked starting slot) — deny those instead of overflowing.
+        failIfFull: true,
       });
 
       await tx.transaction.create({
@@ -181,6 +189,10 @@ async function executeClaim(claim: ClaimWithTeam): Promise<boolean> {
   } catch (error) {
     if (error instanceof Error && error.message === "INSUFFICIENT_FAAB") {
       await denyClaim(claim, "Insufficient FAAB budget remaining");
+      return false;
+    }
+    if (error instanceof RosterFullError) {
+      await denyClaim(claim, error.message);
       return false;
     }
     throw error;
@@ -282,11 +294,24 @@ async function processFaabLeagueClaims(claims: ClaimWithTeam[], results: Process
         return a.createdAt.getTime() - b.createdAt.getTime();
       });
 
-      const [winner, ...losers] = ranked;
-      if (await executeClaim(winner)) results.approved++;
+      // Highest bid first; if that claim can't go through (not enough FAAB
+      // left, no room on the roster), the next-highest bidder gets the team
+      // instead of everyone being turned away as "outbid". A claim that
+      // can't go through is denied inside executeClaim with its own reason.
+      let winnerIndex = -1;
+      for (let i = 0; i < ranked.length; i++) {
+        if (await executeClaim(ranked[i])) {
+          winnerIndex = i;
+          results.approved++;
+          break;
+        }
+        results.denied++;
+      }
+      if (winnerIndex === -1) continue;
 
-      for (const claim of losers) {
-        if (await denyClaim(claim, `Outbid — winning bid was $${winner.faabBid ?? 0}`)) results.denied++;
+      const winningBid = ranked[winnerIndex].faabBid ?? 0;
+      for (const claim of ranked.slice(winnerIndex + 1)) {
+        if (await denyClaim(claim, `Outbid — winning bid was $${winningBid}`)) results.denied++;
       }
     } catch (error) {
       console.error(`Error processing FAAB group for team ${groupClaims[0]?.addTeamId}:`, error);
@@ -304,7 +329,7 @@ async function processFaabLeagueClaims(claims: ClaimWithTeam[], results: Process
  * rolling/fixed leagues process in live waiver-priority order and rotate
  * the winner to the back of the line.
  */
-export async function processPendingWaiverClaims(filter: { claimIds?: string[]; leagueId?: string }): Promise<ProcessWaiversResult> {
+export async function processPendingWaiverClaims(filter: { claimIds?: string[]; leagueId?: string; submittedBy?: Date }): Promise<ProcessWaiversResult> {
   const claims = await fetchPendingClaims(filter);
 
   if (claims.length === 0) {
@@ -378,6 +403,45 @@ function mostRecentScheduledInstant(schedule: WaiverScheduleEntry[]): Date | nul
   }
 
   return latest;
+}
+
+/**
+ * The next scheduled waiver-processing instant (day + time, ET) still to
+ * come, given a season's schedule — or null if nothing is configured. The
+ * forward-looking twin of mostRecentScheduledInstant; scans 8 days so a
+ * single weekly entry whose time already passed today still finds next
+ * week's.
+ */
+function nextScheduledInstant(schedule: WaiverScheduleEntry[]): Date | null {
+  if (!Array.isArray(schedule) || schedule.length === 0) return null;
+  const now = new Date();
+  let earliest: Date | null = null;
+
+  for (let daysAhead = 0; daysAhead <= 7; daysAhead++) {
+    const candidate = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+    const dateStr = candidate.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const dayOfWeek = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "long",
+    }).format(candidate);
+
+    for (const entry of schedule) {
+      if (entry.day !== dayOfWeek) continue;
+      const minutes = parseTimeToMinutes(entry.time);
+      const instant = etDateTime(dateStr, Math.floor(minutes / 60), minutes % 60);
+      if (instant > now && (!earliest || instant < earliest)) {
+        earliest = instant;
+      }
+    }
+  }
+
+  return earliest;
+}
+
+/** When a season's waiver claims will next be processed (null if no schedule is set). */
+export async function getNextWaiverRun(season: number): Promise<Date | null> {
+  const settings = await prisma.seasonSettings.findFirst({ where: { season } });
+  return nextScheduledInstant((settings?.waiverSchedule as WaiverScheduleEntry[] | undefined) ?? []);
 }
 
 // The periodic sweep (instrumentation.ts) only runs every 120 minutes, so a
@@ -466,24 +530,21 @@ export async function runWaiverProcessingSweep(leagueId?: string): Promise<void>
     }
   }
 
-  // Gated on "has any scheduled instant in the last 7 days already passed"
-  // (same lookback `mostRecentScheduledInstant` uses just above for period
-  // release), not "is today specifically a scheduled day" — the narrower
-  // same-day-only check used to mean a missed day (nobody loading a
-  // waivers-touching page on that exact ET calendar day) silently skipped
-  // that whole scheduled instant until the same weekday came around again,
-  // leaving claims stuck pending for a week or more. This one, like
-  // processPendingWaiverClaims itself, is safe to re-evaluate as true on
-  // every sweep pass — it only ever touches claims still "pending."
-  const dueLeagueIds = leagues
-    .filter((l) => mostRecentScheduledInstant(settingsBySeason.get(l.season) ?? []) !== null)
-    .map((l) => l.id);
-
-  for (const dueLeagueId of dueLeagueIds) {
+  // Each scheduled instant processes the claims submitted before it — a
+  // claim made after the most recent one waits for the next. Looking back
+  // over the last 7 days (not just "is today a scheduled day") means a
+  // sweep that misses the exact day still catches up later instead of
+  // skipping that instant until the weekday comes around again. Safe to
+  // re-run on every sweep pass — it only ever touches claims still
+  // "pending." (Gating on just "has any instant passed" used to process
+  // every pending claim at the next sweep, whenever it was submitted.)
+  for (const league of leagues) {
+    const cutoff = mostRecentScheduledInstant(settingsBySeason.get(league.season) ?? []);
+    if (!cutoff) continue;
     try {
-      await processPendingWaiverClaims({ leagueId: dueLeagueId });
+      await processPendingWaiverClaims({ leagueId: league.id, submittedBy: cutoff });
     } catch (error) {
-      console.error(`Auto waiver processing failed for league ${dueLeagueId}:`, error);
+      console.error(`Auto waiver processing failed for league ${league.id}:`, error);
     }
   }
 }

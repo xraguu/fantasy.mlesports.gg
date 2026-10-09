@@ -276,6 +276,14 @@ export async function runAutoLockSweep(leagueId?: string): Promise<void> {
       if (wd.matchStart && !fired.has(`${wd.week}:lock`)) {
         const lockTrigger = etDateTime(wd.matchStart, 0, 0);
         if (now >= lockTrigger) {
+          // Trades still in their 12-hour veto window go through now, just
+          // before their teams lock — one accepted shortly before matches
+          // start is processed early instead of being cancelled when its
+          // window runs into the match weekend. (Imported lazily:
+          // tradeExecution -> rosterSlotAssignment already imports this file.)
+          const { executeAwaitingTradesAtLock } = await import("@/lib/tradeExecution");
+          await executeAwaitingTradesAtLock(league.id);
+
           const locked = await prisma.rosterSlot.updateMany({
             where: {
               fantasyTeam: { fantasyLeagueId: league.id },

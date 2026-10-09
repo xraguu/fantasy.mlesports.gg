@@ -21,6 +21,18 @@ export function getRosterCapacity(rosterConfig: RosterConfigShape): number {
   );
 }
 
+/** Thrown by assignTeamToRosterSlot({ failIfFull }) when there's no legal open slot. */
+export class RosterFullError extends Error {
+  constructor(public readonly whileLocked: boolean) {
+    super(
+      whileLocked
+        ? "No open bench spot — lineups are locked, so the team can't go into a starting slot. Pick a team to drop."
+        : "Roster is full — pick a team to drop."
+    );
+    this.name = "RosterFullError";
+  }
+}
+
 /**
  * Puts `mleTeamId` onto a fantasy team's roster for a week — the shared
  * logic behind every roster mutation that isn't the draft itself (waiver
@@ -39,7 +51,17 @@ export function getRosterCapacity(rosterConfig: RosterConfigShape): number {
  * it's empty — a genuinely empty active slot has no row for the lock sweep
  * to have marked isLocked, so without this it'd otherwise be free to fill
  * mid-week once results start coming in, exactly what the lock exists to
- * prevent. Bench never locks, so the search always has somewhere to land.
+ * prevent. Bench never locks, so the search usually has somewhere to land.
+ *
+ * Options:
+ * - `ignoreLock`: fill empty starting slots even while the week is locked.
+ *   Only for trades, which can only be accepted before the lock — one
+ *   pushed through as matches start keeps its incoming teams in the
+ *   starting slots the outgoing teams left.
+ * - `failIfFull`: when there's no legal open slot (e.g. the only empty
+ *   spot is a locked starting slot and the bench is full), throw a
+ *   RosterFullError instead of falling back to an extra bench slot past the
+ *   league's configured size, which My Roster never shows.
  */
 export async function assignTeamToRosterSlot(
   tx: Prisma.TransactionClient,
@@ -50,9 +72,11 @@ export async function assignTeamToRosterSlot(
     dropTeamId?: string | null;
     rosterConfig: RosterConfigShape;
     season: number;
+    ignoreLock?: boolean;
+    failIfFull?: boolean;
   }
 ): Promise<void> {
-  const { fantasyTeamId, week, mleTeamId, dropTeamId, rosterConfig, season } = params;
+  const { fantasyTeamId, week, mleTeamId, dropTeamId, rosterConfig, season, ignoreLock, failIfFull } = params;
 
   if (dropTeamId) {
     const slotToReplace = await tx.rosterSlot.findFirst({
@@ -81,7 +105,7 @@ export async function assignTeamToRosterSlot(
     where: { fantasyTeamId, week },
   });
   const filled = new Set(existingSlots.map((s: RosterSlot) => `${s.position}-${s.slotIndex}`));
-  const activeSlotsLocked = await isWeekLocked(season, week);
+  const activeSlotsLocked = !ignoreLock && (await isWeekLocked(season, week));
 
   const perPositionIndex = new Map<string, number>();
   for (const position of orderedPositions) {
@@ -103,6 +127,8 @@ export async function assignTeamToRosterSlot(
       return;
     }
   }
+
+  if (failIfFull) throw new RosterFullError(activeSlotsLocked);
 
   // Roster is fully saturated per its configured shape (shouldn't happen if
   // capacity is enforced before this is called) — defensive fallback: an

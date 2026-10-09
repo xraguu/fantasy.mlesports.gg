@@ -6,6 +6,7 @@ import Image from "next/image";
 import TeamModal from "@/components/TeamModal";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
+import { formatEasternDateTime } from "@/lib/timezone";
 
 // Types
 interface StatBundle {
@@ -158,6 +159,7 @@ interface RosterData {
   };
   week: number;
   isByeWeek?: boolean;
+  lineupLocksAt?: string | null; // ISO instant this week's lineup locks; null once locked
   rosterSlots: RosterSlot[];
   record?: {
     wins: number;
@@ -251,6 +253,7 @@ export default function MyRosterPage() {
       waiverPriority: number | null;
       faabRemaining: number | null;
     }>;
+    nextWaiverRun: string | null; // ISO instant; null if no schedule is set
   } | null>(null);
   const [waiverPriorityLoading, setWaiverPriorityLoading] = useState(false);
 
@@ -406,6 +409,22 @@ export default function MyRosterPage() {
   // manager isn't shown alarm-red rows for a matchup that's long over.
   const isPastWeek =
     !!rosterData && currentWeek < rosterData.league.currentWeek;
+
+  // Warn the owner about empty starting slots (2s/3s/flex, not bench) in the
+  // league's current week while its lineup hasn't locked yet. A roster with
+  // no teams at all is a league that hasn't drafted, and a bye week has no
+  // matchup to lose, so neither warns.
+  const emptyStarterCount = fullRoster.filter(
+    (s) => s.position !== "be" && !s.mleTeam,
+  ).length;
+  const showEmptyStarterWarning =
+    !!rosterData &&
+    rosterData.fantasyTeam.isOwner &&
+    currentWeek === rosterData.league.currentWeek &&
+    !!rosterData.lineupLocksAt &&
+    !rosterData.isByeWeek &&
+    filledSlots.length > 0 &&
+    emptyStarterCount > 0;
 
   // Re-sync editable roster whenever fresh roster data loads (e.g. switching
   // weeks) — previously only re-synced when the slot COUNT changed, so
@@ -860,6 +879,30 @@ export default function MyRosterPage() {
         >
           <span aria-hidden="true">⏸</span>
           No matchup this week — you have a bye/off week for Week {currentWeek}.
+        </div>
+      )}
+
+      {showEmptyStarterWarning && rosterData.lineupLocksAt && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
+            padding: "0.75rem 1.25rem",
+            marginBottom: "1.5rem",
+            borderRadius: "8px",
+            backgroundColor: "rgba(239, 68, 68, 0.1)",
+            border: "1px solid rgba(239, 68, 68, 0.4)",
+            color: "#f87171",
+            fontWeight: 600,
+            fontSize: "0.95rem",
+          }}
+        >
+          <span aria-hidden="true">⚠</span>
+          You have {emptyStarterCount} empty starting{" "}
+          {emptyStarterCount === 1 ? "slot" : "slots"} in your Week{" "}
+          {currentWeek} lineup. Lineups lock{" "}
+          {formatEasternDateTime(rosterData.lineupLocksAt)}.
         </div>
       )}
 
@@ -2408,6 +2451,29 @@ export default function MyRosterPage() {
       {/* Waivers Tab */}
       {activeTab === "waivers" && (
         <>
+          {waiverPriorityData?.nextWaiverRun && (
+            <section
+              className="card"
+              style={{
+                marginBottom: "1.5rem",
+                padding: "1rem 1.5rem",
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "baseline",
+                gap: "0.5rem 0.75rem",
+              }}
+            >
+              <span style={{ fontWeight: 700, color: "var(--accent)" }}>
+                Next waiver run:
+              </span>
+              <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                {formatEasternDateTime(waiverPriorityData.nextWaiverRun)}
+              </span>
+              <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                Claims submitted before then are processed at that time.
+              </span>
+            </section>
+          )}
           <section className="card" style={{ marginBottom: "1.5rem" }}>
             <div style={{ padding: "1.5rem" }}>
               <h3

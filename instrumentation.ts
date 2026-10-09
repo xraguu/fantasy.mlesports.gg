@@ -9,11 +9,13 @@
 declare global {
   var __statsRefreshScheduled: boolean | undefined;
   var __draftSweepScheduled: boolean | undefined;
+  var __tradeVetoSweepScheduled: boolean | undefined;
 }
 
 const REFRESH_INTERVAL_MS = 120 * 60 * 1000; // every 120 minutes
 const STARTUP_DELAY_MS = 30 * 1000; // let the server finish booting first
 const DRAFT_SWEEP_INTERVAL_MS = 10 * 1000; // every 10 seconds
+const TRADE_VETO_SWEEP_INTERVAL_MS = 60 * 1000; // every minute
 
 export async function register() {
   // Only run in the actual Node.js server runtime — not the edge runtime,
@@ -88,5 +90,22 @@ export async function register() {
         console.error("[draft-sweep] Scheduled sweep failed:", error);
       }
     }, DRAFT_SWEEP_INTERVAL_MS);
+  }
+
+  if (!globalThis.__tradeVetoSweepScheduled) {
+    globalThis.__tradeVetoSweepScheduled = true;
+
+    // A trade goes through once its 12-hour veto window ends without a veto.
+    // That used to be checked only when someone opened a trades or admin
+    // page, so a finished window could sit unprocessed for hours.
+    const { processExpiredTradeVetoWindows } = await import("@/lib/tradeExecution");
+
+    setInterval(async () => {
+      try {
+        await processExpiredTradeVetoWindows();
+      } catch (error) {
+        console.error("[trade-veto-sweep] Scheduled sweep failed:", error);
+      }
+    }, TRADE_VETO_SWEEP_INTERVAL_MS);
   }
 }

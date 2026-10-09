@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getWaiverTeamIdsForLeague } from "@/lib/waiverPeriods";
 import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
+import { getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
 /**
  * GET /api/leagues/[leagueId]/waivers
@@ -123,7 +124,7 @@ export async function POST(
         ownerUserId: true,
         waiverPriority: true,
         faabRemaining: true,
-        league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true } },
+        league: { select: { currentWeek: true, draftStatus: true, waiverSystem: true, rosterConfig: true } },
       },
     });
 
@@ -166,6 +167,21 @@ export async function POST(
       if (bid > (fantasyTeam.faabRemaining ?? 0)) {
         return NextResponse.json(
           { error: `Bid exceeds your remaining FAAB budget ($${fantasyTeam.faabRemaining ?? 0})` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // A full roster has to name a team to drop — a claim without one would
+    // just be denied when it runs (it's re-checked then too, since the
+    // roster can fill up after submission).
+    if (!dropTeamId) {
+      const rosterCount = await prisma.rosterSlot.count({
+        where: { fantasyTeamId, week: fantasyTeam.league.currentWeek },
+      });
+      if (rosterCount >= getRosterCapacity(fantasyTeam.league.rosterConfig as RosterConfigShape)) {
+        return NextResponse.json(
+          { error: "Your roster is full — pick a team to drop" },
           { status: 400 }
         );
       }
