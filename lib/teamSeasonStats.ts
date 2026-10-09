@@ -104,21 +104,25 @@ function resolveWeek(
 
 /**
  * Computes cumulative season stats (through a given week) for a set of MLE
- * teams, under a chosen gamemode lens. Cumulative fpts is always the sum of
- * each week's already-computed fpts — never recomputed from aggregated raw
- * totals, since sprocketRating is a per-week average, not additive.
+ * teams, under a chosen gamemode lens, from one season's weekly stats — pass
+ * the season of the league being viewed (or the current season for
+ * league-independent views), so an archived league keeps showing its own
+ * season. Cumulative fpts is always the sum of each week's already-computed
+ * fpts — never recomputed from aggregated raw totals, since sprocketRating
+ * is a per-week average, not additive.
  */
 export async function getTeamSeasonStats(input: {
   teamIds: string[];
+  season: number;
   throughWeek: number;
   lens: GamemodeLens;
   rules?: ScoringRules;
 }): Promise<Map<string, TeamSeasonStatsRow>> {
-  const { teamIds, throughWeek, lens } = input;
-  const rules = input.rules ?? (await getActiveScoringRules());
+  const { teamIds, season, throughWeek, lens } = input;
+  const rules = input.rules ?? (await getActiveScoringRules(season));
 
   const rows = await prisma.teamWeeklyStats.findMany({
-    where: { teamId: { in: teamIds }, week: { lte: throughWeek, gte: 1 } },
+    where: { teamId: { in: teamIds }, season, week: { lte: throughWeek, gte: 1 } },
   });
 
   // teamId -> week -> { "2s"?: row, "3s"?: row }
@@ -185,11 +189,18 @@ export function compareByFpts(a: TeamSeasonStatsRow, b: TeamSeasonStatsRow): num
   return b.fpts - a.fpts || b.bestWeek - a.bestWeek || b.goals - a.goals;
 }
 
-/** Ranks teams by `compareByFpts`, returning a teamId -> rank (1-indexed) map. */
+/**
+ * Ranks teams by `compareByFpts`, returning a teamId -> rank (1-indexed) map.
+ * Teams with no games played yet this season are left out (no rank, shown
+ * as "-") — otherwise before a season's first matches every team ties at 0
+ * and gets an arbitrary rank.
+ */
 export function rankTeamsByFpts(
   stats: Map<string, TeamSeasonStatsRow> | TeamSeasonStatsRow[]
 ): Map<string, number> {
-  const entries = Array.isArray(stats) ? stats.map((s) => [s.teamId, s] as const) : [...stats.entries()];
+  const entries = (Array.isArray(stats) ? stats.map((s) => [s.teamId, s] as const) : [...stats.entries()]).filter(
+    ([, s]) => s.weeksPlayed > 0
+  );
   const sorted = entries.sort((a, b) => compareByFpts(a[1], b[1]));
 
   const ranking = new Map<string, number>();
@@ -205,12 +216,14 @@ export function rankTeamsByFpts(
  * to skip re-querying TeamWeeklyStats entirely.
  */
 export async function getLeagueWideRanking(
+  season: number,
   throughWeek: number,
   lens: GamemodeLens,
   allMleTeamIds: string[],
   precomputedStats?: Map<string, TeamSeasonStatsRow>
 ): Promise<Map<string, number>> {
-  const stats = precomputedStats ?? (await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek, lens }));
+  const stats =
+    precomputedStats ?? (await getTeamSeasonStats({ teamIds: allMleTeamIds, season, throughWeek, lens }));
   return rankTeamsByFpts(stats);
 }
 
@@ -234,6 +247,7 @@ export interface WithinLeagueStanding {
  * `leagueId` in memory — 0-2 queries total instead of 6+.
  */
 export async function getWithinLeagueStandings(
+  season: number,
   throughWeek: number,
   lens: GamemodeLens,
   precomputedStats?: Map<string, TeamSeasonStatsRow>
@@ -241,7 +255,7 @@ export async function getWithinLeagueStandings(
   const allTeams = await prisma.mLETeam.findMany({ select: { id: true, leagueId: true } });
   const stats =
     precomputedStats ??
-    (await getTeamSeasonStats({ teamIds: allTeams.map((t) => t.id), throughWeek, lens }));
+    (await getTeamSeasonStats({ teamIds: allTeams.map((t) => t.id), season, throughWeek, lens }));
 
   const byLeague = new Map<string, string[]>();
   for (const t of allTeams) {

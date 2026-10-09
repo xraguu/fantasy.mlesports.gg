@@ -26,10 +26,17 @@ export async function GET(
       select: { currentWeek: true, season: true },
     });
 
+    if (!league) {
+      return NextResponse.json({ weeks: [] });
+    }
+
+    // This league's own season only — an archived league keeps showing its
+    // season's weeks after a newer season imports the same week numbers.
     const weeklyStats = await prisma.teamWeeklyStats.findMany({
       where: {
         teamId,
-        ...(league ? { week: { lte: league.currentWeek } } : {}),
+        season: league.season,
+        week: { lte: league.currentWeek },
       },
       orderBy: { week: "asc" },
     });
@@ -43,7 +50,7 @@ export async function GET(
     // an unrelated league's settings (a different Sprocket season, or a
     // week-dates config that doesn't match this league's real schedule).
     const settings = await prisma.seasonSettings.findFirst({
-      where: { season: league?.season },
+      where: { season: league.season },
     });
     const weekDates =
       (settings?.weekDates as Array<{
@@ -52,7 +59,7 @@ export async function GET(
         matchStart: string;
         weekEnd: string;
       }>) ?? [];
-    const rules = await getActiveScoringRules();
+    const rules = await getActiveScoringRules(league.season);
 
     const weeks = await Promise.all(
       weeklyStats.map(async (stat) => {
@@ -78,7 +85,12 @@ export async function GET(
 
             const oppWeekStats = await prisma.teamWeeklyStats.findUnique({
               where: {
-                teamId_week_gamemode: { teamId: oppTeam.id, week: stat.week, gamemode: stat.gamemode },
+                teamId_season_week_gamemode: {
+                  teamId: oppTeam.id,
+                  season: league.season,
+                  week: stat.week,
+                  gamemode: stat.gamemode,
+                },
               },
             });
             if (oppWeekStats) {

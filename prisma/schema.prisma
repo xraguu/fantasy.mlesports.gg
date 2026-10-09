@@ -158,9 +158,13 @@ model PlayerHistoricalStats {
   @@unique([playerId, season, gamemode])
 }
 
+// One row per MLE team per season, week, and gamemode. `season` keeps each
+// season's weeks separate, so importing a new season's Week 1 never
+// overwrites (or gets read as) an archived season's Week 1.
 model TeamWeeklyStats {
   id             String  @id @default(cuid())
   teamId         String
+  season         Int
   week           Int
   gamemode       String
   goals          Int
@@ -174,8 +178,8 @@ model TeamWeeklyStats {
   losses         Int
   team           MLETeam @relation(fields: [teamId], references: [id])
 
-  @@unique([teamId, week, gamemode])
-  @@index([week, gamemode])
+  @@unique([teamId, season, week, gamemode])
+  @@index([season, week, gamemode])
 }
 
 // Pre-aggregated team-level stats for a completed MLE season, imported from
@@ -432,14 +436,20 @@ model SeasonSettings {
 // broke as soon as any league anywhere (e.g. a test league) had a higher
 // season number than the leagues actually in play.
 model AppSettings {
-  id            String   @id @default("global")
-  currentSeason Int?
-  updatedAt     DateTime @updatedAt
+  id               String    @id @default("global")
+  currentSeason    Int?
+  updatedAt        DateTime  @updatedAt
+  // Outcome of the most recent stats refresh (the 120-minute timer or the
+  // refresh-stats cron route) — shown on the admin Database page.
+  statsRefreshedAt DateTime?
+  statsRefreshOk   Boolean?
+  statsRefreshNote String?
 }
 
 model ManualStatsOverride {
   id             String   @id @default(cuid())
   teamId         String
+  season         Int
   week           Int
   gamemode       String
   goals          Int
@@ -454,7 +464,7 @@ model ManualStatsOverride {
   gameRecord     String
   saveRate       Float
 
-  @@unique([teamId, week, gamemode])
-  @@index([week])
+  @@unique([teamId, season, week, gamemode])
+  @@index([season, week])
   @@index([teamId])
 }

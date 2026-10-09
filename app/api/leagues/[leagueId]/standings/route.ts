@@ -27,6 +27,7 @@ export async function GET(
       select: {
         id: true,
         name: true,
+        season: true,
         currentWeek: true,
         maxTeams: true,
       },
@@ -113,7 +114,8 @@ export async function GET(
           include: {
             mleTeam: {
               include: {
-                weeklyStats: true,
+                // This league's own season only
+                weeklyStats: { where: { season: league.season } },
               },
             },
           },

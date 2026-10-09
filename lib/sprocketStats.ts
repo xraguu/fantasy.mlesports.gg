@@ -319,9 +319,9 @@ export async function importSprocketStatsForWeek(
       continue;
     }
 
-    // Check for manual override — it takes precedence
+    // Check for this season's manual override — it takes precedence
     const override = await prisma.manualStatsOverride.findUnique({
-      where: { teamId_week_gamemode: { teamId: mleTeam.id, week, gamemode: agg.gamemode } },
+      where: { teamId_season_week_gamemode: { teamId: mleTeam.id, season, week, gamemode: agg.gamemode } },
     });
 
     let statsToWrite: {
@@ -370,10 +370,12 @@ export async function importSprocketStatsForWeek(
       };
     }
 
+    // Keyed by season too, so this season's Week N never overwrites an
+    // archived season's Week N
     await prisma.teamWeeklyStats.upsert({
-      where: { teamId_week_gamemode: { teamId: mleTeam.id, week, gamemode: agg.gamemode } },
+      where: { teamId_season_week_gamemode: { teamId: mleTeam.id, season, week, gamemode: agg.gamemode } },
       update: statsToWrite,
-      create: { teamId: mleTeam.id, week, gamemode: agg.gamemode, ...statsToWrite },
+      create: { teamId: mleTeam.id, season, week, gamemode: agg.gamemode, ...statsToWrite },
     });
 
     imported++;

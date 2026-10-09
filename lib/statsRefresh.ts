@@ -2,10 +2,12 @@ import { importSprocketStatsForWeek, ImportResult } from "@/lib/sprocketStats";
 import { calculateScoresForWeek, ScoreCalculationResult } from "@/lib/scoringService";
 import { getCurrentSeasonWeek } from "@/lib/currentWeek";
 import { haveMatchesStarted } from "@/lib/autoLock";
+import { prisma } from "@/lib/prisma";
 
 export interface StatsRefreshResult {
   season: number;
   week: number;
+  weeksRefreshed: number; // weeks 1..N whose matches had started and were refreshed
   import: ImportResult;
   calculate: ScoreCalculationResult;
 }
@@ -55,6 +57,43 @@ function mergeCalculateResults(a: ScoreCalculationResult, b: ScoreCalculationRes
  * week" cursor.
  */
 export async function runStatsRefresh(triggeredByUserId?: string): Promise<StatsRefreshResult> {
+  try {
+    const result = await refreshAllWeeks(triggeredByUserId);
+    await recordRefreshOutcome(true, describeRefresh(result));
+    return result;
+  } catch (error) {
+    await recordRefreshOutcome(false, error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+function describeRefresh(result: StatsRefreshResult): string {
+  if (result.weeksRefreshed === 0) {
+    return `Nothing to import yet — Season ${result.season}'s Week 1 matches haven't started.`;
+  }
+  const weeks = result.weeksRefreshed === 1 ? "Week 1" : `Weeks 1–${result.weeksRefreshed}`;
+  const errors = result.import.errors.length > 0 ? ` ${result.import.errors.length} import warning(s).` : "";
+  return `Season ${result.season}, ${weeks}: ${result.import.imported} team stat rows imported, ${result.calculate.slotsScored} roster slots scored.${errors}`;
+}
+
+/**
+ * Saves when this refresh ran and how it went, for the admin Database page.
+ * Never lets a failure to record it break the refresh itself.
+ */
+async function recordRefreshOutcome(ok: boolean, note: string): Promise<void> {
+  try {
+    const data = { statsRefreshedAt: new Date(), statsRefreshOk: ok, statsRefreshNote: note.slice(0, 500) };
+    await prisma.appSettings.upsert({
+      where: { id: "global" },
+      update: data,
+      create: { id: "global", ...data },
+    });
+  } catch (error) {
+    console.error("[stats-refresh] Couldn't record the refresh outcome:", error);
+  }
+}
+
+async function refreshAllWeeks(triggeredByUserId?: string): Promise<StatsRefreshResult> {
   const current = await getCurrentSeasonWeek();
   if (!current) {
     throw new Error(
@@ -64,6 +103,7 @@ export async function runStatsRefresh(triggeredByUserId?: string): Promise<Stats
 
   let importResult = EMPTY_IMPORT;
   let calculateResult = EMPTY_CALCULATE;
+  let weeksRefreshed = 0;
 
   for (let week = 1; week <= current.week; week++) {
     // Nothing to refresh ahead of that week's real matches actually
@@ -81,11 +121,13 @@ export async function runStatsRefresh(triggeredByUserId?: string): Promise<Stats
     const weekCalculate = await calculateScoresForWeek(week, undefined, triggeredByUserId);
     importResult = mergeImportResults(importResult, weekImport);
     calculateResult = mergeCalculateResults(calculateResult, weekCalculate);
+    weeksRefreshed = week;
   }
 
   return {
     season: current.season,
     week: current.week,
+    weeksRefreshed,
     import: importResult,
     calculate: calculateResult,
   };

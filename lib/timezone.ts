@@ -8,6 +8,27 @@ export function easternOffsetHours(date: Date): number {
   return tzName === "EDT" ? 4 : 5;
 }
 
+/**
+ * An instant spelled out in Eastern time for display, e.g.
+ * "Wednesday, October 28 at 10:00 PM Eastern Time" — day and month are
+ * written in full, never abbreviated.
+ */
+export function formatEasternDateTime(value: Date | string): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const day = date.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const time = date.toLocaleTimeString("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${day} at ${time} Eastern Time`;
+}
+
 /** The UTC Date corresponding to `hour:minute` Eastern time on a "YYYY-MM-DD" date string. */
 export function etDateTime(dateStr: string, hour: number, minute: number): Date {
   const dayUtc = new Date(`${dateStr}T00:00:00Z`);

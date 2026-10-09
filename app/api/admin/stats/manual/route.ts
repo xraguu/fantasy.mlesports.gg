@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
-// GET /api/admin/stats/manual - List all manual overrides
+// GET /api/admin/stats/manual - List the current season's manual overrides
+// (?season= for another season's)
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
@@ -14,8 +16,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const week = searchParams.get("week");
     const teamId = searchParams.get("teamId");
+    const seasonParam = searchParams.get("season");
+    const season = seasonParam ? parseInt(seasonParam, 10) : await getCurrentSeason();
 
     const where: Prisma.ManualStatsOverrideWhereInput = {};
+    if (season !== null) where.season = season;
     if (week) where.week = parseInt(week);
     if (teamId) where.teamId = teamId;
 
@@ -34,7 +39,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/admin/stats/manual - Create or update manual stats override
+// POST /api/admin/stats/manual - Create or update a manual stats override
+// for the current season (overrides are per season, like the weekly stats
+// they replace)
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
@@ -73,11 +80,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const season = await getCurrentSeason();
+    if (season === null) {
+      return NextResponse.json(
+        { error: "Set a current season in Settings before adding overrides" },
+        { status: 400 }
+      );
+    }
+
     // Upsert the manual override (create or update if exists)
     const override = await prisma.manualStatsOverride.upsert({
       where: {
-        teamId_week_gamemode: {
+        teamId_season_week_gamemode: {
           teamId,
+          season,
           week: parseInt(week),
           gamemode,
         },
@@ -95,6 +111,7 @@ export async function POST(request: NextRequest) {
       },
       create: {
         teamId,
+        season,
         week: parseInt(week),
         gamemode,
         goals: parseInt(goals),

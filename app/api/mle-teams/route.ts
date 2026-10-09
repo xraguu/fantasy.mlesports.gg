@@ -36,8 +36,11 @@ export async function GET(req: NextRequest) {
     const current = await getCurrentSeasonWeek();
     const throughWeek = current?.week ?? 1;
 
+    // The current season's stats (season 0 matches nothing when no current
+    // season is configured yet)
     const statsMap = await getTeamSeasonStats({
       teamIds: mleTeams.map((t) => t.id),
+      season: current?.season ?? 0,
       throughWeek,
       lens: mode,
     });

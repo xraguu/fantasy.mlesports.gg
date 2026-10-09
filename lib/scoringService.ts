@@ -52,7 +52,13 @@ export interface ScoreCalculationResult {
   teamsWithNoStats: string[];
 }
 
-export async function getActiveScoringRules(): Promise<ScoringRules> {
+/**
+ * Scoring rules for a season — pass the season whose stats are being scored,
+ * so an archived season keeps scoring by its own rules after a later season
+ * changes them. A season with no saved settings (or no season given) falls
+ * back to the current season's rules.
+ */
+export async function getActiveScoringRules(season?: number): Promise<ScoringRules> {
   // Scoped to the season that actually has real leagues playing in it, not
   // just "whichever SeasonSettings row happens to have the highest season
   // number" — an orphaned settings row (e.g. from creating a test league
@@ -62,11 +68,14 @@ export async function getActiveScoringRules(): Promise<ScoringRules> {
   // SeasonSettings rows have genuinely different gameLoss/goalsAgainst/
   // shotsAgainst values, and the highest-numbered one belongs to a season
   // with zero real FantasyLeague rows.
-  const currentSeason = await getCurrentSeason();
+  const seasonSettings =
+    season !== undefined ? await prisma.seasonSettings.findFirst({ where: { season } }) : null;
+  const currentSeason = seasonSettings ? null : await getCurrentSeason();
   const settings =
-    currentSeason !== null
+    seasonSettings ??
+    (currentSeason !== null
       ? await prisma.seasonSettings.findFirst({ where: { season: currentSeason } })
-      : await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } });
+      : await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } }));
   const stored = settings?.scoringRules as Partial<ScoringRules> | undefined;
   if (!stored) return DEFAULT_SCORING_RULES;
 
@@ -157,6 +166,9 @@ export async function calculateScoresForWeek(
   // reaching a new week's `weekStart` doesn't mean anything has been played
   // yet, and scoring it early would show matchup results for games that
   // haven't happened.
+  // Each league being scored, mapped to its season — weekly stats and
+  // scoring rules are both per season.
+  const seasonByLeague = new Map<string, number>();
   let eligibleLeagueIds: string[] | null = null;
   if (leagueId) {
     const league = await prisma.fantasyLeague.findUnique({
@@ -173,14 +185,27 @@ export async function calculateScoresForWeek(
         `Week ${week}'s matches haven't started yet for this league — scores can't be calculated ahead of the Match Start date.`
       );
     }
+    if (league) seasonByLeague.set(leagueId, league.season);
   } else {
+    // Automatic (all-league) scoring only touches active-season leagues. An
+    // archived season's results are final — without this, a new season
+    // reaching Week N would re-score every archived league's Week N too.
+    // An admin can still re-score one archived league on purpose by
+    // passing its leagueId, which uses that league's own season.
+    const currentSeason = await getCurrentSeason();
     const leagues = await prisma.fantasyLeague.findMany({
-      where: { currentWeek: { gte: week } },
+      where: {
+        currentWeek: { gte: week },
+        ...(currentSeason !== null ? { season: { gte: currentSeason } } : {}),
+      },
       select: { id: true, season: true },
     });
     const eligible: string[] = [];
     for (const l of leagues) {
-      if (await haveMatchesStarted(l.season, week)) eligible.push(l.id);
+      if (await haveMatchesStarted(l.season, week)) {
+        eligible.push(l.id);
+        seasonByLeague.set(l.id, l.season);
+      }
     }
     eligibleLeagueIds = eligible;
     if (eligibleLeagueIds.length === 0) {
@@ -188,15 +213,21 @@ export async function calculateScoresForWeek(
     }
   }
 
-  // 1. Get scoring rules from most recent SeasonSettings
-  const rules = await getActiveScoringRules();
-
-  // 2. Get all TeamWeeklyStats for the week, grouped by team + gamemode
-  const weekStats = await prisma.teamWeeklyStats.findMany({ where: { week } });
-  const statsMap = new Map<string, { "2s"?: WeeklyStatsRow; "3s"?: WeeklyStatsRow }>();
-  for (const s of weekStats) {
-    if (!statsMap.has(s.teamId)) statsMap.set(s.teamId, {});
-    statsMap.get(s.teamId)![s.gamemode as "2s" | "3s"] = s;
+  // 1-2. Each involved season's scoring rules and this week's stats, grouped
+  // by team + gamemode
+  const bySeason = new Map<
+    number,
+    { rules: ScoringRules; statsMap: Map<string, { "2s"?: WeeklyStatsRow; "3s"?: WeeklyStatsRow }> }
+  >();
+  for (const season of new Set(seasonByLeague.values())) {
+    const rules = await getActiveScoringRules(season);
+    const weekStats = await prisma.teamWeeklyStats.findMany({ where: { season, week } });
+    const statsMap = new Map<string, { "2s"?: WeeklyStatsRow; "3s"?: WeeklyStatsRow }>();
+    for (const s of weekStats) {
+      if (!statsMap.has(s.teamId)) statsMap.set(s.teamId, {});
+      statsMap.get(s.teamId)![s.gamemode as "2s" | "3s"] = s;
+    }
+    bySeason.set(season, { rules, statsMap });
   }
 
   // 3. Get all RosterSlots for the week — scoped to one league if given, or
@@ -210,6 +241,7 @@ export async function calculateScoresForWeek(
 
   const rosterSlots = await prisma.rosterSlot.findMany({
     where: slotWhere,
+    include: { fantasyTeam: { select: { fantasyLeagueId: true } } },
   });
 
   // 4. Calculate and write fantasy points per slot (ALL slots including bench)
@@ -217,8 +249,11 @@ export async function calculateScoresForWeek(
   const teamsWithNoStats: string[] = [];
 
   for (const slot of rosterSlots) {
-    const modes = statsMap.get(slot.mleTeamId);
-    const fpts = modes ? resolveSlotFpts(slot.position, modes, rules) : null;
+    const season = seasonByLeague.get(slot.fantasyTeam.fantasyLeagueId);
+    const seasonData = season !== undefined ? bySeason.get(season) : undefined;
+    if (!seasonData) continue;
+    const modes = seasonData.statsMap.get(slot.mleTeamId);
+    const fpts = modes ? resolveSlotFpts(slot.position, modes, seasonData.rules) : null;
     if (fpts === null) {
       teamsWithNoStats.push(slot.mleTeamId);
       continue;

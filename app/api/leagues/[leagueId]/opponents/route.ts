@@ -212,10 +212,10 @@ export async function GET(
     const statsByLens = new Map<GamemodeLens, Awaited<ReturnType<typeof getTeamSeasonStats>>>();
     const standingsByLens = new Map<GamemodeLens, Awaited<ReturnType<typeof getWithinLeagueStandings>>>();
     for (const lens of ["2s", "3s", "bestball"] as GamemodeLens[]) {
-      const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: statsWeek, lens });
+      const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, season: league.season, throughWeek: statsWeek, lens });
       statsByLens.set(lens, stats);
       rankByLens.set(lens, rankTeamsByFpts(stats));
-      standingsByLens.set(lens, await getWithinLeagueStandings(statsWeek, lens, stats));
+      standingsByLens.set(lens, await getWithinLeagueStandings(league.season, statsWeek, lens, stats));
     }
 
     // All matchups in the league, fetched once and reused for every team's

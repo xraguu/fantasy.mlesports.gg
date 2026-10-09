@@ -24,11 +24,10 @@ export async function GET() {
       return NextResponse.json({ throughWeek: null, twoS: [], threeS: [], combined: [] });
     }
 
-    // TeamWeeklyStats is keyed by week number only (no season), so any week
-    // of the current season whose matches haven't started yet still holds
-    // LAST season's rows for that week number. Count only through the latest
-    // week that has actually started — and before the season's first match
-    // there's no data for it at all, so the table stays empty.
+    // Count only through the latest week of the current season whose
+    // matches have actually started — a week that hasn't reached match day
+    // has no stats yet (its Score would just be 0), and before the season's
+    // first match there's no data at all, so the table stays empty.
     const settings = await prisma.seasonSettings.findFirst({ where: { season: current.season } });
     const weekDates = (settings?.weekDates as WeekDateConfig[] | undefined) ?? [];
     const now = new Date();
@@ -55,7 +54,7 @@ export async function GET() {
     const teamById = new Map(teams.map((t) => [t.id, t]));
 
     const buildTop10 = async (lens: GamemodeLens) => {
-      const stats = await getTeamSeasonStats({ teamIds, throughWeek, lens });
+      const stats = await getTeamSeasonStats({ teamIds, season: current.season, throughWeek, lens });
       return [...stats.values()]
         .filter((s) => s.weeksPlayed > 0)
         .sort(compareByFpts)

@@ -8,7 +8,8 @@ import { cascadeRosterForward } from "@/lib/rosterCascade";
 import { isTeamOnWaivers, clearWaiverPeriod, markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
 import { getFantasyStandings } from "@/lib/standings";
 import { runWaiverProcessingSweep } from "@/lib/waiverProcessing";
-import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
+import { getEffectiveWeekMatchRange, WeekDateConfig } from "@/lib/weekMatchRange";
+import { etDateTime } from "@/lib/timezone";
 
 /**
  * GET /api/leagues/[leagueId]/rosters/[teamId]
@@ -241,10 +242,10 @@ export async function GET(
       const rankByLens = new Map<"2s" | "3s", Map<string, number>>();
       const standingsByLens = new Map<"2s" | "3s", Awaited<ReturnType<typeof getWithinLeagueStandings>>>();
       for (const lens of ["2s", "3s"] as const) {
-        const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, throughWeek: statsWeek, lens });
+        const stats = await getTeamSeasonStats({ teamIds: allMleTeamIds, season: fantasyTeam.league.season, throughWeek: statsWeek, lens });
         statsByLens.set(lens, stats);
         rankByLens.set(lens, rankTeamsByFpts(stats));
-        standingsByLens.set(lens, await getWithinLeagueStandings(statsWeek, lens, stats));
+        standingsByLens.set(lens, await getWithinLeagueStandings(fantasyTeam.league.season, statsWeek, lens, stats));
       }
 
       const toStatBundle = (s: TeamSeasonStatsRow | undefined) => ({
@@ -336,6 +337,19 @@ export async function GET(
       });
     }
 
+    // When this week's lineup locks (12:00 AM Eastern on its matchStart, same
+    // boundary as isWeekLocked/isWeekFrozen), while that's still ahead — the
+    // My Roster empty-starting-slot warning shows it. Null once locked.
+    const lockSettings = await prisma.seasonSettings.findFirst({
+      where: { season: fantasyTeam.league.season },
+      select: { weekDates: true },
+    });
+    const lockWeekDates = ((lockSettings?.weekDates as WeekDateConfig[] | undefined) ?? []).find(
+      (wd) => wd.week === week
+    );
+    const lockInstant = lockWeekDates?.matchStart ? etDateTime(lockWeekDates.matchStart, 0, 0) : null;
+    const lineupLocksAt = lockInstant && lockInstant > new Date() ? lockInstant.toISOString() : null;
+
     return NextResponse.json({
       fantasyTeam: {
         id: fantasyTeam.id,
@@ -354,6 +368,7 @@ export async function GET(
       },
       week,
       isByeWeek,
+      lineupLocksAt,
       rosterSlots: enrichedSlots,
       record: { wins: myWins, losses: myLosses },
       rank,
