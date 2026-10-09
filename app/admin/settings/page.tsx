@@ -59,29 +59,52 @@ export default function SettingsPage() {
   const [availableHistoricalSeasons, setAvailableHistoricalSeasons] = useState<string[]>([]);
   const [availableLeagueSeasons, setAvailableLeagueSeasons] = useState<number[]>([]);
   const [currentSeason, setCurrentSeason] = useState<number | null>(null);
+  // The season whose dates/scoring/waivers the form is showing — always the
+  // Current Season (or the one just picked in that dropdown), which is
+  // where saving writes them.
+  const [editingSeason, setEditingSeason] = useState<number | null>(null);
+  const [isNewSeason, setIsNewSeason] = useState(false);
+  // The form as last loaded, to tell real edits apart from just switching
+  // the Current Season dropdown
+  const [loadedSnapshot, setLoadedSnapshot] = useState(JSON.stringify(defaultSettings));
+
+  // Loads one season's dates/scoring/waivers into the form (the Current
+  // Season when none is given). A season with nothing saved yet keeps the
+  // scoring and waiver setup already on the page and starts with blank dates.
+  const loadSeasonSettings = async (season?: number) => {
+    const response = await fetch(
+      season !== undefined ? `/api/admin/settings?season=${season}` : "/api/admin/settings",
+    );
+    if (!response.ok) throw new Error("Failed to load settings");
+    const data = await response.json();
+    setAvailableHistoricalSeasons(data.availableHistoricalSeasons || []);
+    setAvailableLeagueSeasons(data.availableLeagueSeasons || []);
+    setEditingSeason(data.editingSeason ?? null);
+    setIsNewSeason(Boolean(data.isNew));
+    if (data.settings) {
+      const next = data.isNew && season !== undefined
+        ? { ...settings, weekDates: defaultSettings.weekDates }
+        : {
+            // Transform API data to match UI structure
+            weekDates: data.settings.weekDates || defaultSettings.weekDates,
+            scoring: data.settings.scoringRules || defaultSettings.scoring,
+            waivers: {
+              processingSchedule: data.settings.waiverSchedule || defaultSettings.waivers.processingSchedule,
+            },
+            draftStatsSeason: data.settings.draftStatsSeason ?? null,
+          };
+      setSettings(next);
+      setLoadedSnapshot(JSON.stringify(next));
+    }
+    return data;
+  };
 
   // Load settings from API on mount
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const response = await fetch("/api/admin/settings");
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableHistoricalSeasons(data.availableHistoricalSeasons || []);
-          setAvailableLeagueSeasons(data.availableLeagueSeasons || []);
-          setCurrentSeason(data.currentSeason ?? null);
-          if (data.settings) {
-            // Transform API data to match UI structure
-            setSettings({
-              weekDates: data.settings.weekDates || defaultSettings.weekDates,
-              scoring: data.settings.scoringRules || defaultSettings.scoring,
-              waivers: {
-                processingSchedule: data.settings.waiverSchedule || defaultSettings.waivers.processingSchedule,
-              },
-              draftStatsSeason: data.settings.draftStatsSeason ?? null,
-            });
-          }
-        }
+        const data = await loadSeasonSettings();
+        setCurrentSeason(data.currentSeason ?? null);
       } catch (error) {
         console.error("Error loading settings:", error);
       } finally {
@@ -90,7 +113,33 @@ export default function SettingsPage() {
     };
 
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
+
+  const handleCurrentSeasonChange = async (value: string) => {
+    const nextSeason = value ? parseInt(value, 10) : null;
+    // "Most recent league" means the newest league's season
+    const seasonToLoad = nextSeason ?? availableLeagueSeasons[0];
+    if (
+      seasonToLoad !== editingSeason &&
+      JSON.stringify(settings) !== loadedSnapshot &&
+      !confirm(
+        `Switching to Season ${seasonToLoad} loads that season's dates. Your unsaved changes below will be lost — continue?`,
+      )
+    ) {
+      return;
+    }
+    setCurrentSeason(nextSeason);
+    setHasChanges(true);
+    if (seasonToLoad !== undefined && seasonToLoad !== editingSeason) {
+      try {
+        await loadSeasonSettings(seasonToLoad);
+      } catch (error) {
+        console.error("Error loading season settings:", error);
+        showAlert(`Failed to load Season ${seasonToLoad}'s settings`, "error");
+      }
+    }
+  };
 
   const updateScoringSetting = (key: string, value: number) => {
     setSettings((prev) => ({
@@ -167,6 +216,7 @@ export default function SettingsPage() {
         waiverSchedule: settings.waivers.processingSchedule,
         draftStatsSeason: settings.draftStatsSeason,
         currentSeason,
+        editingSeason: editingSeason ?? undefined,
       };
 
       const response = await fetch("/api/admin/settings", {
@@ -178,8 +228,10 @@ export default function SettingsPage() {
       });
 
       if (response.ok) {
-        showAlert("Settings saved successfully!", "success");
+        showAlert(`Settings saved for Season ${editingSeason}!`, "success");
         setHasChanges(false);
+        setIsNewSeason(false);
+        setLoadedSnapshot(JSON.stringify(settings));
       } else {
         const error = await response.json();
         showAlert(`Failed to save settings: ${error.error || "Unknown error"}`, "error");
@@ -331,10 +383,7 @@ export default function SettingsPage() {
           </p>
           <select
             value={currentSeason?.toString() ?? ""}
-            onChange={(e) => {
-              setCurrentSeason(e.target.value ? parseInt(e.target.value, 10) : null);
-              setHasChanges(true);
-            }}
+            onChange={(e) => handleCurrentSeasonChange(e.target.value)}
             style={{
               width: "100%",
               maxWidth: "300px",
@@ -359,9 +408,19 @@ export default function SettingsPage() {
 
         {/* Weekly Schedule */}
         <div style={{ marginTop: "2rem" }}>
-          <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "1rem", color: "var(--text-main)" }}>
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "0.5rem", color: "var(--text-main)" }}>
             Weekly Schedule (10 Weeks)
           </h3>
+          {editingSeason !== null && (
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+              Editing{" "}
+              <span style={{ color: "var(--accent)", fontWeight: 700 }}>
+                Season {editingSeason}
+              </span>{" "}
+              dates — along with the scoring rules and waiver schedule below, these save to the Current Season.
+              {isNewSeason && " Nothing is saved for this season yet."}
+            </p>
+          )}
           <div style={{ display: "grid", gap: "0.75rem" }}>
             {settings.weekDates.map((weekData) => (
               <div

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { getAvailableHistoricalSeasons } from "@/lib/teamHistoricalStats";
+import { getCurrentSeason } from "@/lib/currentWeek";
 
 // GET /api/admin/settings - Get current season settings
 export async function GET(request: NextRequest) {
@@ -13,36 +14,20 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const season = searchParams.get("season");
+    const seasonParam = searchParams.get("season");
 
-    // Get the current or specified season settings
-    let settings;
-    if (season) {
-      settings = await prisma.seasonSettings.findUnique({
-        where: { season: parseInt(season) },
-      });
-    } else {
-      // "Current settings" means whichever season the most recently created
-      // league actually uses — the same resolution POST below uses to
-      // decide where to save. A bare "highest season number" findFirst
-      // doesn't track this: a stale SeasonSettings row left over from an
-      // old test season with a numerically larger season value (e.g. a
-      // leftover "2026" row from early testing, when real leagues now use
-      // season 20) would keep winning the ordering forever, making every
-      // save look like it silently didn't take since the next load reads
-      // back that stale row instead of the one just written.
-      const latestLeagueForSettings = await prisma.fantasyLeague.findFirst({
-        orderBy: { season: "desc" },
-        select: { season: true },
-      });
-      settings = latestLeagueForSettings
-        ? await prisma.seasonSettings.findUnique({
-            where: { season: latestLeagueForSettings.season },
-          })
-        : await prisma.seasonSettings.findFirst({
-            orderBy: { season: "desc" },
-          });
-    }
+    // Without ?season=, this loads the Current Season (Admin Settings'
+    // explicit setting, falling back to the newest league's season) — the
+    // same season POST below saves to, and the one scoring, waivers, and
+    // week tracking all read from. It used to load (and save to) whichever
+    // league had the highest season number, which silently wrote a new
+    // season's dates over the current season's when that one wasn't the
+    // newest yet.
+    const season = seasonParam ? parseInt(seasonParam, 10) : await getCurrentSeason();
+    const settings =
+      season !== null && Number.isFinite(season)
+        ? await prisma.seasonSettings.findUnique({ where: { season } })
+        : null;
 
     const availableHistoricalSeasons = await getAvailableHistoricalSeasons();
 
@@ -59,16 +44,14 @@ export async function GET(request: NextRequest) {
     const appSettings = await prisma.appSettings.findUnique({ where: { id: "global" } });
     const currentSeason = appSettings?.currentSeason ?? null;
 
-    // If no settings exist, return defaults
+    // If no settings exist for this season yet, return defaults (isNew lets
+    // the page keep the scoring/waiver setup it already has instead)
     if (!settings) {
-      const latestLeague = await prisma.fantasyLeague.findFirst({
-        orderBy: { season: "desc" },
-        select: { season: true },
-      });
-
       return NextResponse.json({
+        isNew: true,
+        editingSeason: season,
         settings: {
-          season: latestLeague?.season ?? 1,
+          season: season ?? 1,
           currentWeek: 1,
           playoffStartWeek: 9,
           tradeCutoffWeek: 8,
@@ -108,7 +91,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ settings, availableHistoricalSeasons, availableLeagueSeasons, currentSeason });
+    return NextResponse.json({
+      isNew: false,
+      editingSeason: season,
+      settings,
+      availableHistoricalSeasons,
+      availableLeagueSeasons,
+      currentSeason,
+    });
   } catch (error) {
     console.error("Error fetching season settings:", error);
     return NextResponse.json(
@@ -127,7 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { weekDates, scoringRules, waiverSchedule, draftStatsSeason, currentSeason } = body;
+    const { weekDates, scoringRules, waiverSchedule, draftStatsSeason, currentSeason, editingSeason } = body;
 
     // Validate required fields
     if (!weekDates || !scoringRules) {
@@ -135,27 +125,6 @@ export async function POST(request: NextRequest) {
         { error: "Missing required fields" },
         { status: 400 }
       );
-    }
-
-    // currentSeason is a separate, global concept from everything else this
-    // route saves (see AppSettings in schema.prisma) — it isn't tied to any
-    // one season's row, so it's validated and upserted on its own.
-    if (currentSeason !== undefined && currentSeason !== null) {
-      const seasonExists = await prisma.fantasyLeague.findFirst({
-        where: { season: currentSeason },
-        select: { id: true },
-      });
-      if (!seasonExists) {
-        return NextResponse.json(
-          { error: "That season doesn't have any leagues — pick one that does" },
-          { status: 400 }
-        );
-      }
-      await prisma.appSettings.upsert({
-        where: { id: "global" },
-        update: { currentSeason },
-        create: { id: "global", currentSeason },
-      });
     }
 
     // Validate week dates array
@@ -166,20 +135,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Season is no longer admin-entered — it's derived from the most
-    // recently created league, since a season only really exists once a
-    // league for it has been created.
-    const latestLeague = await prisma.fantasyLeague.findFirst({
-      orderBy: { season: "desc" },
-      select: { season: true },
-    });
-    if (!latestLeague) {
+    // currentSeason is a separate, global concept from everything else this
+    // route saves (see AppSettings in schema.prisma) — it isn't tied to any
+    // one season's row, so it's validated on its own (and only written
+    // below, once everything else has passed validation).
+    const changesCurrentSeason = currentSeason !== undefined && currentSeason !== null;
+    if (changesCurrentSeason) {
+      const seasonExists = await prisma.fantasyLeague.findFirst({
+        where: { season: currentSeason },
+        select: { id: true },
+      });
+      if (!seasonExists) {
+        return NextResponse.json(
+          { error: "That season doesn't have any leagues — pick one that does" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Dates/scoring/waivers always save to the Current Season (including
+    // one being picked in this same save) — the season everything else
+    // reads them from.
+    const season: number | null = changesCurrentSeason ? currentSeason : await getCurrentSeason();
+    if (season === null) {
       return NextResponse.json(
-        { error: "Create a league first — settings apply to the season of your most recent league" },
+        { error: "Create a league first — settings apply to the current season" },
         { status: 400 }
       );
     }
-    const season = latestLeague.season;
+    // The page says which season's dates it's showing; refuse to write them
+    // into a different one (e.g. "Most recent league" picked while a
+    // Current Season is still set).
+    if (editingSeason !== undefined && editingSeason !== season) {
+      return NextResponse.json(
+        { error: `These dates are for Season ${editingSeason}, but the current season is ${season} — reload the page and try again` },
+        { status: 400 }
+      );
+    }
+
+    if (changesCurrentSeason) {
+      await prisma.appSettings.upsert({
+        where: { id: "global" },
+        update: { currentSeason },
+        create: { id: "global", currentSeason },
+      });
+    }
 
     // currentWeek/tradeCutoffWeek/playoffStartWeek/lineupLockTime columns are
     // unused elsewhere (currentWeek is tracked per-league on FantasyLeague;
