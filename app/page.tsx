@@ -170,6 +170,9 @@ export default function HomePage() {
   const [standingsLeagueId, setStandingsLeagueId] = useState<string | null>(
     null,
   );
+  // Every active league, not just the user's — any league's standings can
+  // be viewed from the "By League" tab
+  const [allLeagues, setAllLeagues] = useState<{ id: string; name: string }[]>([]);
   const [leagueStandings, setLeagueStandings] = useState<LeagueStandingEntry[]>([]);
   const [loadingLeagueStandings, setLoadingLeagueStandings] = useState(false);
 
@@ -223,12 +226,36 @@ export default function HomePage() {
     fetchLeaderboard();
   }, []);
 
-  // Default the per-league standings selector to the user's first league once loaded
+  // Fetch every active league for the "By League" standings selector
   useEffect(() => {
-    if (!standingsLeagueId && userLeagues.length > 0) {
-      setStandingsLeagueId(userLeagues[0].id);
-    }
-  }, [userLeagues, standingsLeagueId]);
+    const fetchAllLeagues = async () => {
+      if (!session?.user?.id) return;
+
+      try {
+        const response = await fetch(`/api/leagues/active`);
+        if (response.ok) {
+          const data = await response.json();
+          setAllLeagues(data.leagues || []);
+        }
+      } catch (error) {
+        console.error("Error fetching active leagues:", error);
+      }
+    };
+
+    fetchAllLeagues();
+  }, [session]);
+
+  // Default the per-league standings selector to the user's first league
+  // once loaded, or the first active league if they aren't in any
+  useEffect(() => {
+    if (standingsLeagueId || loadingLeagues) return;
+    const defaultLeague = userLeagues[0] ?? allLeagues[0];
+    if (defaultLeague) setStandingsLeagueId(defaultLeague.id);
+  }, [userLeagues, allLeagues, loadingLeagues, standingsLeagueId]);
+
+  const otherLeagues = allLeagues.filter(
+    (league) => !userLeagues.some((userLeague) => userLeague.id === league.id),
+  );
 
   // Fetch standings for the selected league when the "League Standings" tab is active
   useEffect(() => {
@@ -748,7 +775,8 @@ export default function HomePage() {
                   By League
                 </button>
               </div>
-              {managerStatsTab === "league" && userLeagues.length > 0 && (
+              {managerStatsTab === "league" &&
+                (userLeagues.length > 0 || otherLeagues.length > 0) && (
                 <select
                   value={standingsLeagueId ?? ""}
                   onChange={(e) => setStandingsLeagueId(e.target.value)}
@@ -761,11 +789,30 @@ export default function HomePage() {
                     fontSize: "0.85rem",
                   }}
                 >
-                  {userLeagues.map((league) => (
-                    <option key={league.id} value={league.id}>
-                      {league.name}
-                    </option>
-                  ))}
+                  {userLeagues.length > 0 && otherLeagues.length > 0 ? (
+                    <>
+                      <optgroup label="Your Leagues">
+                        {userLeagues.map((league) => (
+                          <option key={league.id} value={league.id}>
+                            {league.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Other Leagues">
+                        {otherLeagues.map((league) => (
+                          <option key={league.id} value={league.id}>
+                            {league.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </>
+                  ) : (
+                    [...userLeagues, ...otherLeagues].map((league) => (
+                      <option key={league.id} value={league.id}>
+                        {league.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               )}
             </div>
@@ -1140,7 +1187,7 @@ export default function HomePage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        Join a league to see its standings here.
+                        No active leagues to show yet.
                       </td>
                     </tr>
                   ) : loadingLeagueStandings ? (

@@ -44,6 +44,19 @@ select option {
   color: #e5e7eb;
 }
 
+/* Group headings in the open list (e.g. "Your Leagues" / "Other Leagues")
+   in gold so they stand apart from the options under them. */
+select optgroup {
+  background: #1a1a2e;
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 700;
+}
+
+select optgroup option {
+  font-weight: normal;
+}
+
 html,
 body {
   margin: 0;
