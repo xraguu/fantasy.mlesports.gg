@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyDraftClock } from "@/lib/notificationEvents";
 import { generateRosterSlotId } from "@/lib/id-generator";
 import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 
@@ -122,6 +123,7 @@ export async function POST(
             draftPickDeadline: firstDeadline,
           },
         });
+        await notifyDraftClock(leagueId);
 
         return NextResponse.json({
           success: true,
@@ -173,6 +175,7 @@ export async function POST(
             draftPickDeadline: newDeadline,
           },
         });
+        await notifyDraftClock(leagueId);
 
         return NextResponse.json({
           success: true,

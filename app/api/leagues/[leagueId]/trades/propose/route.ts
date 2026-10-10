@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyTradeOffer } from "@/lib/notificationEvents";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
@@ -224,6 +225,8 @@ export async function POST(
         status: "pending",
       },
     });
+
+    await notifyTradeOffer(trade.id);
 
     return NextResponse.json({
       success: true,

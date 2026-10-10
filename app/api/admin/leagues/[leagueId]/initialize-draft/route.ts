@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyDraftClock } from "@/lib/notificationEvents";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { generateDraftPickOrder } from "@/lib/draftPickOrder";
 import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
@@ -99,6 +100,8 @@ export async function POST(
         },
       }),
     ]);
+
+    await notifyDraftClock(leagueId);
 
     await logAdminActivity({
       adminUserId: session.user.id!,

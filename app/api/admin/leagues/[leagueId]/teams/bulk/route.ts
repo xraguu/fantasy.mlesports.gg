@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { generateFantasyTeamId } from "@/lib/id-generator";
 import { logAdminActivity } from "@/lib/adminActivity";
+import { notifyLeagueAdded } from "@/lib/notificationEvents";
 import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
 import { uniqueShortCode, uniqueTeamName } from "@/lib/teamNaming";
 
@@ -153,6 +154,10 @@ export async function POST(
         })
       )
     );
+
+    for (const team of created) {
+      await notifyLeagueAdded(team.id);
+    }
 
     await logAdminActivity({
       adminUserId: session.user.id!,

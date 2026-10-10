@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { notifyTradeCancelled, notifyWaiverResults } from "@/lib/notificationEvents";
 
 /**
  * When an admin adds or drops an MLE team from a fantasy roster, any pending
@@ -38,6 +39,7 @@ export async function cancelPendingTransactionsForMleTeam(
       },
     });
   }
+  await notifyWaiverResults(claims.map((c) => c.id), "admin_change");
 
   const trades = await prisma.trade.findMany({
     where: {
@@ -79,5 +81,6 @@ export async function cancelPendingTransactionsForMleTeam(
         processedAt: new Date(),
       },
     });
+    await notifyTradeCancelled(trade.id, "Cancelled — an admin modified a roster involved in this trade");
   }
 }

@@ -22,6 +22,43 @@ model User {
   transactions   Transaction[]
   waiverClaims   WaiverClaim[]
   activityLogs   AdminActivityLog[]
+  notifications        Notification[]
+  notificationSettings NotificationSetting[]
+}
+
+// A Discord DM to one user — saved first, then delivered by the background
+// sender (lib/notifications.ts), so nothing is lost to a restart. dedupeKey
+// is unique, so the same event never DMs the same person twice.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String // see NOTIFICATION_TYPES in lib/notifications.ts
+  dedupeKey String    @unique
+  title     String
+  body      String
+  url       String?
+  status    String    @default("pending") // pending, sending, sent, failed, expired
+  attempts  Int       @default(0)
+  error     String?
+  sendAfter DateTime  @default(now())
+  expiresAt DateTime
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, sendAfter])
+  @@index([createdAt])
+}
+
+// A user turning one notification type off (or back on). No row means the
+// type is on — notifications are on by default.
+model NotificationSetting {
+  userId  String
+  type    String
+  enabled Boolean
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, type])
 }
 
 model AdminActivityLog {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyDraftClock } from "@/lib/notificationEvents";
 import { logAdminActivity } from "@/lib/adminActivity";
 
 // POST /api/admin/leagues/[leagueId]/start-draft - Start the draft
@@ -78,6 +79,8 @@ export async function POST(
         draftPickDeadline: firstPickDeadline,
       },
     });
+
+    await notifyDraftClock(leagueId);
 
     await logAdminActivity({
       adminUserId: session.user.id!,

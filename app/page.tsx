@@ -8,6 +8,7 @@ import TeamModal from "@/components/TeamModal";
 import InfoGuideModal from "@/components/InfoGuideModal";
 import ManagerOverviewModal from "@/components/ManagerOverviewModal";
 import PastLeaguesModal from "@/components/PastLeaguesModal";
+import NotificationSettingsModal from "@/components/NotificationSettingsModal";
 import HeaderTooltip from "@/components/HeaderTooltip";
 
 type SortKey =
@@ -146,6 +147,7 @@ export default function HomePage() {
   const [showModal, setShowModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showPastLeagues, setShowPastLeagues] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [selectedManagerOverview, setSelectedManagerOverview] = useState<{
     leagueId: string;
     fantasyTeamId: string;
@@ -432,6 +434,7 @@ export default function HomePage() {
       />
 
       {showPastLeagues && <PastLeaguesModal onClose={() => setShowPastLeagues(false)} />}
+      {showNotifications && <NotificationSettingsModal onClose={() => setShowNotifications(false)} />}
 
       {/* Manager Overview Modal - opened from either leaderboard */}
       {selectedManagerOverview && (
@@ -500,31 +503,58 @@ export default function HomePage() {
             </div>
           </a>
 
-          <button
-            onClick={() => signOut()}
-            style={{
-              padding: "0.45rem 1.1rem",
-              backgroundColor: "rgba(42, 75, 130, 0.85)",
-              color: "var(--text-main)",
-              border: "2px solid rgba(242, 182, 50, 0.5)",
-              borderRadius: "10px",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
-              e.currentTarget.style.borderColor = "var(--accent)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
-              e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
-            }}
-          >
-            Sign Out
-          </button>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            <button
+              onClick={() => setShowNotifications(true)}
+              style={{
+                padding: "0.45rem 1.1rem",
+                backgroundColor: "rgba(42, 75, 130, 0.85)",
+                color: "var(--text-main)",
+                border: "2px solid rgba(242, 182, 50, 0.5)",
+                borderRadius: "10px",
+                fontWeight: 700,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
+                e.currentTarget.style.borderColor = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
+                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
+              }}
+            >
+              Notifications
+            </button>
+            <button
+              onClick={() => signOut()}
+              style={{
+                padding: "0.45rem 1.1rem",
+                backgroundColor: "rgba(42, 75, 130, 0.85)",
+                color: "var(--text-main)",
+                border: "2px solid rgba(242, 182, 50, 0.5)",
+                borderRadius: "10px",
+                fontWeight: 700,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.95)";
+                e.currentTarget.style.borderColor = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "rgba(42, 75, 130, 0.85)";
+                e.currentTarget.style.borderColor = "rgba(242, 182, 50, 0.5)";
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
 
         {/* Header Section */}

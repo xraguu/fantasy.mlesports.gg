@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  loadTradeForNotification,
+  notifyTradeAccepted,
+  notifyTradeRejected,
+  notifyTradeWithdrawn,
+} from "@/lib/notificationEvents";
 import { tradeVetoDeadline } from "@/lib/tradeExecution";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getTradeCutoff } from "@/lib/tradeCutoff";
@@ -93,6 +99,7 @@ export async function PATCH(
           status: "rejected",
         },
       });
+      await notifyTradeRejected(tradeId);
 
       return NextResponse.json({
         success: true,
@@ -225,6 +232,7 @@ export async function PATCH(
         receiverDrops: receiverDrops as string[],
       },
     });
+    await notifyTradeAccepted(tradeId, tradeVetoDeadline(acceptedAt));
 
     return NextResponse.json({
       success: true,
@@ -291,10 +299,12 @@ export async function DELETE(
       );
     }
 
-    // Delete the trade
+    // Delete the trade (loaded first, for the receiver's DM)
+    const withdrawn = await loadTradeForNotification(tradeId);
     await prisma.trade.delete({
       where: { id: tradeId },
     });
+    if (withdrawn) await notifyTradeWithdrawn(withdrawn);
 
     return NextResponse.json({
       success: true,

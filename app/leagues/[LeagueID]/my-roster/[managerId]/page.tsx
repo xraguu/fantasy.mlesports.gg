@@ -209,9 +209,13 @@ export default function MyRosterPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentWeek, setCurrentWeek] = useState(1);
+  // ?tab=waivers / ?tab=trades opens that tab (Discord DM links use it)
   const [activeTab, setActiveTab] = useState<
     "lineup" | "stats" | "waivers" | "trades"
-  >("lineup");
+  >(() => {
+    const tab = searchParams.get("tab");
+    return tab === "stats" || tab === "waivers" || tab === "trades" ? tab : "lineup";
+  });
   const [moveMode, setMoveMode] = useState(false);
   const [selectedTeamIndex, setSelectedTeamIndex] = useState<number | null>(
     null,

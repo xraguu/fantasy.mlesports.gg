@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { executeTrade, tradeVetoDeadline } from "@/lib/tradeExecution";
+import { notifyTradeVetoed } from "@/lib/notificationEvents";
 
 /**
  * POST /api/admin/trades/process
@@ -135,6 +136,8 @@ export async function POST(req: NextRequest) {
         },
       });
     });
+
+    await notifyTradeVetoed(tradeId, reason);
 
     await logAdminActivity({
       adminUserId: session.user.id!,

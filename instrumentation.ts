@@ -10,12 +10,15 @@ declare global {
   var __statsRefreshScheduled: boolean | undefined;
   var __draftSweepScheduled: boolean | undefined;
   var __tradeVetoSweepScheduled: boolean | undefined;
+  var __notificationsScheduled: boolean | undefined;
 }
 
 const REFRESH_INTERVAL_MS = 120 * 60 * 1000; // every 120 minutes
 const STARTUP_DELAY_MS = 30 * 1000; // let the server finish booting first
 const DRAFT_SWEEP_INTERVAL_MS = 10 * 1000; // every 10 seconds
 const TRADE_VETO_SWEEP_INTERVAL_MS = 60 * 1000; // every minute
+const NOTIFICATION_SEND_INTERVAL_MS = 15 * 1000; // every 15 seconds
+const NOTIFICATION_CHECK_INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
 
 export async function register() {
   // Only run in the actual Node.js server runtime — not the edge runtime,
@@ -107,5 +110,31 @@ export async function register() {
         console.error("[trade-veto-sweep] Scheduled sweep failed:", error);
       }
     }, TRADE_VETO_SWEEP_INTERVAL_MS);
+  }
+
+  if (!globalThis.__notificationsScheduled) {
+    globalThis.__notificationsScheduled = true;
+
+    // Discord DMs: deliver what's queued (only once DISCORD_BOT_TOKEN is
+    // set), and queue the calendar-driven ones — weekly results, lineup
+    // reminders, and admin alerts (see lib/notifications.ts).
+    const { runNotificationSender } = await import("@/lib/notifications");
+    const { runScheduledNotificationChecks } = await import("@/lib/notificationChecks");
+
+    setInterval(async () => {
+      try {
+        await runNotificationSender();
+      } catch (error) {
+        console.error("[notifications] Sender failed:", error);
+      }
+    }, NOTIFICATION_SEND_INTERVAL_MS);
+
+    setInterval(async () => {
+      try {
+        await runScheduledNotificationChecks();
+      } catch (error) {
+        console.error("[notifications] Scheduled checks failed:", error);
+      }
+    }, NOTIFICATION_CHECK_INTERVAL_MS);
   }
 }

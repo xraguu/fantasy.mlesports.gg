@@ -3,6 +3,7 @@ import { generateRosterSlotId } from "@/lib/id-generator";
 import { initializeWaiverPriorityFromDraftOrder } from "@/lib/waiverPriority";
 import { adjustRegularSeasonForLateDraft } from "@/lib/scheduleGenerator";
 import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
+import { notifyDraftClock } from "@/lib/notificationEvents";
 
 /**
  * The order draft picks fill a roster in — starters before bench ("top of
@@ -148,6 +149,9 @@ export async function executeDraftPick(
     // adjustRegularSeasonForLateDraft's own comment for the full reasoning.
     // A no-op if the draft finished on time.
     await adjustRegularSeasonForLateDraft(leagueId);
+  } else {
+    // Whoever's pick is next (and the one after) gets a DM
+    await notifyDraftClock(leagueId);
   }
   return { draftCompleted };
 }

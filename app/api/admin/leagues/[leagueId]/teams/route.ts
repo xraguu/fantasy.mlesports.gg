@@ -5,6 +5,7 @@ import { generateFantasyTeamId } from "@/lib/id-generator";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
 import { uniqueShortCode, uniqueTeamName } from "@/lib/teamNaming";
+import { notifyLeagueAdded } from "@/lib/notificationEvents";
 
 // POST /api/admin/leagues/[leagueId]/teams - Add a user to the league (admin only)
 export async function POST(
@@ -133,6 +134,8 @@ export async function POST(
       targetType: "FantasyTeam",
       targetId: fantasyTeam.id,
     });
+
+    await notifyLeagueAdded(fantasyTeam.id);
 
     if (league.fantasyTeams.length + 1 === league.maxTeams) {
       try {

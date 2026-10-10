@@ -3,6 +3,7 @@ import { calculateScoresForWeek, ScoreCalculationResult } from "@/lib/scoringSer
 import { getCurrentSeasonWeek } from "@/lib/currentWeek";
 import { haveMatchesStarted } from "@/lib/autoLock";
 import { prisma } from "@/lib/prisma";
+import { notifyAdminsStatsRefreshFailed } from "@/lib/notificationEvents";
 
 export interface StatsRefreshResult {
   season: number;
@@ -82,6 +83,10 @@ function describeRefresh(result: StatsRefreshResult): string {
  */
 async function recordRefreshOutcome(ok: boolean, note: string): Promise<void> {
   try {
+    // Admins hear about it when refreshes start failing, not on every retry
+    const previous = await prisma.appSettings.findUnique({ where: { id: "global" }, select: { statsRefreshOk: true } });
+    if (!ok && previous?.statsRefreshOk !== false) await notifyAdminsStatsRefreshFailed(note);
+
     const data = { statsRefreshedAt: new Date(), statsRefreshOk: ok, statsRefreshNote: note.slice(0, 500) };
     await prisma.appSettings.upsert({
       where: { id: "global" },

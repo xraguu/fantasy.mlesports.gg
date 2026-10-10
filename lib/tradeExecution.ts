@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { assignTeamToRosterSlot, getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 import { markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
+import { notifyTradeCancelled, notifyTradeCompleted } from "@/lib/notificationEvents";
 
 export const TRADE_VETO_WINDOW_MS = 12 * 60 * 60 * 1000;
 
@@ -22,7 +23,9 @@ export function tradeVetoDeadline(acceptedAt: Date): Date {
  * history rows note it went through early.
  */
 export async function executeTrade(tradeId: string, options: { atLockStart?: boolean } = {}): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+  // Set when the trade gets cancelled instead, for both managers' DMs
+  let cancelledReason: string | null = null;
+  const outcome = await prisma.$transaction(async (tx) => {
     const trade = await tx.trade.findUnique({ where: { id: tradeId } });
     if (!trade) throw new Error("Trade not found");
     if (trade.status !== "awaiting_veto") return { executed: false as const }; // already resolved elsewhere
@@ -37,6 +40,7 @@ export async function executeTrade(tradeId: string, options: { atLockStart?: boo
     // Shared cancellation path — used both when an offered team got locked
     // in the meantime and when a roster no longer has room (see below).
     const cancelTrade = async (reason: string) => {
+      cancelledReason = reason;
       await tx.trade.update({
         where: { id: tradeId },
         data: { status: "cancelled", executedAt: new Date() },
@@ -229,6 +233,13 @@ export async function executeTrade(tradeId: string, options: { atLockStart?: boo
 
     return { executed: true as const };
   });
+
+  // Only after the transaction commits, so nobody hears about a change that rolled back
+  if (outcome.executed) {
+    await notifyTradeCompleted(tradeId, !!options.atLockStart);
+  } else if (cancelledReason) {
+    await notifyTradeCancelled(tradeId, cancelledReason);
+  }
 }
 
 /**

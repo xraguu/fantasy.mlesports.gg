@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
+import NotificationSettingsModal from "@/components/NotificationSettingsModal";
 
 interface UserLeague {
   id: string;
@@ -84,6 +85,8 @@ export default function ManageUsersPage() {
   const [sort, setSort] = useState<SortState>({ column: "joined", direction: "desc" });
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  // The user whose Discord notifications the bell's modal is showing
+  const [notificationsUser, setNotificationsUser] = useState<User | null>(null);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -223,6 +226,10 @@ export default function ManageUsersPage() {
 
   return (
     <div>
+      {notificationsUser && (
+        <NotificationSettingsModal user={notificationsUser} onClose={() => setNotificationsUser(null)} />
+      )}
+
       {/* Edit User Modal */}
       {showEditModal && selectedUser && (
         <>
@@ -686,11 +693,35 @@ export default function ManageUsersPage() {
                     style={{
                       padding: "0.75rem 0.5rem",
                       textAlign: "right",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     <button
                       className="btn btn-ghost"
-                      style={{ padding: "0.4rem 1rem", fontSize: "0.85rem" }}
+                      title={`Notifications for ${user.displayName}`}
+                      aria-label={`Notifications for ${user.displayName}`}
+                      style={{ padding: "0.4rem 0.6rem", marginRight: "0.5rem", verticalAlign: "middle" }}
+                      onClick={() => setNotificationsUser(user)}
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        style={{ display: "block" }}
+                      >
+                        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                      </svg>
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ padding: "0.4rem 1rem", fontSize: "0.85rem", verticalAlign: "middle" }}
                       onClick={() => {
                         setSelectedUser(user);
                         setShowEditModal(true);

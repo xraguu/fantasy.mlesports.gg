@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "./rosterLocks";
 import { RosterFullError } from "./rosterSlotAssignment";
+import { notifyWaiverResults } from "./notificationEvents";
 import { markTeamDroppedForWaivers, clearWaiverPeriod } from "./waiverPeriods";
 import { moveTeamToBackOfWaiverLine } from "./waiverPriority";
 import { assignTeamToRosterSlot, type RosterConfigShape } from "./rosterSlotAssignment";
@@ -352,6 +353,9 @@ export async function processPendingWaiverClaims(filter: { claimIds?: string[]; 
       await processPriorityOrderedClaims(leagueClaims, results);
     }
   }
+
+  // One DM per manager with how each of their claims went
+  await notifyWaiverResults(claims.map((c) => c.id));
 
   return results;
 }

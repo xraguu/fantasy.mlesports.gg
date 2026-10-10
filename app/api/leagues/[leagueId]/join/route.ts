@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notifyLeagueAdded } from "@/lib/notificationEvents";
 import { generateFantasyTeamId } from "@/lib/id-generator";
 import { generateAndSaveRegularSeason } from "@/lib/scheduleGenerator";
 
@@ -179,6 +180,8 @@ export async function POST(
         console.error("Error auto-generating schedule after league filled:", scheduleError);
       }
     }
+
+    await notifyLeagueAdded(fantasyTeam.id);
 
     return NextResponse.json({ fantasyTeam }, { status: 201 });
   } catch (error) {
