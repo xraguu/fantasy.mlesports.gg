@@ -361,8 +361,8 @@ BACKUP_DIR="/root/backups"
 mkdir -p $BACKUP_DIR
 
 # Backup from Digital Ocean PostgreSQL
-PGPASSWORD="PqS8WIl650bz8p5BdgIgBovfg9dd45h9" pg_dump \
-  -h sprocketbot-postgres-d5033d2-do-user-24528890-0.j.db.ondigitalocean.com \
+PGPASSWORD="[PASSWORD]" pg_dump \
+  -h [SPROCKET-POSTGRES-LINK] \
   -p 25060 \
   -U fantasy-rw \
   -d fantasy \
