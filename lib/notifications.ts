@@ -12,8 +12,18 @@ import { DiscordSendError, isDiscordConfigured, sendDiscordDm } from "@/lib/disc
  *
  * Notifications are on by default; a NotificationSetting row with
  * enabled=false turns one type off for one user.
+ *
+ * A notification's status moves through:
+ *   pending  -> waiting to be sent (or to be retried after a failure)
+ *   sending  -> a sender has claimed it and is talking to Discord right now
+ *   sent     -> delivered
+ *   failed   -> gave up: the user can't be DMed, or it failed MAX_ATTEMPTS times
+ *   expired  -> not sent before its expiresAt, so no longer worth sending
  */
 
+// Every kind of DM the site sends. Users see the label and description in
+// their notification settings; adminOnly types are only offered to admins.
+// (`as const` makes TypeScript treat these names as the fixed list of valid types.)
 export const NOTIFICATION_TYPES = {
   draft_clock: { label: "You're on the clock", description: "When it's your turn to pick in a draft", adminOnly: false },
   draft_on_deck: { label: "You're up next", description: "When your draft pick is next", adminOnly: false },
@@ -43,24 +53,33 @@ export const NOTIFICATION_TYPES = {
   },
 } as const;
 
+/** One of the type names above, e.g. "trade_offer". */
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
 
+/** The admin types: every type whose name starts with "admin_" (admin_trade_review, admin_alert). */
+type AdminNotificationType = Extract<NotificationType, `admin_${string}`>;
+
 const HOUR_MS = 60 * 60 * 1000;
+// A notification not sent within this long is dropped (unless the caller sets its own expiry)
 const DEFAULT_LIFETIME_MS = 48 * HOUR_MS;
+// Give up after this many failed tries
 const MAX_ATTEMPTS = 5;
 // A send that crashed mid-way (server restart) is retried after this long
 const STUCK_SENDING_MS = 5 * 60 * 1000;
+// Most notifications sent per 15-second run; any more wait for the next run
+const MAX_SENDS_PER_RUN = 25;
 
 /** Absolute link to a page on the site, for a DM's "Open" button. */
 export function siteUrl(path: string): string {
+  // AUTH_URL is the site's public address; strip any trailing "/" so we don't get "//path"
   const base = (process.env.AUTH_URL || "https://fantasy.mlesports.gg").replace(/\/+$/, "");
   return `${base}${path}`;
 }
 
 export interface NotificationMessage {
   title: string;
-  body: string;
-  url?: string;
+  body: string; // Discord formatting works here, e.g. **bold**
+  url?: string; // page the "Open" button links to
 }
 
 /**
@@ -70,6 +89,11 @@ export interface NotificationMessage {
  * the new notification's id, or null if it was skipped or already queued.
  * Never throws — a notification problem must never break the action that
  * caused it.
+ *
+ * Options:
+ *   expiresAt - don't send after this time (default: 48 hours from now)
+ *   sendNow   - also try to send it immediately, instead of waiting up to
+ *               15 seconds for the background sender
  */
 export async function queueNotification(
   userId: string,
@@ -80,17 +104,25 @@ export async function queueNotification(
   options: { expiresAt?: Date; sendNow?: boolean } = {}
 ): Promise<string | null> {
   try {
+    // Skip it if the user has turned this type off
     const setting = await prisma.notificationSetting.findUnique({
       where: { userId_type: { userId, type } },
     });
-    if (setting && !setting.enabled) return null;
+    if (setting && !setting.enabled) {
+      return null;
+    }
 
+    const dedupeKey = `${key}:${userId}`;
+
+    // createMany with skipDuplicates inserts the row only if no row with this
+    // dedupeKey exists yet (the database enforces it's unique), instead of
+    // throwing an error. count is 0 when it was already queued.
     const created = await prisma.notification.createMany({
       data: [
         {
           userId,
           type,
-          dedupeKey: `${key}:${userId}`,
+          dedupeKey,
           title: message.title,
           body: message.body,
           url: message.url ?? null,
@@ -99,19 +131,25 @@ export async function queueNotification(
       ],
       skipDuplicates: true,
     });
-    if (created.count === 0) return null;
+    if (created.count === 0) {
+      return null;
+    }
 
+    // createMany doesn't return the new row, so look up its id
     const row = await prisma.notification.findUnique({
-      where: { dedupeKey: `${key}:${userId}` },
+      where: { dedupeKey },
       select: { id: true },
     });
-    if (row && options.sendNow) {
-      // Not awaited: the caller (e.g. a draft pick) shouldn't wait on Discord
-      void deliverNotification(row.id).catch((error) =>
-        console.error("[notifications] Immediate send failed:", error)
-      );
+    if (!row) {
+      return null;
     }
-    return row?.id ?? null;
+
+    if (options.sendNow) {
+      // Deliberately not awaited: the caller (e.g. a draft pick) shouldn't
+      // wait on Discord. If this attempt fails, the background sender retries.
+      deliverNotification(row.id).catch((error) => console.error("[notifications] Immediate send failed:", error));
+    }
+    return row.id;
   } catch (error) {
     console.error(`[notifications] Couldn't queue ${type} for ${userId}:`, error);
     return null;
@@ -120,7 +158,7 @@ export async function queueNotification(
 
 /** Queues the same DM for every admin (each admin's own settings apply). */
 export async function queueAdminNotification(
-  type: Extract<NotificationType, `admin_${string}`>,
+  type: AdminNotificationType,
   key: string,
   message: NotificationMessage
 ): Promise<void> {
@@ -140,16 +178,24 @@ export async function queueAdminNotification(
  * can never both deliver it.
  */
 async function deliverNotification(id: string): Promise<void> {
-  if (!isDiscordConfigured()) return;
+  if (!isDiscordConfigured()) {
+    return;
+  }
 
+  // The claim: a single update that only matches if the notification is still
+  // pending, due, and not expired. The database applies it to at most one
+  // caller, so if count is 0, someone else got it first (or it isn't due).
   const now = new Date();
   const claimed = await prisma.notification.updateMany({
     where: { id, status: "pending", sendAfter: { lte: now }, expiresAt: { gt: now } },
-    // sendAfter doubles as "when this send started", for crash recovery below
+    // sendAfter doubles as "when this send started", for crash recovery in runNotificationSender
     data: { status: "sending", attempts: { increment: 1 }, sendAfter: now },
   });
-  if (claimed.count === 0) return;
+  if (claimed.count === 0) {
+    return;
+  }
 
+  // Load the message and the recipient's Discord user id
   const notification = await prisma.notification.findUniqueOrThrow({
     where: { id },
     include: { user: { select: { discordId: true } } },
@@ -162,24 +208,30 @@ async function deliverNotification(id: string): Promise<void> {
       data: { status: "sent", sentAt: new Date(), error: null },
     });
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // permanent = Discord says this user can't be DMed at all, so don't retry
     const permanent = error instanceof DiscordSendError && error.permanent;
+    // attempts already includes this try (the claim above added 1)
     const outOfTries = notification.attempts >= MAX_ATTEMPTS;
-    // Rate limits wait as long as Discord asks; other errors back off
-    // 30s, 2m, 4.5m, 8m between tries
-    const retryInMs =
-      error instanceof DiscordSendError && error.retryAfterMs !== undefined
-        ? error.retryAfterMs
-        : notification.attempts * notification.attempts * 30 * 1000;
+
+    if (permanent || outOfTries) {
+      await prisma.notification.update({
+        where: { id },
+        data: { status: "failed", error: errorMessage },
+      });
+      return;
+    }
+
+    // Put it back in the queue to retry later. Rate limits wait as long as
+    // Discord asks; other errors wait longer after each failed try
+    // (attempts² × 30 seconds: 30s, 2m, 4.5m, then 8m).
+    let retryInMs = notification.attempts * notification.attempts * 30 * 1000;
+    if (error instanceof DiscordSendError && error.retryAfterMs !== undefined) {
+      retryInMs = error.retryAfterMs;
+    }
     await prisma.notification.update({
       where: { id },
-      data:
-        permanent || outOfTries
-          ? { status: "failed", error: error instanceof Error ? error.message : String(error) }
-          : {
-              status: "pending",
-              sendAfter: new Date(Date.now() + retryInMs),
-              error: error instanceof Error ? error.message : String(error),
-            },
+      data: { status: "pending", sendAfter: new Date(Date.now() + retryInMs), error: errorMessage },
     });
   }
 }
@@ -199,40 +251,52 @@ export async function sendNotificationNow(id: string): Promise<{ status: string;
  */
 export async function runNotificationSender(): Promise<void> {
   const now = new Date();
+
+  // 1. Expire anything past its expiresAt that hasn't gone out
   await prisma.notification.updateMany({
     where: { status: { in: ["pending", "sending"] }, expiresAt: { lte: now } },
     data: { status: "expired" },
   });
-  if (!isDiscordConfigured()) return;
+  if (!isDiscordConfigured()) {
+    return;
+  }
 
+  // 2. A notification stuck in "sending" for over 5 minutes was interrupted
+  //    (e.g. the server restarted mid-send), so put it back in the queue
+  const stuckBefore = new Date(now.getTime() - STUCK_SENDING_MS);
   await prisma.notification.updateMany({
-    where: { status: "sending", sendAfter: { lte: new Date(now.getTime() - STUCK_SENDING_MS) } },
+    where: { status: "sending", sendAfter: { lte: stuckBefore } },
     data: { status: "pending" },
   });
 
+  // 3. Send what's due, oldest first, one at a time
   const due = await prisma.notification.findMany({
     where: { status: "pending", sendAfter: { lte: now } },
     orderBy: { createdAt: "asc" },
-    take: 25,
+    take: MAX_SENDS_PER_RUN,
     select: { id: true },
   });
-  for (const { id } of due) {
-    await deliverNotification(id);
+  for (const notification of due) {
+    await deliverNotification(notification.id);
   }
 }
 
 /** Every type a user can see in their settings, with whether it's on. */
 export async function getNotificationSettings(userId: string, isAdmin: boolean) {
+  // Only types the user has changed have a row; a type with no row is on
   const rows = await prisma.notificationSetting.findMany({ where: { userId } });
-  const enabled = new Map(rows.map((r) => [r.type, r.enabled]));
-  return (Object.entries(NOTIFICATION_TYPES) as [NotificationType, (typeof NOTIFICATION_TYPES)[NotificationType]][])
-    .filter(([, info]) => isAdmin || !info.adminOnly)
-    .map(([type, info]) => ({
+  const enabledByType = new Map(rows.map((row) => [row.type, row.enabled]));
+
+  // (Object.keys returns plain strings, so tell TypeScript they're type names)
+  const allTypes = Object.keys(NOTIFICATION_TYPES) as NotificationType[];
+  return allTypes
+    .filter((type) => isAdmin || !NOTIFICATION_TYPES[type].adminOnly)
+    .map((type) => ({
       type,
-      label: info.label,
-      description: info.description,
-      adminOnly: info.adminOnly,
-      enabled: enabled.get(type) ?? true,
+      label: NOTIFICATION_TYPES[type].label,
+      description: NOTIFICATION_TYPES[type].description,
+      adminOnly: NOTIFICATION_TYPES[type].adminOnly,
+      enabled: enabledByType.get(type) ?? true,
     }));
 }
 
@@ -254,10 +318,19 @@ export async function getDeliveryProblem(userId: string): Promise<string | null>
       select: { sentAt: true },
     }),
   ]);
-  if (!lastFailure) return null;
-  return !lastSent?.sentAt || lastSent.sentAt < lastFailure.createdAt ? lastFailure.error : null;
+
+  // Nothing has ever failed
+  if (!lastFailure) {
+    return null;
+  }
+  // Something was delivered after the failure, so whatever it was is fixed
+  if (lastSent?.sentAt && lastSent.sentAt >= lastFailure.createdAt) {
+    return null;
+  }
+  return lastFailure.error;
 }
 
+/** Turns one notification type on or off for a user (creating their setting row if needed). */
 export async function setNotificationSetting(userId: string, type: NotificationType, enabled: boolean): Promise<void> {
   await prisma.notificationSetting.upsert({
     where: { userId_type: { userId, type } },
@@ -266,16 +339,22 @@ export async function setNotificationSetting(userId: string, type: NotificationT
   });
 }
 
+/** Checks that a value from a request is one of the notification type names above. */
 export function isNotificationType(value: unknown): value is NotificationType {
-  return typeof value === "string" && value in NOTIFICATION_TYPES;
+  // Object.hasOwn, not `in`: `"toString" in NOTIFICATION_TYPES` would be true
+  return typeof value === "string" && Object.hasOwn(NOTIFICATION_TYPES, value);
 }
 
-/** "90 seconds", "2 minutes", "1 minute 30 seconds" */
+/** Seconds as words, for DMs: 45 -> "45 seconds", 120 -> "2 minutes", 90 -> "1 minute 30 seconds" */
 export function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const parts: string[] = [];
-  if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
-  if (seconds > 0 || minutes === 0) parts.push(`${seconds} second${seconds === 1 ? "" : "s"}`);
+  if (minutes > 0) {
+    parts.push(`${minutes} minute${minutes === 1 ? "" : "s"}`);
+  }
+  if (seconds > 0 || minutes === 0) {
+    parts.push(`${seconds} second${seconds === 1 ? "" : "s"}`);
+  }
   return parts.join(" ");
 }

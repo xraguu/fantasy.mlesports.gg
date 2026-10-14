@@ -2,7 +2,24 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isDiscordConfigured } from "@/lib/discord";
-import { NOTIFICATION_TYPES, queueNotification, sendNotificationNow, siteUrl } from "@/lib/notifications";
+import {
+  isNotificationType,
+  NOTIFICATION_TYPES,
+  queueNotification,
+  sendNotificationNow,
+  siteUrl,
+} from "@/lib/notifications";
+
+/** The readable name for a stored notification type, e.g. "trade_offer" -> "Trade offers". */
+function typeLabel(type: string): string {
+  if (isNotificationType(type)) {
+    return NOTIFICATION_TYPES[type].label;
+  }
+  if (type === "test") {
+    return "Test message";
+  }
+  return type;
+}
 
 /**
  * GET /api/admin/notifications
@@ -18,6 +35,7 @@ export async function GET() {
 
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const [byStatus, recent] = await Promise.all([
+      // How many notifications in the last 7 days are in each status
       prisma.notification.groupBy({ by: ["status"], where: { createdAt: { gte: since } }, _count: true }),
       prisma.notification.findMany({
         orderBy: { createdAt: "desc" },
@@ -39,11 +57,10 @@ export async function GET() {
 
     return NextResponse.json({
       botConfigured: isDiscordConfigured(),
+      // e.g. { sent: 42, failed: 1, expired: 3 }
       last7Days: Object.fromEntries(byStatus.map((s) => [s.status, s._count])),
-      recent: recent.map((n) => ({
-        ...n,
-        typeLabel: NOTIFICATION_TYPES[n.type as keyof typeof NOTIFICATION_TYPES]?.label ?? (n.type === "test" ? "Test message" : n.type),
-      })),
+      // Each notification's fields, plus its type's readable name
+      recent: recent.map((n) => ({ ...n, typeLabel: typeLabel(n.type) })),
     });
   } catch (error) {
     console.error("Error fetching notifications:", error);
@@ -68,6 +85,8 @@ export async function POST() {
       );
     }
 
+    // Queued like any other DM (the current time in the key makes each test unique),
+    // then sent right away so the admin sees the result
     const id = await queueNotification(
       session.user.id,
       "test",
@@ -77,7 +96,7 @@ export async function POST() {
         body: "If you're reading this, MLE Fantasy can DM you. 🎉",
         url: siteUrl("/admin/notifications"),
       },
-      { expiresAt: new Date(Date.now() + 10 * 60 * 1000) }
+      { expiresAt: new Date(Date.now() + 10 * 60 * 1000) } // gives up after 10 minutes
     );
     if (!id) {
       return NextResponse.json({ error: "Couldn't queue the test message" }, { status: 500 });
@@ -87,15 +106,14 @@ export async function POST() {
     if (result.status === "sent") {
       return NextResponse.json({ success: true, message: "Sent — check your Discord DMs" });
     }
-    return NextResponse.json(
-      {
-        error:
-          result.status === "pending"
-            ? `Discord didn't take it yet (${result.error ?? "will retry"}) — it'll retry automatically`
-            : `Couldn't send it: ${result.error ?? result.status}`,
-      },
-      { status: 502 }
-    );
+
+    // 502 = Discord (the upstream service) didn't accept it
+    // "pending" means it hit a temporary error and is queued to retry; anything else means it gave up
+    const error =
+      result.status === "pending"
+        ? `Discord didn't take it yet (${result.error ?? "will retry"}) — it'll retry automatically`
+        : `Couldn't send it: ${result.error ?? result.status}`;
+    return NextResponse.json({ error }, { status: 502 });
   } catch (error) {
     console.error("Error sending test notification:", error);
     return NextResponse.json({ error: "Failed to send test message" }, { status: 500 });

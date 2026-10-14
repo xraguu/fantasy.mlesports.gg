@@ -48,7 +48,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ use
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== "admin") {
+    if (!session?.user?.id || session.user.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -68,8 +68,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ user
 
     await setNotificationSetting(userId, type, enabled);
 
+    // Recorded in the admin activity log, since it changes someone else's settings
     await logAdminActivity({
-      adminUserId: session.user.id!,
+      adminUserId: session.user.id,
       action: "user.notifications",
       description: `Turned ${enabled ? "on" : "off"} "${NOTIFICATION_TYPES[type].label}" notifications for "${user.displayName}"`,
       targetType: "User",

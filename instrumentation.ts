@@ -6,6 +6,9 @@
  * timer is that schedule instead.
  */
 
+// Flags stored on the process-wide `globalThis` object, recording which timers
+// have already been started so a second register() call doesn't start them again.
+// (This block just tells TypeScript these properties exist.)
 declare global {
   var __statsRefreshScheduled: boolean | undefined;
   var __draftSweepScheduled: boolean | undefined;
@@ -121,6 +124,7 @@ export async function register() {
     const { runNotificationSender } = await import("@/lib/notifications");
     const { runScheduledNotificationChecks } = await import("@/lib/notificationChecks");
 
+    // Every 15 seconds: send queued DMs that are due
     setInterval(async () => {
       try {
         await runNotificationSender();
@@ -129,6 +133,7 @@ export async function register() {
       }
     }, NOTIFICATION_SEND_INTERVAL_MS);
 
+    // Every 15 minutes: queue weekly results, lineup reminders, and admin alerts that are due
     setInterval(async () => {
       try {
         await runScheduledNotificationChecks();
