@@ -3,6 +3,7 @@ import { getCurrentSeason } from "@/lib/currentWeek";
 import { getFantasyStandings } from "@/lib/standings";
 import { etDateTime, formatEasternDateTime } from "@/lib/timezone";
 import { countOverdueWaiverClaims } from "@/lib/waiverProcessing";
+import { escapeDiscordMarkdown } from "@/lib/discord";
 import { queueAdminNotification, queueNotification, siteUrl } from "@/lib/notifications";
 import type { RosterConfigShape } from "@/lib/rosterSlotAssignment";
 import type { WeekDateConfig } from "@/lib/weekMatchRange";
@@ -12,6 +13,9 @@ import type { WeekDateConfig } from "@/lib/weekMatchRange";
  * something: weekly results, lineup reminders, and admin alerts. Run every
  * 15 minutes (instrumentation.ts). Each one is keyed by its event, so
  * running these as often as we like never repeats a DM.
+ *
+ * League and team names go through escapeDiscordMarkdown before they're put
+ * in a DM, so a team name can't add formatting or a disguised link.
  */
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -75,6 +79,7 @@ export async function notifyWeeklyResults(onlyLeagueIds?: string[]): Promise<voi
   const now = Date.now();
 
   for (const league of leagues) {
+    const leagueName = escapeDiscordMarkdown(league.name);
     for (const wd of datesBySeason.get(league.season) ?? []) {
       if (!wd.weekEnd) {
         continue;
@@ -105,7 +110,7 @@ export async function notifyWeeklyResults(onlyLeagueIds?: string[]): Promise<voi
         const hoursSinceEnd = Math.round((now - endedAt) / HOUR_MS);
         await queueAdminNotification("admin_alert", `unscored:${league.id}:${wd.week}`, {
           title: "Matchups still unscored",
-          body: `**${league.name}** has ${unscored} Week ${wd.week} matchup${unscored === 1 ? "" : "s"} without a score, ${hoursSinceEnd} hours after the week ended. Managers' weekly results are waiting on it — check the stats refresh on the Database page, or recalculate on Manual Stats.`,
+          body: `**${leagueName}** has ${unscored} Week ${wd.week} matchup${unscored === 1 ? "" : "s"} without a score, ${hoursSinceEnd} hours after the week ended. Managers' weekly results are waiting on it — check the stats refresh on the Database page, or recalculate on Manual Stats.`,
           url: siteUrl("/admin/stats"),
         });
         continue;
@@ -123,15 +128,15 @@ export async function notifyWeeklyResults(onlyLeagueIds?: string[]): Promise<voi
           { me: m.awayTeam, opponent: m.homeTeam, mine: m.awayScore!, theirs: m.homeScore! },
         ];
         for (const side of sides) {
-          const outcome = describeOutcome(side.opponent.displayName, side.mine, side.theirs);
+          const outcome = describeOutcome(escapeDiscordMarkdown(side.opponent.displayName), side.mine, side.theirs);
           const record = records.get(side.me.id);
 
           let body: string;
           if (m.isPlayoff) {
-            body = `Week ${wd.week} playoff result in **${league.name}**: ${outcome}.`;
+            body = `Week ${wd.week} playoff result in **${leagueName}**: ${outcome}.`;
           } else {
             const recordText = record ? ` Your record is ${record.wins}–${record.losses}.` : "";
-            body = `Week ${wd.week} final in **${league.name}**: ${outcome}.${recordText}`;
+            body = `Week ${wd.week} final in **${leagueName}**: ${outcome}.${recordText}`;
           }
 
           await queueNotification(side.me.ownerUserId, "weekly_result", `weekly-result:${m.id}:${side.me.id}`, {
@@ -215,7 +220,7 @@ export async function notifyLineupReminders(onlyLeagueIds?: string[]): Promise<v
         `lineup-reminder:${team.id}:${league.season}:${week}`,
         {
           title: "Your lineup has empty slots",
-          body: `Your Week ${week} lineup in **${league.name}** has ${empty} empty starting slot${empty === 1 ? "" : "s"}. Lineups lock ${formatEasternDateTime(lockAt)}.`,
+          body: `Your Week ${week} lineup in **${escapeDiscordMarkdown(league.name)}** has ${empty} empty starting slot${empty === 1 ? "" : "s"}. Lineups lock ${formatEasternDateTime(lockAt)}.`,
           url: siteUrl(`/leagues/${league.id}/my-roster/${team.id}`),
         },
         // No point sending it after lineups have locked

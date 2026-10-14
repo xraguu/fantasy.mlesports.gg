@@ -28,6 +28,18 @@ const COMPONENT_ACTION_ROW = 1; // a row that holds buttons
 const COMPONENT_BUTTON = 2;
 const BUTTON_STYLE_LINK = 5; // a button that just opens a URL
 
+/**
+ * Makes text that people typed (team names, league names) show exactly as
+ * typed in a DM. Discord reads DM text as formatting: `*` and `_` make
+ * italics, `[text](address)` makes a disguised link, `<@id>` a mention, and
+ * so on. A backslash before each of those characters makes Discord show the
+ * character itself instead, e.g. "[Click](x.co)" -> "\[Click\]\(x.co\)".
+ * Text the code writes itself (like the ** around names) is not escaped.
+ */
+export function escapeDiscordMarkdown(text: string): string {
+  return text.replace(/[\\*_~`|[\]()<>#:]/g, "\\$&");
+}
+
 /** True once the bot token is set on the server. Until then, nothing is sent. */
 export function isDiscordConfigured(): boolean {
   return Boolean(process.env.DISCORD_BOT_TOKEN);

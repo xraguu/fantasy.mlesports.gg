@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { escapeDiscordMarkdown } from "@/lib/discord";
 import { formatDuration, queueAdminNotification, queueNotification, siteUrl } from "@/lib/notifications";
 import { formatEasternDateTime } from "@/lib/timezone";
 
@@ -11,6 +12,11 @@ import { formatEasternDateTime } from "@/lib/timezone";
  * These are called from the code that performs each action (draft picks,
  * trade routes, waiver processing, etc.), after the action has succeeded.
  * They only queue messages; lib/notifications.ts does the sending.
+ *
+ * Any text not written in this file (team, league and MLE team names, an
+ * admin's veto reason, stored waiver and cancellation reasons, error
+ * messages) goes through escapeDiscordMarkdown before it's put in a DM, so a
+ * team name can't add formatting or a disguised link to the message.
  */
 
 /** Runs `run`, logging any error instead of letting it reach the caller. */
@@ -22,7 +28,7 @@ async function safely(label: string, run: () => Promise<void>): Promise<void> {
   }
 }
 
-/** Looks up display names for MLE teams: team id -> "AL Aviators" (league + team name). */
+/** Looks up display names for MLE teams, escaped for a DM: team id -> "AL Aviators" (league + team name). */
 async function mleTeamLabels(ids: string[]): Promise<Map<string, string>> {
   if (ids.length === 0) {
     return new Map();
@@ -32,7 +38,7 @@ async function mleTeamLabels(ids: string[]): Promise<Map<string, string>> {
     where: { id: { in: uniqueIds } },
     select: { id: true, name: true, leagueId: true },
   });
-  return new Map(teams.map((t) => [t.id, `${t.leagueId} ${t.name}`]));
+  return new Map(teams.map((t) => [t.id, escapeDiscordMarkdown(`${t.leagueId} ${t.name}`)]));
 }
 
 /** MLE team ids as a bold, comma-separated list for a DM, or "nothing" if there are none. */
@@ -91,6 +97,7 @@ export async function notifyDraftClock(leagueId: string): Promise<void> {
     const currentTeam = teams.find((t) => t.id === current.fantasyTeamId);
     const nextTeam = next ? teams.find((t) => t.id === next.fantasyTeamId) : undefined;
     const draftUrl = siteUrl(`/leagues/${leagueId}/draft`);
+    const leagueName = escapeDiscordMarkdown(league.name);
 
     if (currentTeam && !currentTeam.autodraftEnabled) {
       const secondsLeft = Math.max(0, Math.round((deadline.getTime() - Date.now()) / 1000));
@@ -102,7 +109,7 @@ export async function notifyDraftClock(leagueId: string): Promise<void> {
         `draft-clock:${current.id}:${deadline.getTime()}`,
         {
           title: "You're on the clock",
-          body: `It's your pick in **${league.name}** — Round ${current.round}, Pick ${current.pickNumber}. You have ${formatDuration(secondsLeft)}.`,
+          body: `It's your pick in **${leagueName}** — Round ${current.round}, Pick ${current.pickNumber}. You have ${formatDuration(secondsLeft)}.`,
           url: draftUrl,
         },
         // Pointless once the pick's deadline passes; send immediately rather than waiting for the sweep
@@ -112,13 +119,14 @@ export async function notifyDraftClock(leagueId: string): Promise<void> {
 
     // Skipped when it's the same manager back to back (a snake-draft turn)
     if (next && nextTeam && !nextTeam.autodraftEnabled && nextTeam.ownerUserId !== currentTeam?.ownerUserId) {
+      const currentTeamName = currentTeam ? escapeDiscordMarkdown(currentTeam.displayName) : "the current pick";
       await queueNotification(
         nextTeam.ownerUserId,
         "draft_on_deck",
         `draft-on-deck:${next.id}`,
         {
           title: "You're up next",
-          body: `You pick after **${currentTeam?.displayName ?? "the current pick"}** in **${league.name}** — Round ${next.round}, Pick ${next.pickNumber}.`,
+          body: `You pick after **${currentTeamName}** in **${leagueName}** — Round ${next.round}, Pick ${next.pickNumber}.`,
           url: draftUrl,
         },
         { expiresAt: deadline, sendNow: true }
@@ -143,7 +151,7 @@ export async function notifyLeagueAdded(fantasyTeamId: string): Promise<void> {
     }
     await queueNotification(team.ownerUserId, "league_added", `league-added:${fantasyTeamId}`, {
       title: "You've been added to a league",
-      body: `You're in **${team.league.name}** as **${team.displayName}**. Good luck!`,
+      body: `You're in **${escapeDiscordMarkdown(team.league.name)}** as **${escapeDiscordMarkdown(team.displayName)}**. Good luck!`,
       url: siteUrl(`/leagues/${team.fantasyLeagueId}`),
     });
   });
@@ -168,6 +176,15 @@ async function loadTrade(tradeId: string) {
 /** The trade object loadTrade() returns, once we know it was found (not null). */
 type LoadedTrade = NonNullable<Awaited<ReturnType<typeof loadTrade>>>;
 
+/** A trade's league and team names, escaped for a DM. */
+function tradeNames(trade: LoadedTrade) {
+  return {
+    league: escapeDiscordMarkdown(trade.league.name),
+    proposer: escapeDiscordMarkdown(trade.proposerTeam.displayName),
+    receiver: escapeDiscordMarkdown(trade.receiverTeam.displayName),
+  };
+}
+
 /** The trade as loaded before it's deleted, for notifyTradeWithdrawn. */
 export const loadTradeForNotification = loadTrade;
 
@@ -178,11 +195,12 @@ export async function notifyTradeOffer(tradeId: string): Promise<void> {
     if (!trade) {
       return;
     }
+    const names = tradeNames(trade);
     const labels = await mleTeamLabels([...trade.proposerGives, ...trade.receiverGives]);
     await queueNotification(trade.receiverUserId, "trade_offer", `trade-offer:${trade.id}`, {
       title: "New trade offer",
       body:
-        `**${trade.proposerTeam.displayName}** offered you a trade in **${trade.league.name}**.\n` +
+        `**${names.proposer}** offered you a trade in **${names.league}**.\n` +
         `You get: ${teamList(trade.proposerGives, labels)}\n` +
         `You give: ${teamList(trade.receiverGives, labels)}`,
       url: rosterUrl(trade.fantasyLeagueId, trade.receiverTeamId, "trades"),
@@ -197,10 +215,11 @@ export async function notifyTradeAccepted(tradeId: string, vetoDeadline: Date): 
     if (!trade) {
       return;
     }
+    const names = tradeNames(trade);
     const when = formatEasternDateTime(vetoDeadline);
     await queueNotification(trade.proposerUserId, "trade_update", `trade-accepted:${trade.id}`, {
       title: "Trade accepted",
-      body: `**${trade.receiverTeam.displayName}** accepted your trade in **${trade.league.name}**. It goes through ${when} unless an admin vetoes it.`,
+      body: `**${names.receiver}** accepted your trade in **${names.league}**. It goes through ${when} unless an admin vetoes it.`,
       url: rosterUrl(trade.fantasyLeagueId, trade.proposerTeamId, "trades"),
     });
 
@@ -213,17 +232,17 @@ export async function notifyTradeAccepted(tradeId: string, vetoDeadline: Date): 
     // A line for each side that drops teams to make room, if any
     const dropLines: string[] = [];
     if (trade.proposerDrops.length > 0) {
-      dropLines.push(`${trade.proposerTeam.displayName} drops: ${teamList(trade.proposerDrops, labels)}`);
+      dropLines.push(`${names.proposer} drops: ${teamList(trade.proposerDrops, labels)}`);
     }
     if (trade.receiverDrops.length > 0) {
-      dropLines.push(`${trade.receiverTeam.displayName} drops: ${teamList(trade.receiverDrops, labels)}`);
+      dropLines.push(`${names.receiver} drops: ${teamList(trade.receiverDrops, labels)}`);
     }
     await queueAdminNotification("admin_trade_review", `trade-review:${trade.id}`, {
       title: "Trade waiting for review",
       body:
-        `In **${trade.league.name}**:\n` +
-        `**${trade.proposerTeam.displayName}** gives ${teamList(trade.proposerGives, labels)}\n` +
-        `**${trade.receiverTeam.displayName}** gives ${teamList(trade.receiverGives, labels)}\n` +
+        `In **${names.league}**:\n` +
+        `**${names.proposer}** gives ${teamList(trade.proposerGives, labels)}\n` +
+        `**${names.receiver}** gives ${teamList(trade.receiverGives, labels)}\n` +
         (dropLines.length > 0 ? `${dropLines.join("\n")}\n` : "") +
         `It goes through ${when} unless you veto it.`,
       url: siteUrl("/admin/waivers"),
@@ -238,9 +257,10 @@ export async function notifyTradeRejected(tradeId: string): Promise<void> {
     if (!trade) {
       return;
     }
+    const names = tradeNames(trade);
     await queueNotification(trade.proposerUserId, "trade_update", `trade-rejected:${trade.id}`, {
       title: "Trade turned down",
-      body: `**${trade.receiverTeam.displayName}** turned down your trade offer in **${trade.league.name}**.`,
+      body: `**${names.receiver}** turned down your trade offer in **${names.league}**.`,
       url: rosterUrl(trade.fantasyLeagueId, trade.proposerTeamId, "trades"),
     });
   });
@@ -249,9 +269,10 @@ export async function notifyTradeRejected(tradeId: string): Promise<void> {
 /** The proposer withdrew a pending offer (the trade row is deleted, so pass it in). */
 export async function notifyTradeWithdrawn(trade: LoadedTrade): Promise<void> {
   await safely("Trade withdrawn", async () => {
+    const names = tradeNames(trade);
     await queueNotification(trade.receiverUserId, "trade_update", `trade-withdrawn:${trade.id}`, {
       title: "Trade offer withdrawn",
-      body: `**${trade.proposerTeam.displayName}** withdrew their trade offer in **${trade.league.name}**.`,
+      body: `**${names.proposer}** withdrew their trade offer in **${names.league}**.`,
       url: rosterUrl(trade.fantasyLeagueId, trade.receiverTeamId, "trades"),
     });
   });
@@ -259,7 +280,7 @@ export async function notifyTradeWithdrawn(trade: LoadedTrade): Promise<void> {
 
 /**
  * Tells both sides of a trade the same news, each linked to their own roster.
- * `buildBody` is given the other side's team name and returns the message text.
+ * `buildBody` is given the other side's team name (already escaped) and returns the message text.
  */
 async function notifyBothSides(
   trade: LoadedTrade,
@@ -267,9 +288,10 @@ async function notifyBothSides(
   title: string,
   buildBody: (partnerName: string) => string
 ): Promise<void> {
+  const names = tradeNames(trade);
   const sides = [
-    { userId: trade.proposerUserId, teamId: trade.proposerTeamId, partner: trade.receiverTeam.displayName },
-    { userId: trade.receiverUserId, teamId: trade.receiverTeamId, partner: trade.proposerTeam.displayName },
+    { userId: trade.proposerUserId, teamId: trade.proposerTeamId, partner: names.receiver },
+    { userId: trade.receiverUserId, teamId: trade.receiverTeamId, partner: names.proposer },
   ];
   for (const side of sides) {
     await queueNotification(side.userId, "trade_update", key, {
@@ -287,12 +309,14 @@ export async function notifyTradeVetoed(tradeId: string, reason?: string | null)
     if (!trade) {
       return;
     }
-    const reasonLine = reason ? `\nReason: ${reason}` : "";
+    const leagueName = escapeDiscordMarkdown(trade.league.name);
+    // The admin types the reason, so it's escaped like a name
+    const reasonLine = reason ? `\nReason: ${escapeDiscordMarkdown(reason)}` : "";
     await notifyBothSides(
       trade,
       `trade-vetoed:${trade.id}`,
       "Trade vetoed",
-      (partner) => `An admin vetoed your trade with **${partner}** in **${trade.league.name}**.${reasonLine}`
+      (partner) => `An admin vetoed your trade with **${partner}** in **${leagueName}**.${reasonLine}`
     );
   });
 }
@@ -306,12 +330,13 @@ export async function notifyTradeCancelled(tradeId: string, reason: string): Pro
     }
     // Trim the reason to fit the sentence below: drop its leading "Cancelled — "
     // and trailing period, e.g. "Cancelled — an admin modified a roster." -> "an admin modified a roster"
-    const detail = reason.replace(/^Cancelled\s*[—-]\s*/, "").replace(/\.$/, "");
+    const detail = escapeDiscordMarkdown(reason.replace(/^Cancelled\s*[—-]\s*/, "").replace(/\.$/, ""));
+    const leagueName = escapeDiscordMarkdown(trade.league.name);
     await notifyBothSides(
       trade,
       `trade-cancelled:${trade.id}`,
       "Trade cancelled",
-      (partner) => `Your trade with **${partner}** in **${trade.league.name}** was cancelled — ${detail}.`
+      (partner) => `Your trade with **${partner}** in **${leagueName}** was cancelled — ${detail}.`
     );
   });
 }
@@ -326,6 +351,7 @@ export async function notifyTradeCompleted(tradeId: string, processedEarly: bool
     if (!trade) {
       return;
     }
+    const names = tradeNames(trade);
     const labels = await mleTeamLabels([...trade.proposerGives, ...trade.receiverGives]);
     const earlyNote = processedEarly
       ? "\nIt went through early because matches started before its veto window ended."
@@ -334,14 +360,14 @@ export async function notifyTradeCompleted(tradeId: string, processedEarly: bool
       {
         userId: trade.proposerUserId,
         teamId: trade.proposerTeamId,
-        partner: trade.receiverTeam.displayName,
+        partner: names.receiver,
         got: trade.receiverGives,
         gave: trade.proposerGives,
       },
       {
         userId: trade.receiverUserId,
         teamId: trade.receiverTeamId,
-        partner: trade.proposerTeam.displayName,
+        partner: names.proposer,
         got: trade.proposerGives,
         gave: trade.receiverGives,
       },
@@ -350,7 +376,7 @@ export async function notifyTradeCompleted(tradeId: string, processedEarly: bool
       await queueNotification(side.userId, "trade_update", `trade-completed:${trade.id}`, {
         title: "Trade complete",
         body:
-          `Your trade with **${side.partner}** in **${trade.league.name}** went through.\n` +
+          `Your trade with **${side.partner}** in **${names.league}** went through.\n` +
           `You got: ${teamList(side.got, labels)}\n` +
           `You gave: ${teamList(side.gave, labels)}${earlyNote}`,
         url: rosterUrl(trade.fantasyLeagueId, side.teamId),
@@ -419,7 +445,7 @@ export async function notifyWaiverResults(
           return `✅ Added **${add}**${drop}${bid}`;
         }
         const reason = reasons.get(claim.id);
-        return `❌ **${add}**${reason ? ` — ${reason}` : ""}`;
+        return `❌ **${add}**${reason ? ` — ${escapeDiscordMarkdown(reason)}` : ""}`;
       });
 
       // Keyed by exactly which claims were reported, so a run is never reported
@@ -428,11 +454,12 @@ export async function notifyWaiverResults(
       const runKey = createHash("sha1").update(sortedClaimIds).digest("hex").slice(0, 16);
 
       const isAdminChange = cause === "admin_change";
+      const leagueName = escapeDiscordMarkdown(team.league.name);
       await queueNotification(team.ownerUserId, "waiver_results", `waiver-results:${teamId}:${runKey}`, {
         title: isAdminChange ? "Waiver claims cancelled" : "Waiver results",
         body: isAdminChange
-          ? `An admin changed a roster in **${team.league.name}**, so these claims were cancelled:\n${lines.join("\n")}`
-          : `Waivers ran in **${team.league.name}**:\n${lines.join("\n")}`,
+          ? `An admin changed a roster in **${leagueName}**, so these claims were cancelled:\n${lines.join("\n")}`
+          : `Waivers ran in **${leagueName}**:\n${lines.join("\n")}`,
         url: rosterUrl(team.fantasyLeagueId, teamId, "waivers"),
       });
     }
@@ -451,7 +478,7 @@ export async function notifyWaiverResults(
 export async function notifyAdminsStatsRefreshFailed(error: string): Promise<void> {
   await queueAdminNotification("admin_alert", `stats-refresh-failed:${Date.now()}`, {
     title: "Stats refresh failed",
-    body: `The automatic stats refresh failed:\n${error}\n\nYou'll get one of these when it starts failing, not on every retry. The Database page shows its latest result.`,
+    body: `The automatic stats refresh failed:\n${escapeDiscordMarkdown(error)}\n\nYou'll get one of these when it starts failing, not on every retry. The Database page shows its latest result.`,
     url: siteUrl("/admin/database"),
   });
 }
