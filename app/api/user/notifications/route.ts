@@ -23,6 +23,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Admins also see the admin-only types
     const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } });
     const [settings, deliveryProblem] = await Promise.all([
       getNotificationSettings(session.user.id, user?.role === "admin"),
@@ -51,6 +52,7 @@ export async function PUT(req: NextRequest) {
     if (!isNotificationType(type) || typeof enabled !== "boolean") {
       return NextResponse.json({ error: "A valid type and enabled: true/false are required" }, { status: 400 });
     }
+    // Only admins can change admin-only types
     if (NOTIFICATION_TYPES[type].adminOnly) {
       const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true } });
       if (user?.role !== "admin") {

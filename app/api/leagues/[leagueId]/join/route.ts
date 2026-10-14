@@ -57,6 +57,15 @@ export async function POST(
       );
     }
 
+    // Same rule as renaming a team: 1-40 characters, ignoring spaces at either end
+    const trimmedTeamName = typeof teamName === "string" ? teamName.trim() : "";
+    if (trimmedTeamName.length === 0 || trimmedTeamName.length > 40) {
+      return NextResponse.json(
+        { error: "Team name must be 1-40 characters" },
+        { status: 400 }
+      );
+    }
+
     // Check if league exists
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
@@ -115,7 +124,7 @@ export async function POST(
 
     // Check if team name is already taken in this league
     const nameTaken = league.fantasyTeams.some(
-      (team) => team.displayName.toLowerCase() === teamName.trim().toLowerCase()
+      (team) => team.displayName.toLowerCase() === trimmedTeamName.toLowerCase()
     );
 
     if (nameTaken) {
@@ -145,7 +154,7 @@ export async function POST(
           id: teamId,
           fantasyLeagueId: leagueId,
           ownerUserId: session.user.id,
-          displayName: teamName,
+          displayName: trimmedTeamName,
           shortCode: shortCode.toUpperCase(),
           draftPosition: league.fantasyTeams.length + 1,
           faabRemaining: league.waiverSystem === "faab" ? league.faabBudget : null,
