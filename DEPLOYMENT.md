@@ -79,20 +79,20 @@ Add the following (replace with your actual values):
 
 ```env
 # NextAuth Secret
-AUTH_SECRET=Ld8G2uCjrRVq9xZlm4W2P1tA8bF6yOp3vR0KdWluHsE
+AUTH_SECRET=[]
 
 # Your production URL
 AUTH_URL=https://yourdomain.com
 
 # Discord OAuth credentials
-AUTH_DISCORD_ID=1440062250420277311
-AUTH_DISCORD_SECRET=q8qbz_JP5gLNejxkRb0TCgT-ZoTmvKeH
+AUTH_DISCORD_ID=[INSERT]
+AUTH_DISCORD_SECRET=[INSERT]
 
 # Discord User IDs for admins
-ADMIN_DISCORD_IDS=281233291343036418,458513869384450870
+ADMIN_DISCORD_IDS=[ADMIN DISCORD ID]
 
 # Digital Ocean PostgreSQL Database URL
-DATABASE_URL=postgresql://fantasy-rw:PqS8WIl650bz8p5BdgIgBovfg9dd45h9@sprocketbot-postgres-d5033d2-do-user-24528890-0.j.db.ondigitalocean.com:25060/fantasy?sslmode=require
+DATABASE_URL=[URL]
 ```
 
 **Important:** Update `AUTH_URL` to your actual domain!
