@@ -86,19 +86,22 @@ export async function getTeamHistoricalStats(
     );
 
     const sprocketRating = totals.gamesPlayed > 0 ? totals.sprocketRatingWeighted / totals.gamesPlayed : 0;
-    // The gameWin scoring bonus is per individual game (same as the live
-    // weekly pipeline, where TeamWeeklyStats.wins is that week's game
-    // score, not "1 win per series") — feed it game wins, not series wins.
+    // Game Win/Game Loss points are per individual game (same as the live
+    // weekly pipeline, where TeamWeeklyStats.wins/losses are that week's
+    // game score, not "1 per series") — feed it games, not series.
     const fpts = calcFpts(
       {
         goals: totals.goals,
+        goalsAgainst: totals.goalsAgainst,
         shots: totals.shots,
+        shotsAgainst: totals.shotsAgainst,
         saves: totals.saves,
         assists: totals.assists,
         demosInflicted: totals.demosInflicted,
         demosTaken: totals.demosTaken,
         sprocketRating,
         wins: totals.gameWins,
+        losses: totals.gameLosses,
       },
       activeRules
     );

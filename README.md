@@ -18,19 +18,23 @@ Managers draft real MLE teams (not individual players) into 2s, 3s and flex slot
 
 ### Default scoring
 
-An MLE team in a starting slot earns points for its real stats in that game mode. Admins can change these values for each season under **Admin → Settings**.
+An MLE team in a starting slot earns points for its real stats in that game mode, using every value below ([`calcFpts`](lib/scoringService.ts)). Admins can change these values for each season under **Admin → Settings**.
 
 | Stat | Points |
 | --- | --- |
 | Goal | 2 |
-| Assist | 1.5 |
-| Save | 1 |
+| Goal against | −2 |
 | Shot | 0.1 |
+| Shot against | −0.1 |
+| Save | 1 |
+| Assist | 1.5 |
 | Demo inflicted | 0.5 |
 | Demo taken | −0.5 |
 | Game won | 10 |
 | Game lost | 0 |
 | Sprocket Rating bonus | 0 (0–30), 5 (31–50), 10 (51–70), 15 (71–90), 20 (91–100) |
+
+Games are counted individually: a series won 3-2 is 3 games won and 2 lost. A forfeit has no stats and is recorded as a 5-0 result, so the winner still scores its 5 games won and the forfeiting team its 5 games lost.
 
 ## Tech stack
 

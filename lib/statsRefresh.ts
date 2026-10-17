@@ -13,7 +13,15 @@ export interface StatsRefreshResult {
   calculate: ScoreCalculationResult;
 }
 
-const EMPTY_IMPORT: ImportResult = { imported: 0, skipped: 0, manualOverrides: 0, matchesFound: 0, errors: [], teams: [] };
+const EMPTY_IMPORT: ImportResult = {
+  imported: 0,
+  skipped: 0,
+  manualOverrides: 0,
+  matchesFound: 0,
+  errors: [],
+  resultOnlyMatches: [],
+  teams: [],
+};
 const EMPTY_CALCULATE: ScoreCalculationResult = { slotsScored: 0, matchupsUpdated: 0, teamsWithNoStats: [] };
 
 function mergeImportResults(a: ImportResult, b: ImportResult): ImportResult {
@@ -23,6 +31,7 @@ function mergeImportResults(a: ImportResult, b: ImportResult): ImportResult {
     manualOverrides: a.manualOverrides + b.manualOverrides,
     matchesFound: a.matchesFound + b.matchesFound,
     errors: [...a.errors, ...b.errors],
+    resultOnlyMatches: [...a.resultOnlyMatches, ...b.resultOnlyMatches],
     teams: [...a.teams, ...b.teams],
   };
 }
@@ -74,7 +83,12 @@ function describeRefresh(result: StatsRefreshResult): string {
   }
   const weeks = result.weeksRefreshed === 1 ? "Week 1" : `Weeks 1–${result.weeksRefreshed}`;
   const errors = result.import.errors.length > 0 ? ` ${result.import.errors.length} import warning(s).` : "";
-  return `Season ${result.season}, ${weeks}: ${result.import.imported} team stat rows imported, ${result.calculate.slotsScored} roster slots scored.${errors}`;
+  const resultOnly = result.import.resultOnlyMatches.length;
+  const resultOnlyNote =
+    resultOnly > 0
+      ? ` ${resultOnly} match${resultOnly === 1 ? "" : "es"} counted from the result alone (forfeits, or replays not uploaded yet).`
+      : "";
+  return `Season ${result.season}, ${weeks}: ${result.import.imported} team stat rows imported, ${result.calculate.slotsScored} roster slots scored.${resultOnlyNote}${errors}`;
 }
 
 /**

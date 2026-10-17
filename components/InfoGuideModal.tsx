@@ -15,7 +15,9 @@ interface SprocketRatingRange {
 
 interface ScoringRules {
   goals: number;
+  goalsAgainst: number;
   shots: number;
+  shotsAgainst: number;
   saves: number;
   assists: number;
   demosInflicted: number;
@@ -70,16 +72,20 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Every scoring option in Admin → Settings, in the same order (the
+  // Sprocket Rating bonus has its own table below)
   const statRows: [string, number][] = rules
     ? [
-        ["Goals", rules.goals],
-        ["Shots", rules.shots],
-        ["Saves", rules.saves],
-        ["Assists", rules.assists],
-        ["Demos Inflicted", rules.demosInflicted],
-        ["Demos Taken", rules.demosTaken],
-        ["Game Win", rules.gameWin],
-        ["Game Loss", rules.gameLoss],
+        ["Goal", rules.goals],
+        ["Goal Against", rules.goalsAgainst],
+        ["Shot", rules.shots],
+        ["Shot Against", rules.shotsAgainst],
+        ["Save", rules.saves],
+        ["Assist", rules.assists],
+        ["Demo Inflicted", rules.demosInflicted],
+        ["Demo Taken", rules.demosTaken],
+        ["Game Won", rules.gameWin],
+        ["Game Lost", rules.gameLoss],
       ]
     : [];
 
@@ -157,6 +163,19 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           <>
+            <p
+              style={{
+                fontSize: "0.8rem",
+                color: "var(--text-muted)",
+                marginBottom: "0.6rem",
+              }}
+            >
+              Points for each one an MLE team gets in a week, in the mode
+              it&apos;s scored for. Games are counted individually: a series
+              won 3-2 is 3 games won and 2 lost. A forfeit usually counts as
+              5-0, so the winner gets 5 games won and the forfeiting team 5
+              games lost.
+            </p>
             <table
               style={{
                 width: "100%",
@@ -498,8 +517,9 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
         <Section title="Scoring">
           <p>
             Fantasy points come from each MLE team&apos;s match stats that week:
-            goals, shots, saves, assists, demos inflicted/taken, their Sprocket
-            Rating, and a bonus for series wins/losses. Leagues can also enable{" "}
+            goals and goals against, shots and shots against, saves, assists,
+            demos inflicted/taken, their Sprocket Rating, and every game they
+            win or lose. Leagues can also enable{" "}
             <strong>Double Win</strong>: on top of your head-to-head result, the
             top half of teams by score each week get a bonus win and the bottom
             half get a bonus loss.

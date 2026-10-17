@@ -205,12 +205,16 @@ model TeamWeeklyStats {
   week           Int
   gamemode       String
   goals          Int
+  // Goals and shots the opponents scored/took against this team that week
+  goalsAgainst   Int     @default(0)
   shots          Int
+  shotsAgainst   Int     @default(0)
   saves          Int
   assists        Int
   demosInflicted Int
   demosTaken     Int
   sprocketRating Float
+  // Individual games won/lost (a series won 3-2 is 3 wins, 2 losses; a forfeit is usually 5-0)
   wins           Int
   losses         Int
   team           MLETeam @relation(fields: [teamId], references: [id])
@@ -490,7 +494,9 @@ model ManualStatsOverride {
   week           Int
   gamemode       String
   goals          Int
+  goalsAgainst   Int      @default(0)
   shots          Int
+  shotsAgainst   Int      @default(0)
   saves          Int
   assists        Int
   adminUserId    String

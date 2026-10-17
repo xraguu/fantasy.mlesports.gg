@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { calcFpts, getActiveScoringRules, ScoringRules } from "./scoringService";
+import { calcFpts, getActiveScoringRules, ScoringRules, ScoringStats } from "./scoringService";
 
 export type GamemodeLens = "2s" | "3s" | "combined" | "bestball";
 
@@ -29,21 +29,13 @@ export interface TeamSeasonStatsRow {
   weeksPlayed: number;
 }
 
-type StatsRow = {
-  goals: number;
-  shots: number;
-  saves: number;
-  assists: number;
-  demosInflicted: number;
-  demosTaken: number;
-  sprocketRating: number;
-  wins: number;
-  losses: number;
-};
+type StatsRow = ScoringStats;
 
 const EMPTY_STATS: StatsRow = {
   goals: 0,
+  goalsAgainst: 0,
   shots: 0,
+  shotsAgainst: 0,
   saves: 0,
   assists: 0,
   demosInflicted: 0,
@@ -56,7 +48,9 @@ const EMPTY_STATS: StatsRow = {
 function addStats(a: StatsRow, b: StatsRow): StatsRow {
   return {
     goals: a.goals + b.goals,
+    goalsAgainst: a.goalsAgainst + b.goalsAgainst,
     shots: a.shots + b.shots,
+    shotsAgainst: a.shotsAgainst + b.shotsAgainst,
     saves: a.saves + b.saves,
     assists: a.assists + b.assists,
     demosInflicted: a.demosInflicted + b.demosInflicted,
