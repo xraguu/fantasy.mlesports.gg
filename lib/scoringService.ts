@@ -10,9 +10,12 @@ export interface SprocketRatingRange {
   points: number;
 }
 
+/** Points per stat — every scoring option on Admin → Settings. */
 export interface ScoringRules {
   goals: number;
+  goalsAgainst: number;
   shots: number;
+  shotsAgainst: number;
   saves: number;
   assists: number;
   demosInflicted: number;
@@ -22,9 +25,12 @@ export interface ScoringRules {
   gameLoss: number;
 }
 
+// Used for any option a season hasn't saved; matches the Settings page's defaults
 export const DEFAULT_SCORING_RULES: ScoringRules = {
   goals: 2,
+  goalsAgainst: -2,
   shots: 0.1,
+  shotsAgainst: -0.1,
   saves: 1,
   assists: 1.5,
   demosInflicted: 0.5,
@@ -76,53 +82,67 @@ export async function getActiveScoringRules(season?: number): Promise<ScoringRul
     (currentSeason !== null
       ? await prisma.seasonSettings.findFirst({ where: { season: currentSeason } })
       : await prisma.seasonSettings.findFirst({ orderBy: { season: "desc" } }));
-  const stored = settings?.scoringRules as Partial<ScoringRules> | undefined;
-  if (!stored) return DEFAULT_SCORING_RULES;
+  return withDefaultScoringRules(settings?.scoringRules);
+}
 
-  // Merge over defaults rather than trusting the stored JSON blob's shape
-  // outright — e.g. a row saved before sprocketRatingRanges existed.
+/**
+ * A season's saved scoring rules with any missing option filled in from the
+ * defaults — e.g. a season saved before Goals Against or the Sprocket
+ * Rating ranges existed. Merged over defaults rather than trusting the
+ * stored JSON's shape outright.
+ */
+export function withDefaultScoringRules(stored: unknown): ScoringRules {
+  if (!stored || typeof stored !== "object") return DEFAULT_SCORING_RULES;
+  const rules = stored as Partial<ScoringRules>;
   return {
     ...DEFAULT_SCORING_RULES,
-    ...stored,
+    ...rules,
     sprocketRatingRanges:
-      Array.isArray(stored.sprocketRatingRanges) && stored.sprocketRatingRanges.length > 0
-        ? stored.sprocketRatingRanges
+      Array.isArray(rules.sprocketRatingRanges) && rules.sprocketRatingRanges.length > 0
+        ? rules.sprocketRatingRanges
         : DEFAULT_SCORING_RULES.sprocketRatingRanges,
   };
 }
 
-export function calcFpts(stats: {
+/** One MLE team's stat line for a week (or season) in one game mode. */
+export interface ScoringStats {
   goals: number;
+  goalsAgainst: number;
   shots: number;
+  shotsAgainst: number;
   saves: number;
   assists: number;
   demosInflicted: number;
   demosTaken: number;
   sprocketRating: number;
-  wins: number;
-}, rules: ScoringRules): number {
+  wins: number; // individual games won
+  losses: number; // individual games lost
+}
+
+/**
+ * Fantasy points for a stat line: each stat times its point value, plus the
+ * Sprocket Rating bonus. Uses every scoring option in Admin → Settings — keep
+ * it that way when an option is added there. A forfeit counts too: its
+ * stats are all 0, so the winner scores its game wins (e.g. 5 × Game Win)
+ * and the forfeiting team its game losses (5 × Game Loss).
+ */
+export function calcFpts(stats: ScoringStats, rules: ScoringRules): number {
   return (
     stats.goals * rules.goals +
+    stats.goalsAgainst * rules.goalsAgainst +
     stats.shots * rules.shots +
+    stats.shotsAgainst * rules.shotsAgainst +
     stats.saves * rules.saves +
     stats.assists * rules.assists +
     stats.demosInflicted * rules.demosInflicted +
     stats.demosTaken * rules.demosTaken +
     sprocketRatingBonus(stats.sprocketRating, rules.sprocketRatingRanges) +
-    stats.wins * rules.gameWin
+    stats.wins * rules.gameWin +
+    stats.losses * rules.gameLoss
   );
 }
 
-type WeeklyStatsRow = {
-  goals: number;
-  shots: number;
-  saves: number;
-  assists: number;
-  demosInflicted: number;
-  demosTaken: number;
-  sprocketRating: number;
-  wins: number;
-};
+type WeeklyStatsRow = ScoringStats;
 
 /**
  * Resolves a roster slot's fantasy points for the week from its team's 2s/3s

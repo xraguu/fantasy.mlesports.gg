@@ -8,6 +8,7 @@ import {
   LEAGUE_NAME_TO_ID,
   PLAYER_GAMEMODE_TO_KEY,
   MATCH_GAMEMODE_TO_KEY,
+  PLAYERS_PER_TEAM,
 } from "./sprocketStats";
 import { getCurrentSeasonWeek } from "./currentWeek";
 
@@ -635,8 +636,13 @@ async function importHistorical(getCsv: ReturnType<typeof createCsvCache>): Prom
   const teamUpdates: UpdateRow[] = [];
   for (const [key, agg] of aggs) {
     const { ratingWeighted, teamId, season, gamemode, ...totals } = agg;
+    const players = PLAYERS_PER_TEAM[gamemode] ?? 1;
     const fields = {
       ...totals,
+      // A player's goals/shots against is the whole team's figure, so adding
+      // up the players counts it once per player on the field
+      goalsAgainst: Math.round(totals.goalsAgainst / players),
+      shotsAgainst: Math.round(totals.shotsAgainst / players),
       sprocketRating: agg.gamesPlayed > 0 ? ratingWeighted / agg.gamesPlayed : 0,
       ...(records.get(key) ?? { seriesWins: 0, seriesLosses: 0, gameWins: 0, gameLosses: 0 }),
     };
@@ -678,7 +684,13 @@ async function importWeekly(): Promise<Omit<CsvImportResult, "key" | "label">> {
       { label: "Manual Overrides", value: result.manualOverrides },
       { label: "Skipped", value: result.skipped },
     ],
-    notes: [`Season ${current.season}, week ${current.week}.`, ...result.errors],
+    notes: [
+      `Season ${current.season}, week ${current.week}.`,
+      ...result.resultOnlyMatches.map(
+        (m) => `Counted from the result alone (forfeit, or replays not uploaded yet): ${m}`
+      ),
+      ...result.errors,
+    ],
   };
 }
 

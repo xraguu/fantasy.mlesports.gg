@@ -35,7 +35,9 @@ interface ManualOverride {
   week: number;
   gamemode: string;
   goals: number;
+  goalsAgainst: number;
   shots: number;
+  shotsAgainst: number;
   saves: number;
   assists: number;
   demosInflicted: number;
@@ -116,7 +118,9 @@ export default function ManualStatsPage() {
     week: 1,
     gamemode: "2s",
     goals: 0,
+    goalsAgainst: 0,
     shots: 0,
+    shotsAgainst: 0,
     saves: 0,
     assists: 0,
     demosInflicted: 0,
@@ -175,7 +179,9 @@ export default function ManualStatsPage() {
           week: 1,
           gamemode: "2s",
           goals: 0,
+          goalsAgainst: 0,
           shots: 0,
+          shotsAgainst: 0,
           saves: 0,
           assists: 0,
           demosInflicted: 0,
@@ -592,12 +598,52 @@ export default function ManualStatsPage() {
 
               <div>
                 <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                  Goals Against
+                </label>
+                <input
+                  type="number"
+                  value={manualFormData.goalsAgainst}
+                  onChange={(e) => setManualFormData({ ...manualFormData, goalsAgainst: parseInt(e.target.value) || 0 })}
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "6px",
+                    color: "var(--text-main)",
+                    fontSize: "0.9rem",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
                   Shots
                 </label>
                 <input
                   type="number"
                   value={manualFormData.shots}
                   onChange={(e) => setManualFormData({ ...manualFormData, shots: parseInt(e.target.value) || 0 })}
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "6px",
+                    color: "var(--text-main)",
+                    fontSize: "0.9rem",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                  Shots Against
+                </label>
+                <input
+                  type="number"
+                  value={manualFormData.shotsAgainst}
+                  onChange={(e) => setManualFormData({ ...manualFormData, shotsAgainst: parseInt(e.target.value) || 0 })}
                   style={{
                     width: "100%",
                     padding: "0.75rem",
@@ -765,7 +811,9 @@ export default function ManualStatsPage() {
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Week</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Goals</th>
+                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="GA" full="Goals Against" /></th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Shots</th>
+                    <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="SA" full="Shots Against" /></th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Saves</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Assists</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}><HeaderTooltip label="D.Inf" full="Demos Inflicted" /></th>
@@ -790,7 +838,13 @@ export default function ManualStatsPage() {
                           {override.goals}
                         </td>
                         <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
+                          {override.goalsAgainst}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                           {override.shots}
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
+                          {override.shotsAgainst}
                         </td>
                         <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                           {override.saves}

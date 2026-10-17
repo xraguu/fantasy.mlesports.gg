@@ -660,12 +660,15 @@ async function importTeamHistoricalStats() {
     const sprocketRating = agg.gamesPlayed > 0 ? agg.sprocketRatingWeighted / agg.gamesPlayed : 0;
     const record = seriesRecords.get(key) ?? { seriesWins: 0, seriesLosses: 0, gameWins: 0, gameLosses: 0 };
 
+    // A player's goals/shots against is the whole team's figure, so adding
+    // up the players counts it once per player on the field (2 in 2s, 3 in 3s)
+    const players = agg.gamemode === "2s" ? 2 : 3;
     const sharedFields = {
       gamesPlayed: agg.gamesPlayed,
       goals: agg.goals,
-      goalsAgainst: agg.goalsAgainst,
+      goalsAgainst: Math.round(agg.goalsAgainst / players),
       shots: agg.shots,
-      shotsAgainst: agg.shotsAgainst,
+      shotsAgainst: Math.round(agg.shotsAgainst / players),
       saves: agg.saves,
       assists: agg.assists,
       demosInflicted: agg.demosInflicted,

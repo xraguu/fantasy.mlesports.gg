@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { getAvailableHistoricalSeasons } from "@/lib/teamHistoricalStats";
 import { getCurrentSeason } from "@/lib/currentWeek";
+import { DEFAULT_SCORING_RULES, withDefaultScoringRules } from "@/lib/scoringService";
 
 // GET /api/admin/settings - Get current season settings
 export async function GET(request: NextRequest) {
@@ -62,23 +63,7 @@ export async function GET(request: NextRequest) {
             matchStart: "",
             weekEnd: "",
           })),
-          scoringRules: {
-            goals: 2,
-            shots: 0.1,
-            saves: 1,
-            assists: 1.5,
-            demosInflicted: 0.5,
-            demosTaken: -0.5,
-            sprocketRatingRanges: [
-              { min: 0, max: 30, points: 0 },
-              { min: 31, max: 50, points: 5 },
-              { min: 51, max: 70, points: 10 },
-              { min: 71, max: 90, points: 15 },
-              { min: 91, max: 100, points: 20 },
-            ],
-            gameWin: 10,
-            gameLoss: 0,
-          },
+          scoringRules: DEFAULT_SCORING_RULES,
           waiverSchedule: [
             { day: "Wednesday", time: "03:00" },
             { day: "Sunday", time: "03:00" },
@@ -94,7 +79,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       isNew: false,
       editingSeason: season,
-      settings,
+      // Any scoring option this season hasn't saved yet shows its default
+      settings: { ...settings, scoringRules: withDefaultScoringRules(settings.scoringRules) },
       availableHistoricalSeasons,
       availableLeagueSeasons,
       currentSeason,
