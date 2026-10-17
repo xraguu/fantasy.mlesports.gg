@@ -8,7 +8,6 @@ interface TeamStats {
   saves: number;
   assists: number;
   demosInflicted: number;
-  demosTaken: number;
   sprocketRating: number;
 }
 
@@ -47,14 +46,17 @@ interface MLEMatchDetailsModalProps {
   isLoading: boolean;
 }
 
-const STAT_COLUMNS = ["G", "Sh", "Sv", "A", "DI", "DT", "SR"];
+// Goals, shots, saves, assists, demos inflicted, Sprocket Rating — one per
+// StatValueRow cell below, in the same order
+const STAT_COLUMNS = ["G", "Sh", "Sv", "A", "DI", "SR"];
+const STAT_GRID = `repeat(${STAT_COLUMNS.length}, minmax(0, 1fr))`;
 
 function StatHeaderRow({ align }: { align: "left" | "right" }) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+        gridTemplateColumns: STAT_GRID,
         gap: "0.4rem",
         fontSize: "0.7rem",
         fontWeight: 600,
@@ -76,7 +78,7 @@ function StatValueRow({ stats, align }: { stats: TeamStats; align: "left" | "rig
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+        gridTemplateColumns: STAT_GRID,
         gap: "0.4rem",
         fontSize: "0.85rem",
         color: "rgba(255,255,255,0.9)",
@@ -88,7 +90,6 @@ function StatValueRow({ stats, align }: { stats: TeamStats; align: "left" | "rig
       <span>{stats.saves}</span>
       <span>{stats.assists}</span>
       <span>{stats.demosInflicted}</span>
-      <span>{stats.demosTaken}</span>
       <span>{stats.sprocketRating.toFixed(1)}</span>
     </div>
   );
