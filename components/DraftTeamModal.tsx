@@ -43,9 +43,11 @@ interface TeamHistoricalStats {
   goals: number;
   goalsAgainst: number;
   shots: number;
+  shotsAgainst: number;
   assists: number;
   saves: number;
   demosInflicted: number;
+  demosTaken: number;
   gameRecord: string;
   seriesRecord: string;
 }
@@ -436,9 +438,12 @@ export default function DraftTeamModal({
                   { label: "Goals", value: historicalStats.goals },
                   { label: "Goals Against", value: historicalStats.goalsAgainst },
                   { label: "Shots", value: historicalStats.shots },
+                  { label: "Shots Against", value: historicalStats.shotsAgainst },
                   { label: "Assists", value: historicalStats.assists },
                   { label: "Saves", value: historicalStats.saves },
                   { label: "Demos", value: historicalStats.demosInflicted },
+                  // Demos Taken (scored as Demo Taken), named to pair with Demos
+                  { label: "Demos Against", value: historicalStats.demosTaken },
                   { label: "Game Record", value: historicalStats.gameRecord },
                   { label: "Series Record", value: historicalStats.seriesRecord },
                 ].map((stat) => (
