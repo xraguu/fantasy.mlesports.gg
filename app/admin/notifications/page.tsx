@@ -49,11 +49,16 @@ const formatTime = (iso: string) =>
 // Discord-style **bold** shown as plain text in the log
 const plain = (text: string) => text.replace(/\*\*/g, "");
 
+const PAGE_SIZE = 10;
+type StatusFilter = "all" | "sent" | "failed" | "pending" | "sending" | "expired";
+
 export default function AdminNotificationsPage() {
   const [data, setData] = useState<NotificationsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [sendingTest, setSendingTest] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -94,6 +99,17 @@ export default function AdminNotificationsPage() {
   }
 
   const count = (status: string) => data.last7Days[status] ?? 0;
+
+  const filtered =
+    statusFilter === "all" ? data.recent : data.recent.filter((n) => n.status === statusFilter);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageItems = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+
+  const selectFilter = (next: StatusFilter) => {
+    setStatusFilter(next);
+    setPage(0);
+  };
 
   return (
     <div>
@@ -150,11 +166,31 @@ export default function AdminNotificationsPage() {
           </button>
         </div>
 
-        {data.recent.length === 0 ? (
-          <div style={{ color: "var(--text-muted)", padding: "1.5rem 0" }}>No messages yet.</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1.1rem" }}>
+          {(["all", "sent", "failed", "pending", "sending", "expired"] as const).map((status) => {
+            const label = status === "all" ? "All" : STATUS_LABELS[status];
+            const n = status === "all" ? data.recent.length : data.recent.filter((r) => r.status === status).length;
+            const active = statusFilter === status;
+            return (
+              <button
+                key={status}
+                onClick={() => selectFilter(status)}
+                className={active ? "btn btn-primary" : "btn btn-ghost"}
+                style={{ padding: "0.35rem 0.8rem", fontSize: "0.8rem", fontWeight: 600 }}
+              >
+                {label} ({n})
+              </button>
+            );
+          })}
+        </div>
+
+        {filtered.length === 0 ? (
+          <div style={{ color: "var(--text-muted)", padding: "1.5rem 0" }}>
+            {data.recent.length === 0 ? "No messages yet." : "No messages match this filter."}
+          </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {data.recent.map((n) => (
+            {pageItems.map((n) => (
               <div
                 key={n.id}
                 style={{
@@ -199,6 +235,30 @@ export default function AdminNotificationsPage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {filtered.length > PAGE_SIZE && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "1rem", marginTop: "1.25rem" }}>
+            <button
+              className="btn btn-ghost"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem" }}
+            >
+              ‹ Prev
+            </button>
+            <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+              Page {safePage + 1} of {pageCount}
+            </span>
+            <button
+              className="btn btn-ghost"
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              disabled={safePage >= pageCount - 1}
+              style={{ padding: "0.4rem 0.9rem", fontSize: "0.85rem" }}
+            >
+              Next ›
+            </button>
           </div>
         )}
       </div>
