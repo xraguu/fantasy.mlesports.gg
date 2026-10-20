@@ -226,6 +226,77 @@ export function aggregateTeamWeekStats(
   return [...teamAggMap.values()];
 }
 
+/** One player's totals for a week in one game mode, before it's matched to a database player. */
+export interface PlayerWeekAggregate {
+  memberId: string;
+  leagueCode: string;
+  teamName: string;
+  gamemode: "2s" | "3s";
+  goals: number;
+  shots: number;
+  saves: number;
+  assists: number;
+  demosInflicted: number;
+  demosTaken: number;
+  gpiSum: number;
+  roundCount: number;
+}
+
+/**
+ * Adds a week's player stats up into per-player totals per game mode — the
+ * player-level counterpart to aggregateTeamWeekStats above, from the exact
+ * same rows. Win/loss isn't computed here: a player doesn't have a result
+ * independent of their team's game outcome for that round, so callers
+ * attribute each player's week record from their team's aggregate instead
+ * (see aggregateTeamWeekStats's `wins`/`losses`, keyed the same way via
+ * leagueCode/teamName/gamemode).
+ */
+export function aggregatePlayerWeekStats(
+  weekPlayerStats: SprocketPlayerStat[]
+): PlayerWeekAggregate[] {
+  const playerAggMap = new Map<string, PlayerWeekAggregate>();
+  const getAgg = (memberId: string, leagueCode: string, teamName: string, gamemode: "2s" | "3s") => {
+    const key = `${memberId}:${gamemode}`;
+    let agg = playerAggMap.get(key);
+    if (!agg) {
+      agg = {
+        memberId,
+        leagueCode,
+        teamName,
+        gamemode,
+        goals: 0,
+        shots: 0,
+        saves: 0,
+        assists: 0,
+        demosInflicted: 0,
+        demosTaken: 0,
+        gpiSum: 0,
+        roundCount: 0,
+      };
+      playerAggMap.set(key, agg);
+    }
+    return agg;
+  };
+
+  for (const stat of weekPlayerStats) {
+    const leagueCode = LEAGUE_NAME_TO_ID[stat.skill_group];
+    const gamemode = PLAYER_GAMEMODE_TO_KEY[stat.gamemode];
+    if (!leagueCode || !gamemode || !stat.member_id) continue;
+
+    const agg = getAgg(stat.member_id, leagueCode, stat.team_name, gamemode);
+    agg.goals += parseFloat(stat.goals) || 0;
+    agg.shots += parseFloat(stat.shots) || 0;
+    agg.saves += parseFloat(stat.saves) || 0;
+    agg.assists += parseFloat(stat.assists) || 0;
+    agg.demosInflicted += parseFloat(stat.demos_inflicted) || 0;
+    agg.demosTaken += parseFloat(stat.demos_taken) || 0;
+    agg.gpiSum += parseFloat(stat.gpi) || 0;
+    agg.roundCount += 1;
+  }
+
+  return [...playerAggMap.values()];
+}
+
 /** "PL Outlaws 0-5 Express (2s)", for import notes. */
 function describeMatch(m: SprocketMatch): string {
   const league = LEAGUE_NAME_TO_ID[m.league] ?? m.league;
@@ -473,6 +544,61 @@ export async function importSprocketStatsForWeek(
       goals: statsToWrite.goals,
       wins: statsToWrite.wins,
       isManualOverride: !!override,
+    });
+  }
+
+  // 7. Same week's player stats, aggregated per player and saved the same
+  // way — lets the Team modal's roster table show real current-season
+  // numbers instead of only ever showing last season's PlayerHistoricalStats.
+  // Independent of manual team-level overrides above (those correct a
+  // team's aggregate total; there's no equivalent per-player override, so
+  // player rows always reflect the raw Sprocket data).
+  const playerAggregates = aggregatePlayerWeekStats(weekPlayerStats);
+  const teamRecordByKey = new Map(
+    aggregates.map((agg) => [`${agg.leagueCode}:${agg.teamName}:${agg.gamemode}`, agg])
+  );
+  const mlePlayers = await prisma.mLEPlayer.findMany({
+    where: { memberId: { not: null } },
+    select: { id: true, memberId: true },
+  });
+  const playerIdByMemberId = new Map(mlePlayers.map((p) => [p.memberId!, p.id]));
+
+  for (const agg of playerAggregates) {
+    const playerId = playerIdByMemberId.get(agg.memberId);
+    if (!playerId) continue;
+
+    // A player's week record mirrors their team's — individual players
+    // don't have a result independent of their team's game outcome.
+    const teamRecord = teamRecordByKey.get(`${agg.leagueCode}:${agg.teamName}:${agg.gamemode}`);
+
+    await prisma.playerWeeklyStats.upsert({
+      where: { playerId_season_week_gamemode: { playerId, season, week, gamemode: agg.gamemode } },
+      update: {
+        goals: Math.round(agg.goals),
+        shots: Math.round(agg.shots),
+        saves: Math.round(agg.saves),
+        assists: Math.round(agg.assists),
+        demosInflicted: Math.round(agg.demosInflicted),
+        demosTaken: Math.round(agg.demosTaken),
+        sprocketRating: agg.roundCount > 0 ? Math.round((agg.gpiSum / agg.roundCount) * 100) / 100 : 0,
+        wins: teamRecord?.wins ?? 0,
+        losses: teamRecord?.losses ?? 0,
+      },
+      create: {
+        playerId,
+        season,
+        week,
+        gamemode: agg.gamemode,
+        goals: Math.round(agg.goals),
+        shots: Math.round(agg.shots),
+        saves: Math.round(agg.saves),
+        assists: Math.round(agg.assists),
+        demosInflicted: Math.round(agg.demosInflicted),
+        demosTaken: Math.round(agg.demosTaken),
+        sprocketRating: agg.roundCount > 0 ? Math.round((agg.gpiSum / agg.roundCount) * 100) / 100 : 0,
+        wins: teamRecord?.wins ?? 0,
+        losses: teamRecord?.losses ?? 0,
+      },
     });
   }
 

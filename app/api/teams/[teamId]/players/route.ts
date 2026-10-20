@@ -1,9 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentSeasonWeek } from "@/lib/currentWeek";
+
+type WeekRow = {
+  goals: number;
+  shots: number;
+  saves: number;
+  assists: number;
+  demosInflicted: number;
+  wins: number;
+  losses: number;
+};
+
+/** Sums a player's PlayerWeeklyStats rows for one gamemode into the same shape the Team modal's roster table expects. */
+function sumWeeks(rows: WeekRow[]) {
+  if (rows.length === 0) return null;
+  return {
+    totalGoals: rows.reduce((sum, r) => sum + r.goals, 0),
+    totalShots: rows.reduce((sum, r) => sum + r.shots, 0),
+    totalSaves: rows.reduce((sum, r) => sum + r.saves, 0),
+    totalAssists: rows.reduce((sum, r) => sum + r.assists, 0),
+    totalDemosInflicted: rows.reduce((sum, r) => sum + r.demosInflicted, 0),
+    // Real games played, not weeks played — a week can be a multi-game series.
+    gamesPlayed: rows.reduce((sum, r) => sum + r.wins + r.losses, 0),
+  };
+}
 
 /**
  * GET /api/teams/[teamId]/players
- * Get all players for a specific MLE team
+ * Get all players for a specific MLE team, each with their CURRENT-season
+ * stats (summed PlayerWeeklyStats through the real current week) — not
+ * last season's PlayerHistoricalStats. Before the season actually starts
+ * (or for a player with no weeks recorded yet), stats come back null, same
+ * as always — the Team modal already renders that as empty/dashes.
  */
 export async function GET(
   req: NextRequest,
@@ -42,45 +71,30 @@ export async function GET(
       },
     });
 
-    // Get historical stats for each player (we'll aggregate them for current season)
-    const playersWithStats = await Promise.all(
-      players.map(async (player) => {
-        // Get the most recent REGULAR SEASON stats for both game modes.
-        // Season labels are free text like "Season 19" / "Season 19
-        // Playoffs" — excluding "Playoffs" rows here matters because
-        // "Season 19 Playoffs" sorts ahead of "Season 19" in a plain
-        // string ORDER BY DESC, which was silently showing a player's much
-        // smaller playoffs sample (sometimes 0 games in a mode) mislabeled
-        // as their season totals.
-        const doublesStats = await prisma.playerHistoricalStats.findFirst({
-          where: {
-            playerId: player.id,
-            gamemode: "RL_DOUBLES",
-            NOT: { season: { contains: "Playoffs" } },
-          },
-          orderBy: {
-            season: "desc",
-          },
-        });
+    const current = await getCurrentSeasonWeek();
 
-        const standardStats = await prisma.playerHistoricalStats.findFirst({
-          where: {
-            playerId: player.id,
-            gamemode: "RL_STANDARD",
-            NOT: { season: { contains: "Playoffs" } },
-          },
-          orderBy: {
-            season: "desc",
-          },
-        });
+    const weeklyByPlayer = new Map<string, WeekRow[]>();
+    if (current && players.length > 0) {
+      const weeklyRows = await prisma.playerWeeklyStats.findMany({
+        where: {
+          playerId: { in: players.map((p) => p.id) },
+          season: current.season,
+          week: { lte: current.week },
+        },
+        select: { playerId: true, gamemode: true, goals: true, shots: true, saves: true, assists: true, demosInflicted: true, wins: true, losses: true },
+      });
+      for (const row of weeklyRows) {
+        const key = `${row.playerId}:${row.gamemode}`;
+        if (!weeklyByPlayer.has(key)) weeklyByPlayer.set(key, []);
+        weeklyByPlayer.get(key)!.push(row);
+      }
+    }
 
-        return {
-          ...player,
-          doublesStats: doublesStats || null,
-          standardStats: standardStats || null,
-        };
-      })
-    );
+    const playersWithStats = players.map((player) => ({
+      ...player,
+      doublesStats: sumWeeks(weeklyByPlayer.get(`${player.id}:2s`) ?? []),
+      standardStats: sumWeeks(weeklyByPlayer.get(`${player.id}:3s`) ?? []),
+    }));
 
     return NextResponse.json({
       team: {
@@ -89,6 +103,7 @@ export async function GET(
         leagueId: team.leagueId,
       },
       players: playersWithStats,
+      currentSeasonWeek: current,
     });
   } catch (error) {
     console.error("Error fetching team players:", error);

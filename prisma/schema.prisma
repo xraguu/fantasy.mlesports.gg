@@ -113,7 +113,38 @@ model MLEPlayer {
   team            MLETeam?                @relation(fields: [teamId], references: [id])
   historicalStats PlayerHistoricalStats[]
   matchStats      PlayerMatchStats[]
+  weeklyStats     PlayerWeeklyStats[]
   roleUsages      RoleUsage[]
+}
+
+// Live current-season per-player stats, one row per (player, week, gamemode)
+// — the player-level counterpart to TeamWeeklyStats, filled in by the same
+// weekly Sprocket import (lib/sprocketStats.ts) from the same player_stats
+// CSV rows it already aggregates up to team totals. Lets the Team modal's
+// roster table show real current-season numbers once the season is
+// actually underway, instead of only ever showing last season's
+// PlayerHistoricalStats. wins/losses mirror the player's team's game
+// record for that week (individual players don't have a separable
+// win/loss independent of their team's result for a game).
+model PlayerWeeklyStats {
+  id             String    @id @default(cuid())
+  playerId       String
+  season         Int
+  week           Int
+  gamemode       String
+  goals          Int
+  shots          Int
+  saves          Int
+  assists        Int
+  demosInflicted Int
+  demosTaken     Int
+  sprocketRating Float
+  wins           Int
+  losses         Int
+  player         MLEPlayer @relation(fields: [playerId], references: [id])
+
+  @@unique([playerId, season, week, gamemode])
+  @@index([season, week, gamemode])
 }
 
 model RoleUsage {
