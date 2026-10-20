@@ -255,13 +255,22 @@ export async function GET(
 
       const place = base?.rank ?? 0;
 
-      // Get last and current matchup
+      // "Current Matchup" is whichever real Matchup row exists for the
+      // league's actual current week — it's supposed to show the live/
+      // in-progress game, which by definition doesn't have a final score
+      // yet (right after a draft, nothing does). Filtering it through the
+      // "already scored" list — the old behavior — made it disappear
+      // entirely until the first week was scored. "Last Matchup" stays
+      // limited to an actually-scored week before the current one, since
+      // it's meant to show a real result.
       const sortedMatchups = matchups
         .filter((m) => m.homeScore !== null && m.awayScore !== null)
         .sort((a, b) => a.week - b.week);
 
-      const lastMatchup = sortedMatchups[sortedMatchups.length - 2];
-      const currentMatchup = sortedMatchups[sortedMatchups.length - 1];
+      const lastMatchup = sortedMatchups
+        .filter((m) => m.week < league.currentWeek)
+        .sort((a, b) => b.week - a.week)[0];
+      const currentMatchup = matchups.find((m) => m.week === league.currentWeek);
 
       // Create a map of filled roster slots by position
       const filledSlots = new Map<string, (typeof rosterSlots)[0]>();

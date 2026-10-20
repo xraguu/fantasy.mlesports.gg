@@ -117,10 +117,22 @@ export async function GET(
     // playoff game while one's in progress.
     const gamesPlayed = sortedMyMatchups.filter((m) => !m.isPlayoff).length;
     const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
-    const lastMatchupRow = sortedMyMatchups[sortedMyMatchups.length - 2];
-    const currentMatchupRow = sortedMyMatchups[sortedMyMatchups.length - 1];
 
-    const toMatchupSummary = (m: typeof lastMatchupRow) =>
+    // "Current Matchup" is whichever real Matchup row exists for the
+    // league's actual current week — it's supposed to show the live/
+    // in-progress game, which by definition doesn't have a final score yet
+    // (right after a draft, nothing does). Filtering it through
+    // sortedMyMatchups' "already scored" list — the old behavior — made it
+    // disappear entirely until the first week was scored, surfacing as "No
+    // Matchup Data available" right when a manager most wants to see who
+    // they're playing. "Last Matchup" stays limited to an actually-scored
+    // week before the current one, since it's meant to show a real result.
+    const currentMatchupRow = myMatchups.find((m) => m.week === fantasyTeam.league.currentWeek);
+    const lastMatchupRow = sortedMyMatchups
+      .filter((m) => m.week < fantasyTeam.league.currentWeek)
+      .sort((a, b) => b.week - a.week)[0];
+
+    const toMatchupSummary = (m: typeof currentMatchupRow) =>
       m
         ? {
             id: m.id,
