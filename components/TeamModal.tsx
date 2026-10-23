@@ -11,6 +11,7 @@ interface PlayerWithStats {
   id: string;
   name: string;
   skillGroup: string | null;
+  salary: number | null; // from players.csv's "salary" column (Players & Franchise Staff import)
   doublesStats: {
     totalGoals: number;
     totalShots: number;
@@ -324,6 +325,15 @@ export default function TeamModal({
   };
 
   const sortedPlayers = [...players].sort((a, b) => {
+    // Salary doesn't depend on the 2s/3s stats, so it sorts every player
+    // (no salary sorts last)
+    if (playerSortColumn === "salary") {
+      const aSalary = a.salary ?? -Infinity;
+      const bSalary = b.salary ?? -Infinity;
+      if (aSalary === bSalary) return 0;
+      return playerSortDirection === "asc" ? (aSalary < bSalary ? -1 : 1) : aSalary > bSalary ? -1 : 1;
+    }
+
     const stats = gameMode === "2s" ? "doublesStats" : "standardStats";
     const aStats = a[stats];
     const bStats = b[stats];
@@ -808,6 +818,21 @@ export default function TeamModal({
                     Player
                   </th>
                   <th
+                    onClick={() => handlePlayerSort("salary")}
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "right",
+                      fontSize: "0.85rem",
+                      color: "rgba(255,255,255,0.9)",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    Salary
+                    <PlayerSortIcon column="salary" />
+                  </th>
+                  <th
                     onClick={() => handlePlayerSort("goals")}
                     style={{
                       padding: "0.75rem 1rem",
@@ -899,7 +924,7 @@ export default function TeamModal({
                 {loadingPlayers ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -912,7 +937,7 @@ export default function TeamModal({
                 ) : sortedPlayers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -959,6 +984,16 @@ export default function TeamModal({
                           }
                         >
                           {player.name}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "right",
+                            fontSize: "0.9rem",
+                            color: "rgba(255,255,255,0.95)",
+                          }}
+                        >
+                          {player.salary != null ? player.salary.toFixed(1) : "—"}
                         </td>
                         <td
                           style={{
