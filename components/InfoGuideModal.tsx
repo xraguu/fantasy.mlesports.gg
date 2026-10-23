@@ -555,8 +555,10 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
 
         <Section title="Trades">
           <p>
-            Propose a trade with another manager from their team page. Once they
-            accept, it doesn&apos;t execute immediately — there&apos;s a 12-hour
+            Propose a trade with another manager from their team page. In leagues
+            on FAAB waivers, either side can also send FAAB, in whole dollars up
+            to what they have, but every trade has to include at least one team.
+            Once they accept, it doesn&apos;t execute immediately — there&apos;s a 12-hour
             window where a league admin can veto it. If nobody vetoes, it
             executes automatically. If a team in the trade becomes locked during
             that window, the trade is cancelled instead of going through. Trades

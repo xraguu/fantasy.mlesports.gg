@@ -414,6 +414,10 @@ model Trade {
   // would overflow the receiver's roster; accepting it is what surfaces the
   // "pick teams to drop" prompt, mirroring proposerDrops' role on the other side.
   receiverDrops   String[]      @default([])
+  // FAAB dollars each side sends to the other (FAAB waiver leagues only;
+  // 0 = none). Moved between the teams' faabRemaining when the trade executes.
+  proposerFaab    Int           @default(0)
+  receiverFaab    Int           @default(0)
   status          String        @default("pending")
   acceptedAt      DateTime?
   executedAt      DateTime?

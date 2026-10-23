@@ -7,6 +7,7 @@ import TeamModal from "@/components/TeamModal";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
 import { formatEasternDateTime } from "@/lib/timezone";
+import { formatFaab } from "@/lib/tradeFaab";
 
 // Types
 interface StatBundle {
@@ -106,6 +107,7 @@ interface TradeParty {
   teamId: string;
   teamName: string;
   managerName: string;
+  faab: number; // FAAB dollars this side sends (0 = none)
   gives: TeamSummary[];
 }
 
@@ -2974,6 +2976,20 @@ export default function MyRosterPage() {
                                 </span>
                               </div>
                             ))}
+                            {trade.proposer.faab > 0 && (
+                              <div
+                                style={{
+                                  padding: "0.5rem",
+                                  background: "rgba(255,255,255,0.05)",
+                                  borderRadius: "6px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 700,
+                                  color: "var(--accent)",
+                                }}
+                              >
+                                {formatFaab(trade.proposer.faab)}
+                              </div>
+                            )}
                           </div>
 
                           {trade.proposer.drops &&
@@ -3125,6 +3141,20 @@ export default function MyRosterPage() {
                                 </span>
                               </div>
                             ))}
+                            {trade.receiver.faab > 0 && (
+                              <div
+                                style={{
+                                  padding: "0.5rem",
+                                  background: "rgba(255,255,255,0.05)",
+                                  borderRadius: "6px",
+                                  fontSize: "0.9rem",
+                                  fontWeight: 700,
+                                  color: "var(--accent)",
+                                }}
+                              >
+                                {formatFaab(trade.receiver.faab)}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

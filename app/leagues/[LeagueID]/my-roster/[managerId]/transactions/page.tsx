@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
+import { formatFaab } from "@/lib/tradeFaab";
 
 interface TeamRef {
   id: string;
@@ -33,6 +34,8 @@ interface Transaction {
   receiverGivesTeams?: TeamRef[];
   proposerDropsTeams?: TeamRef[];
   receiverDropsTeams?: TeamRef[];
+  proposerFaab?: number; // FAAB dollars each side sends (0 = none)
+  receiverFaab?: number;
   // Waiver/FA fields
   addTeam?: TeamRef | null;
   dropTeam?: TeamRef | null;
@@ -447,6 +450,12 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.receiverFaab ?? 0) > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+                            <span style={{ fontSize: "1rem", color: "#22c55e", fontWeight: 700 }}>+</span>
+                            <span style={{ fontSize: "0.85rem", color: "white" }}>{formatFaab(transaction.receiverFaab ?? 0)}</span>
+                          </div>
+                        )}
                         {(transaction.proposerDropsTeams ?? []).length > 0 && (
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
                             {(transaction.proposerDropsTeams ?? []).map((team) => (
@@ -473,6 +482,12 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.proposerFaab ?? 0) > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.5rem" }}>
+                            <span style={{ fontSize: "1rem", color: "#22c55e", fontWeight: 700 }}>+</span>
+                            <span style={{ fontSize: "0.85rem", color: "white" }}>{formatFaab(transaction.proposerFaab ?? 0)}</span>
+                          </div>
+                        )}
                         {(transaction.receiverDropsTeams ?? []).length > 0 && (
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
                             {(transaction.receiverDropsTeams ?? []).map((team) => (

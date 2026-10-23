@@ -10,7 +10,7 @@ Managers draft real MLE teams (not individual players) into 2s, 3s and flex slot
 - **Drafts.** Snake or linear drafts with a pick timer. A manager can turn on autodraft, and the site picks for anyone whose timer runs out.
 - **Rosters and lineups.** Each league sets its number of 2s, 3s, flex and bench slots. Lineups lock automatically when a week's matches start.
 - **Waivers.** FAAB bidding or waiver priority, processed on a schedule the admins set.
-- **Trades.** Managers propose and accept trades, and admins have a 12-hour window to veto each one.
+- **Trades.** Managers propose and accept trades, and admins have a 12-hour window to veto each one. In FAAB leagues, FAAB budget can be traded too.
 - **Scoring.** Stats come from MLE's public Sprocket datasets and refresh every 2 hours. Admins can override a team's stats by hand.
 - **Matchups, standings and playoffs.** Weekly scoreboards, standings, playoff brackets and final standings.
 - **Discord DM notifications.** Optional DMs for draft turns, trades, waiver results, lineup reminders and weekly results. See [Discord notifications](#discord-notifications).

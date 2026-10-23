@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
+import { formatFaab } from "@/lib/tradeFaab";
 
 // Transaction.type is stored distinctly ("trade" / "waiver" / "pickup" /
 // "drop") — this just maps each to its display label/color instead of
@@ -69,6 +70,8 @@ interface PendingTrade {
   receiverGivesTeams: MleTeamSummary[];
   proposerDropsTeams: MleTeamSummary[];
   receiverDropsTeams: MleTeamSummary[];
+  proposerFaab?: number; // FAAB dollars each side sends (0 = none)
+  receiverFaab?: number;
   status: string;
   submitted: string;
   acceptedAt: string | null;
@@ -102,6 +105,8 @@ interface TradeHistoryEntry {
   receiverGivesTeams: MleTeamSummary[];
   proposerDropsTeams: MleTeamSummary[];
   receiverDropsTeams: MleTeamSummary[];
+  proposerFaab?: number;
+  receiverFaab?: number;
   status: string;
   processed: string | null;
   reason: string | null;
@@ -974,6 +979,12 @@ export default function TransactionsPage() {
                         </div>
                       ))}
 
+                      {(trade.proposerFaab ?? 0) > 0 && (
+                        <div style={{ marginBottom: "0.5rem", fontWeight: 700, color: "var(--accent)" }}>
+                          {formatFaab(trade.proposerFaab ?? 0)}
+                        </div>
+                      )}
+
                       {(trade.proposerDropsTeams ?? []).length > 0 && (
                         <>
                           <div
@@ -1053,6 +1064,12 @@ export default function TransactionsPage() {
                           </span>
                         </div>
                       ))}
+
+                      {(trade.receiverFaab ?? 0) > 0 && (
+                        <div style={{ marginBottom: "0.5rem", fontWeight: 700, color: "var(--accent)" }}>
+                          {formatFaab(trade.receiverFaab ?? 0)}
+                        </div>
+                      )}
 
                       {(trade.receiverDropsTeams ?? []).length > 0 && (
                         <>
@@ -1309,6 +1326,12 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.receiverFaab ?? 0) > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.4rem" }}>
+                            <span style={{ fontSize: "0.9rem", color: "#22c55e", fontWeight: 700 }}>+</span>
+                            <span style={{ fontSize: "0.9rem", color: "white" }}>{formatFaab(transaction.receiverFaab ?? 0)}</span>
+                          </div>
+                        )}
                         {(transaction.proposerDropsTeams ?? []).length > 0 && (
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
                             {transaction.proposerDropsTeams.map((team: MleTeamSummary) => (
@@ -1346,6 +1369,12 @@ export default function TransactionsPage() {
                             </div>
                           ))}
                         </div>
+                        {(transaction.proposerFaab ?? 0) > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.4rem" }}>
+                            <span style={{ fontSize: "0.9rem", color: "#22c55e", fontWeight: 700 }}>+</span>
+                            <span style={{ fontSize: "0.9rem", color: "white" }}>{formatFaab(transaction.proposerFaab ?? 0)}</span>
+                          </div>
+                        )}
                         {(transaction.receiverDropsTeams ?? []).length > 0 && (
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.4rem" }}>
                             {transaction.receiverDropsTeams.map((team: MleTeamSummary) => (

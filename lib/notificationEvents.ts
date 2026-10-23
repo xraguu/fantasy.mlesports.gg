@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { escapeDiscordMarkdown } from "@/lib/discord";
 import { formatDuration, queueAdminNotification, queueNotification, siteUrl } from "@/lib/notifications";
 import { formatEasternDateTime } from "@/lib/timezone";
+import { formatFaab } from "@/lib/tradeFaab";
 
 /**
  * Builds and queues the DM for each event the site notifies about. Every
@@ -47,6 +48,13 @@ function teamList(ids: string[], labels: Map<string, string>): string {
     return "nothing";
   }
   return ids.map((id) => `**${labels.get(id) ?? "Unknown team"}**`).join(", ");
+}
+
+/** What one side of a trade sends — its MLE teams plus any FAAB — as a bold list, or "nothing". */
+function tradeSideList(teamIds: string[], faab: number, labels: Map<string, string>): string {
+  const parts = teamIds.map((id) => `**${labels.get(id) ?? "Unknown team"}**`);
+  if (faab > 0) parts.push(`**${formatFaab(faab)}**`);
+  return parts.length > 0 ? parts.join(", ") : "nothing";
 }
 
 /** Link to a manager's roster page, optionally opened on its Trades or Waivers tab. */
@@ -201,8 +209,8 @@ export async function notifyTradeOffer(tradeId: string): Promise<void> {
       title: "New trade offer",
       body:
         `**${names.proposer}** offered you a trade in **${names.league}**.\n` +
-        `You get: ${teamList(trade.proposerGives, labels)}\n` +
-        `You give: ${teamList(trade.receiverGives, labels)}`,
+        `You get: ${tradeSideList(trade.proposerGives, trade.proposerFaab, labels)}\n` +
+        `You give: ${tradeSideList(trade.receiverGives, trade.receiverFaab, labels)}`,
       url: rosterUrl(trade.fantasyLeagueId, trade.receiverTeamId, "trades"),
     });
   });
@@ -241,8 +249,8 @@ export async function notifyTradeAccepted(tradeId: string, vetoDeadline: Date): 
       title: "Trade waiting for review",
       body:
         `In **${names.league}**:\n` +
-        `**${names.proposer}** gives ${teamList(trade.proposerGives, labels)}\n` +
-        `**${names.receiver}** gives ${teamList(trade.receiverGives, labels)}\n` +
+        `**${names.proposer}** gives ${tradeSideList(trade.proposerGives, trade.proposerFaab, labels)}\n` +
+        `**${names.receiver}** gives ${tradeSideList(trade.receiverGives, trade.receiverFaab, labels)}\n` +
         (dropLines.length > 0 ? `${dropLines.join("\n")}\n` : "") +
         `It goes through ${when} unless you veto it.`,
       url: siteUrl("/admin/waivers"),
@@ -362,14 +370,18 @@ export async function notifyTradeCompleted(tradeId: string, processedEarly: bool
         teamId: trade.proposerTeamId,
         partner: names.receiver,
         got: trade.receiverGives,
+        gotFaab: trade.receiverFaab,
         gave: trade.proposerGives,
+        gaveFaab: trade.proposerFaab,
       },
       {
         userId: trade.receiverUserId,
         teamId: trade.receiverTeamId,
         partner: names.proposer,
         got: trade.proposerGives,
+        gotFaab: trade.proposerFaab,
         gave: trade.receiverGives,
+        gaveFaab: trade.receiverFaab,
       },
     ];
     for (const side of sides) {
@@ -377,8 +389,8 @@ export async function notifyTradeCompleted(tradeId: string, processedEarly: bool
         title: "Trade complete",
         body:
           `Your trade with **${side.partner}** in **${names.league}** went through.\n` +
-          `You got: ${teamList(side.got, labels)}\n` +
-          `You gave: ${teamList(side.gave, labels)}${earlyNote}`,
+          `You got: ${tradeSideList(side.got, side.gotFaab, labels)}\n` +
+          `You gave: ${tradeSideList(side.gave, side.gaveFaab, labels)}${earlyNote}`,
         url: rosterUrl(trade.fantasyLeagueId, side.teamId),
       });
     }

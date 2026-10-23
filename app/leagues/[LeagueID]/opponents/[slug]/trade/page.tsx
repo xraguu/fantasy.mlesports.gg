@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useAlert } from "@/components/AlertProvider";
 import HeaderTooltip from "@/components/HeaderTooltip";
 import TeamModal from "@/components/TeamModal";
+import { formatFaab, parseFaabAmount, tradeContentsProblem } from "@/lib/tradeFaab";
 
 interface RosterTeam {
   id: string;
@@ -43,6 +44,7 @@ interface RosterData {
     id: string;
     displayName: string;
     ownerDisplayName: string;
+    faabRemaining: number | null;
   };
   rosterSlots: TradeRosterSlot[];
   league: {
@@ -52,7 +54,61 @@ interface RosterData {
       flx: number;
       be: number;
     };
+    waiverSystem: string;
   };
+}
+
+/** One side's "FAAB to send" box (FAAB leagues only), with that side's balance. */
+function FaabBox({
+  label,
+  balance,
+  value,
+  onChange,
+  align,
+}: {
+  label: string;
+  balance: number;
+  value: string;
+  onChange: (value: string) => void;
+  align: "left" | "right";
+}) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", alignItems: align === "left" ? "flex-start" : "flex-end", gap: "0.35rem" }}>
+      <span style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>
+        {label} <span style={{ fontWeight: 400 }}>(has ${balance})</span>
+      </span>
+      <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+        <span style={{ fontSize: "1rem", fontWeight: 700, color: "#d4af37" }}>$</span>
+        <input
+          type="number"
+          min={0}
+          max={balance}
+          step={1}
+          inputMode="numeric"
+          placeholder="0"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            width: "6rem",
+            padding: "0.45rem 0.6rem",
+            background: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: "6px",
+            color: "#ffffff",
+            fontSize: "0.95rem",
+          }}
+        />
+      </span>
+    </label>
+  );
+}
+
+/** "2 teams + $10 FAAB", "1 team", or "$15 FAAB" */
+function describeTradeSide(teamCount: number, faab: number): string {
+  const parts: string[] = [];
+  if (teamCount > 0) parts.push(`${teamCount} team${teamCount === 1 ? "" : "s"}`);
+  if (faab > 0) parts.push(formatFaab(faab));
+  return parts.join(" + ");
 }
 
 export default function TradePage() {
@@ -71,6 +127,11 @@ export default function TradePage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDropModal, setShowDropModal] = useState(false);
   const [selectedDropTeamIndices, setSelectedDropTeamIndices] = useState<number[]>([]);
+  // FAAB each side sends, as typed (FAAB leagues only)
+  const [myFaabInput, setMyFaabInput] = useState("");
+  const [theirFaabInput, setTheirFaabInput] = useState("");
+  // Total of this manager's pending waiver bids, for the warning in the confirm step
+  const [myPendingBids, setMyPendingBids] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [teamModalData, setTeamModalData] = useState<{
     id: string;
@@ -134,6 +195,27 @@ export default function TradePage() {
         setMyRoster(myRosterData);
         setOpponentRoster(opponentRosterData);
         setError(null);
+
+        // In a FAAB league, add up this manager's pending waiver bids, so the
+        // confirm step can warn if trading FAAB away would leave too little
+        // to cover them. Only a warning, so a failure here is ignored.
+        if (myRosterData.league?.waiverSystem === "faab") {
+          try {
+            const claimsResponse = await fetch(`/api/leagues/${leagueId}/waivers?mine=true`);
+            if (claimsResponse.ok) {
+              const { waiverClaims } = (await claimsResponse.json()) as {
+                waiverClaims: { fantasyTeamId: string; faabBid: number | null }[];
+              };
+              setMyPendingBids(
+                waiverClaims
+                  .filter((c) => c.fantasyTeamId === myTeamId)
+                  .reduce((sum, c) => sum + (c.faabBid ?? 0), 0)
+              );
+            }
+          } catch {
+            // No warning then
+          }
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load rosters");
       } finally {
@@ -161,6 +243,37 @@ export default function TradePage() {
   const myCountAfterTrade = (myRoster?.rosterSlots.length ?? 0) - selectedMyTeams.length + selectedOpponentTeams.length;
   const neededDropCount = Math.max(0, myCountAfterTrade - myCapacity);
   const needsToDrop = neededDropCount > 0;
+
+  // FAAB can only be traded in leagues on FAAB waivers — anywhere else the
+  // boxes aren't shown and both amounts are always 0
+  const isFaabLeague = myRoster?.league.waiverSystem === "faab";
+  const myFaabBalance = myRoster?.fantasyTeam.faabRemaining ?? 0;
+  const theirFaabBalance = opponentRoster?.fantasyTeam.faabRemaining ?? 0;
+  const myFaab = isFaabLeague ? parseFaabAmount(myFaabInput) : 0;
+  const theirFaab = isFaabLeague ? parseFaabAmount(theirFaabInput) : 0;
+  // A problem with the typed FAAB amounts, shown under the boxes
+  const faabProblem =
+    myFaab === null || theirFaab === null
+      ? "FAAB amounts must be whole dollars"
+      : myFaab > myFaabBalance
+        ? `You only have $${myFaabBalance} FAAB`
+        : theirFaab > theirFaabBalance
+          ? `${opponentRoster?.fantasyTeam.displayName ?? "They"} only has $${theirFaabBalance} FAAB`
+          : null;
+  // Same rules the server applies: each side gives a team or some FAAB, and
+  // at least one team changes hands
+  const canPropose =
+    faabProblem === null &&
+    tradeContentsProblem({
+      isFaabLeague,
+      proposerTeamCount: selectedMyTeams.length,
+      receiverTeamCount: selectedOpponentTeams.length,
+      proposerFaab: myFaab ?? 0,
+      receiverFaab: theirFaab ?? 0,
+    }) === null;
+  // What this manager's FAAB would be after the trade, vs. their pending bids
+  const myFaabAfterTrade = myFaabBalance - (myFaab ?? 0) + (theirFaab ?? 0);
+  const pendingBidsAtRisk = isFaabLeague && (myFaab ?? 0) > 0 && myPendingBids > myFaabAfterTrade;
 
   const toggleDropTeam = (index: number) => {
     setSelectedDropTeamIndices((prev) =>
@@ -205,6 +318,8 @@ export default function TradePage() {
           proposerGives,
           receiverGives,
           proposerDrops,
+          proposerFaab: myFaab ?? 0,
+          receiverFaab: theirFaab ?? 0,
         }),
       });
 
@@ -334,11 +449,21 @@ export default function TradePage() {
               Confirm Trade Proposal
             </h2>
 
-            <p style={{ fontSize: "1rem", color: "var(--text-muted)", textAlign: "center", marginBottom: "2rem" }}>
+            <p style={{ fontSize: "1rem", color: "var(--text-muted)", textAlign: "center", marginBottom: pendingBidsAtRisk ? "1rem" : "2rem" }}>
               Are you sure you want to propose this trade?
               <br />
-              <strong>You&apos;re sending {selectedMyTeams.length} team(s) for {selectedOpponentTeams.length} team(s)</strong>
+              <strong>
+                You&apos;re sending {describeTradeSide(selectedMyTeams.length, myFaab ?? 0)} for{" "}
+                {describeTradeSide(selectedOpponentTeams.length, theirFaab ?? 0)}
+              </strong>
             </p>
+
+            {pendingBidsAtRisk && (
+              <p style={{ fontSize: "0.9rem", color: "#f2b632", textAlign: "center", marginBottom: "2rem" }}>
+                You have ${myPendingBids} in pending waiver bids. After this trade you&apos;d have ${myFaabAfterTrade} FAAB,
+                so some of those claims could be denied for not enough budget.
+              </p>
+            )}
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", justifyContent: "center" }}>
               <button
@@ -636,29 +761,23 @@ export default function TradePage() {
           <button
             className="trade-propose-btn"
             style={{
-              background: selectedMyTeams.length === 0 || selectedOpponentTeams.length === 0
-                ? "rgba(255,255,255,0.2)"
-                : "#d4af37",
+              background: canPropose ? "#d4af37" : "rgba(255,255,255,0.2)",
               border: "none",
-              color: selectedMyTeams.length === 0 || selectedOpponentTeams.length === 0
-                ? "rgba(255,255,255,0.5)"
-                : "#1a1a2e",
+              color: canPropose ? "#1a1a2e" : "rgba(255,255,255,0.5)",
               padding: "0.75rem 2rem",
               borderRadius: "8px",
-              cursor: selectedMyTeams.length === 0 || selectedOpponentTeams.length === 0
-                ? "not-allowed"
-                : "pointer",
+              cursor: canPropose ? "pointer" : "not-allowed",
               fontSize: "1rem",
               fontWeight: 600,
               whiteSpace: "nowrap",
               marginTop: "1rem"
             }}
             onClick={() => {
-              if (selectedMyTeams.length > 0 && selectedOpponentTeams.length > 0) {
+              if (canPropose) {
                 setShowConfirmModal(true);
               }
             }}
-            disabled={selectedMyTeams.length === 0 || selectedOpponentTeams.length === 0}
+            disabled={!canPropose}
           >
             Propose Trade
           </button>
@@ -682,6 +801,37 @@ export default function TradePage() {
             </p>
           </div>
         </div>
+
+        {/* FAAB to send — only in leagues on FAAB waivers */}
+        {isFaabLeague && (
+          <div
+            style={{
+              marginBottom: "2rem",
+              paddingBottom: "2rem",
+              borderBottom: "1px solid rgba(255,255,255,0.2)",
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "1rem" }}>
+              <FaabBox
+                label="FAAB you send"
+                balance={myFaabBalance}
+                value={myFaabInput}
+                onChange={setMyFaabInput}
+                align="left"
+              />
+              <FaabBox
+                label={`FAAB ${opponentRoster.fantasyTeam.displayName} sends`}
+                balance={theirFaabBalance}
+                value={theirFaabInput}
+                onChange={setTheirFaabInput}
+                align="right"
+              />
+            </div>
+            {faabProblem && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "#ef4444" }}>{faabProblem}</div>
+            )}
+          </div>
+        )}
 
         {/* Trade Grid: one unified row per roster slot (my team | position |
             their team), so position/my-team/their-team correspondence is

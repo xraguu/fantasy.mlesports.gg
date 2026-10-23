@@ -164,6 +164,7 @@ export async function GET(
             teamId: trade.proposerTeamId,
             teamName: trade.proposerTeam.displayName,
             managerName: trade.proposerTeam.owner.displayName,
+            faab: trade.proposerFaab, // FAAB dollars this side sends (0 = none)
             gives: proposerGivesTeams.map((team) => ({
               id: team.id,
               name: `${team.leagueId} ${team.name}`,
@@ -185,6 +186,7 @@ export async function GET(
             teamId: trade.receiverTeamId,
             teamName: trade.receiverTeam.displayName,
             managerName: trade.receiverTeam.owner.displayName,
+            faab: trade.receiverFaab,
             gives: receiverGivesTeams.map((team) => ({
               id: team.id,
               name: `${team.leagueId} ${team.name}`,

@@ -170,6 +170,8 @@ export async function GET(req: NextRequest) {
         receiverGives: true,
         proposerDrops: true,
         receiverDrops: true,
+        proposerFaab: true,
+        receiverFaab: true,
       },
     });
     const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
@@ -262,6 +264,8 @@ export async function GET(req: NextRequest) {
       receiverDropsTeams: trade.receiverDrops
         .map((id) => mleTeamMap.get(id))
         .filter((t): t is NonNullable<typeof t> => Boolean(t)),
+      proposerFaab: trade.proposerFaab,
+      receiverFaab: trade.receiverFaab,
       status: trade.status,
       submitted: trade.createdAt,
       acceptedAt: trade.acceptedAt,
@@ -322,6 +326,8 @@ export async function GET(req: NextRequest) {
           receiverDropsTeams: trade
             ? trade.receiverDrops.map((id) => mleTeamMap.get(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
             : [],
+          proposerFaab: trade?.proposerFaab ?? 0,
+          receiverFaab: trade?.receiverFaab ?? 0,
           status: transaction.status,
           processed: transaction.processedAt,
           reason: transaction.reason,

@@ -198,6 +198,26 @@ export async function PATCH(
       }
     }
 
+    // Both sides still have to have the FAAB they're sending — waivers may
+    // have spent some since the trade was proposed. (Checked once more when
+    // the trade executes, after the veto window.)
+    if (trade.receiverFaab > (trade.receiverTeam.faabRemaining ?? 0)) {
+      return NextResponse.json(
+        {
+          error: `This trade has you sending $${trade.receiverFaab} FAAB, but you only have $${trade.receiverTeam.faabRemaining ?? 0}.`,
+        },
+        { status: 400 }
+      );
+    }
+    if (trade.proposerFaab > (trade.proposerTeam.faabRemaining ?? 0)) {
+      return NextResponse.json(
+        {
+          error: `${trade.proposerTeam.displayName} no longer has the $${trade.proposerFaab} FAAB they offered, so this trade can't be accepted.`,
+        },
+        { status: 400 }
+      );
+    }
+
     // This trade may have been proposed without regard for whether it fits
     // on the receiver's roster (see propose/route.ts) — accepting it is
     // where that actually gets enforced. If receiverDrops don't make up the

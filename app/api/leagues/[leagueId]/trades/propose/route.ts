@@ -6,11 +6,14 @@ import { getTradeCutoff } from "@/lib/tradeCutoff";
 import { findLockedSlotForTeam, lockedTeamErrorMessage } from "@/lib/rosterLocks";
 import { getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 import { isWeekLocked } from "@/lib/autoLock";
+import { parseFaabAmount, tradeContentsProblem } from "@/lib/tradeFaab";
 
 /**
  * POST /api/leagues/[leagueId]/trades/propose
  * Propose a new trade
- * Body: { proposerTeamId: string, receiverTeamId: string, proposerGives: string[], receiverGives: string[] }
+ * Body: { proposerTeamId: string, receiverTeamId: string, proposerGives: string[], receiverGives: string[],
+ *         proposerDrops?: string[], proposerFaab?: number, receiverFaab?: number }
+ * proposerFaab/receiverFaab are FAAB dollars each side sends (FAAB leagues only).
  */
 export async function POST(
   req: NextRequest,
@@ -37,7 +40,7 @@ export async function POST(
 
     const league = await prisma.fantasyLeague.findUnique({
       where: { id: leagueId },
-      select: { draftStatus: true, currentWeek: true, rosterConfig: true, season: true },
+      select: { draftStatus: true, currentWeek: true, rosterConfig: true, season: true, waiverSystem: true },
     });
     if (league?.draftStatus !== "completed") {
       return NextResponse.json(
@@ -76,6 +79,26 @@ export async function POST(
       );
     }
 
+    // FAAB each side sends (whole dollars; missing = none)
+    const proposerFaab = parseFaabAmount(body.proposerFaab);
+    const receiverFaab = parseFaabAmount(body.receiverFaab);
+    if (proposerFaab === null || receiverFaab === null) {
+      return NextResponse.json(
+        { error: "FAAB amounts must be whole dollars, 0 or more" },
+        { status: 400 }
+      );
+    }
+    const contentsProblem = tradeContentsProblem({
+      isFaabLeague: league?.waiverSystem === "faab",
+      proposerTeamCount: (proposerGives as string[]).length,
+      receiverTeamCount: (receiverGives as string[]).length,
+      proposerFaab,
+      receiverFaab,
+    });
+    if (contentsProblem) {
+      return NextResponse.json({ error: contentsProblem }, { status: 400 });
+    }
+
     // Verify proposer team exists and user owns it
     const proposerTeam = await prisma.fantasyTeam.findUnique({
       where: { id: proposerTeamId },
@@ -83,6 +106,7 @@ export async function POST(
         id: true,
         fantasyLeagueId: true,
         ownerUserId: true,
+        faabRemaining: true,
       },
     });
 
@@ -114,6 +138,8 @@ export async function POST(
         id: true,
         fantasyLeagueId: true,
         ownerUserId: true,
+        displayName: true,
+        faabRemaining: true,
       },
     });
 
@@ -127,6 +153,22 @@ export async function POST(
     if (receiverTeam.fantasyLeagueId !== leagueId) {
       return NextResponse.json(
         { error: "Receiver team does not belong to this league" },
+        { status: 400 }
+      );
+    }
+
+    // Each side has to have the FAAB it's sending. Checked again when the
+    // trade is accepted and when it executes, since waivers can spend some
+    // in the meantime.
+    if (proposerFaab > (proposerTeam.faabRemaining ?? 0)) {
+      return NextResponse.json(
+        { error: `You only have $${proposerTeam.faabRemaining ?? 0} FAAB to trade` },
+        { status: 400 }
+      );
+    }
+    if (receiverFaab > (receiverTeam.faabRemaining ?? 0)) {
+      return NextResponse.json(
+        { error: `${receiverTeam.displayName} only has $${receiverTeam.faabRemaining ?? 0} FAAB to trade` },
         { status: 400 }
       );
     }
@@ -222,6 +264,8 @@ export async function POST(
         proposerGives,
         receiverGives,
         proposerDrops,
+        proposerFaab,
+        receiverFaab,
         status: "pending",
       },
     });
