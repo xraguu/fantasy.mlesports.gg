@@ -1233,6 +1233,9 @@ export default function TransactionsPage() {
                     }}
                   >
                     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.75rem" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                        {transaction.fantasyLeagueName}
+                      </span>
                       <span
                         style={{
                           fontSize: "0.75rem",
