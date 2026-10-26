@@ -42,6 +42,7 @@ export default function PlayerModal({
 }: PlayerModalProps) {
   const [gameMode, setGameMode] = useState<"RL_DOUBLES" | "RL_STANDARD">("RL_DOUBLES");
   const [stats, setStats] = useState<PlayerHistoricalStats[]>([]);
+  const [salary, setSalary] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +60,7 @@ export default function PlayerModal({
 
         const data = await response.json();
         setStats(data.stats || []);
+        setSalary(data.salary ?? null);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load stats");
@@ -160,6 +162,7 @@ export default function PlayerModal({
                 }}
               >
                 {team.leagueId} {team.name}
+                {salary != null && ` • ${salary.toFixed(1)}`}
               </div>
             </div>
             <button

@@ -7,7 +7,7 @@ import PlayerModal from "./PlayerModal";
 interface PlayerWithStats {
   id: string;
   name: string;
-  skillGroup: string | null;
+  salary: number | null; // from players.csv's "salary" column
 }
 
 interface DraftTeamModalProps {
@@ -555,14 +555,14 @@ export default function DraftTeamModal({
                   >
                     {player.name}
                   </div>
-                  {player.skillGroup && (
+                  {player.salary != null && (
                     <div
                       style={{
                         fontSize: "0.8rem",
                         color: "rgba(255,255,255,0.8)",
                       }}
                     >
-                      {player.skillGroup}
+                      {player.salary.toFixed(1)}
                     </div>
                   )}
                 </div>
