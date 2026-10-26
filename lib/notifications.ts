@@ -27,6 +27,11 @@ import { DiscordSendError, isDiscordConfigured, sendDiscordDm } from "@/lib/disc
 export const NOTIFICATION_TYPES = {
   draft_clock: { label: "You're on the clock", description: "When it's your turn to pick in a draft", adminOnly: false },
   draft_on_deck: { label: "You're up next", description: "When your draft pick is next", adminOnly: false },
+  draft_complete: {
+    label: "Draft complete",
+    description: "When an admin marks your league's draft complete (a draft held outside the site)",
+    adminOnly: false,
+  },
   league_added: { label: "Added to a league", description: "When you're added to a league", adminOnly: false },
   trade_offer: { label: "Trade offers", description: "When someone offers you a trade", adminOnly: false },
   trade_update: {
@@ -69,10 +74,19 @@ const STUCK_SENDING_MS = 5 * 60 * 1000;
 // Most notifications sent per 15-second run; any more wait for the next run
 const MAX_SENDS_PER_RUN = 25;
 
+// Where DM links go when AUTH_URL is missing or points at this computer
+const LIVE_SITE_URL = "https://fantasy.mlesports.gg";
+
 /** Absolute link to a page on the site, for a DM's "Open" button. */
 export function siteUrl(path: string): string {
-  // AUTH_URL is the site's public address; strip any trailing "/" so we don't get "//path"
-  const base = (process.env.AUTH_URL || "https://fantasy.mlesports.gg").replace(/\/+$/, "");
+  // AUTH_URL is the site's public address. A local copy's AUTH_URL is
+  // localhost, but if that copy uses the live database its DMs still reach
+  // real people, and a localhost link is broken for them, so use the live
+  // site instead.
+  const authUrl = process.env.AUTH_URL;
+  const isLocal = !authUrl || /\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(authUrl);
+  // Strip any trailing "/" so we don't get "//path"
+  const base = (isLocal ? LIVE_SITE_URL : authUrl).replace(/\/+$/, "");
   return `${base}${path}`;
 }
 

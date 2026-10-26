@@ -11,17 +11,21 @@ interface UserOption {
  * A type-to-search replacement for a long <select> of users: typing filters
  * the list by display name, and picking one (click, or arrow keys + Enter)
  * sets it. `users` should already be sorted the way the list should show.
+ * Also used for MLE teams (Edit Roster), with `noun` set to "teams".
  */
 export default function UserSearchSelect({
   users,
   value,
   onChange,
   placeholder = "Search for a user...",
+  noun = "users",
 }: {
   users: UserOption[];
   value: string;
   onChange: (userId: string) => void;
   placeholder?: string;
+  // What the options are, for the "No ... match" message
+  noun?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -107,7 +111,7 @@ export default function UserSearchSelect({
         >
           {matches.length === 0 ? (
             <div style={{ padding: "0.6rem", fontSize: "0.85rem", color: "var(--text-muted)" }}>
-              No users match &quot;{query}&quot;
+              No {noun} match &quot;{query}&quot;
             </div>
           ) : (
             matches.map((user, i) => (

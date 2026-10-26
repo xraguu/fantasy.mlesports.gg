@@ -1852,6 +1852,22 @@ export default function AdminLeagueManagementPage() {
                     const key = `${slot.position}-${slot.slotIndex}`;
                     const isProcessing = rosterActionKey === key;
 
+                    // The teams this slot's dropdown offers ("AL Aviators"-style
+                    // names): any not already picked for another empty slot
+                    const slotOptions = editRosterData.availableMleTeams
+                      .filter(
+                        (t) =>
+                          t.id === pendingAdd[key] ||
+                          !Object.entries(pendingAdd).some(
+                            ([otherKey, mleTeamId]) =>
+                              otherKey !== key && mleTeamId === t.id,
+                          ),
+                      )
+                      .map((t) => ({
+                        id: t.id,
+                        displayName: `${t.leagueId} ${t.name}`,
+                      }));
+
                     return (
                       <div
                         key={key}
@@ -1918,43 +1934,41 @@ export default function AdminLeagueManagementPage() {
                             </button>
                           </>
                         ) : (
-                          <select
-                            value={pendingAdd[key] || ""}
-                            onChange={(e) =>
-                              setPendingAdd((prev) => ({
-                                ...prev,
-                                [key]: e.target.value,
-                              }))
-                            }
-                            disabled={rosterActionKey === "save-all"}
-                            style={{
-                              flex: 1,
-                              padding: "0.5rem",
-                              background: "rgba(255,255,255,0.1)",
-                              border: "1px solid rgba(255,255,255,0.2)",
-                              borderRadius: "6px",
-                              color: "var(--text-main)",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            <option value="">
-                              -- Empty: select a team to add --
-                            </option>
-                            {editRosterData.availableMleTeams
-                              .filter(
-                                (t) =>
-                                  t.id === pendingAdd[key] ||
-                                  !Object.entries(pendingAdd).some(
-                                    ([otherKey, mleTeamId]) =>
-                                      otherKey !== key && mleTeamId === t.id,
-                                  ),
-                              )
-                              .map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.leagueId} {t.name}
-                                </option>
-                              ))}
-                          </select>
+                          <>
+                            <div style={{ flex: 1 }}>
+                              <UserSearchSelect
+                                users={slotOptions}
+                                value={pendingAdd[key] || ""}
+                                onChange={(mleTeamId) =>
+                                  setPendingAdd((prev) => ({
+                                    ...prev,
+                                    [key]: mleTeamId,
+                                  }))
+                                }
+                                placeholder="Empty: search for a team to add..."
+                                noun="teams"
+                              />
+                            </div>
+                            {pendingAdd[key] && (
+                              <button
+                                className="btn btn-ghost"
+                                disabled={rosterActionKey === "save-all"}
+                                style={{
+                                  padding: "0.4rem 0.9rem",
+                                  fontSize: "0.8rem",
+                                }}
+                                onClick={() =>
+                                  setPendingAdd((prev) => {
+                                    const next = { ...prev };
+                                    delete next[key];
+                                    return next;
+                                  })
+                                }
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     );

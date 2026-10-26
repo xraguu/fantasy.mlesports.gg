@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { logAdminActivity } from "@/lib/adminActivity";
 import { initializeWaiverPriorityFromDraftOrder } from "@/lib/waiverPriority";
+import { notifyDraftSkipped } from "@/lib/notificationEvents";
 
 // POST /api/admin/leagues/[leagueId]/skip-draft
 // For leagues that drafted outside the website — marks the draft as
@@ -49,6 +50,7 @@ export async function POST(
       targetType: "FantasyLeague",
       targetId: leagueId,
     });
+    await notifyDraftSkipped(leagueId);
 
     return NextResponse.json({ success: true, message: "Draft skipped. Use Edit Roster to build out managers' rosters." });
   } catch (error) {

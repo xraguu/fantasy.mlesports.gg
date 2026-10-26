@@ -143,6 +143,32 @@ export async function notifyDraftClock(leagueId: string): Promise<void> {
   });
 }
 
+/**
+ * "Draft complete" for every manager in a league whose draft an admin
+ * skipped (it was held outside the site). Their rosters are still empty at
+ * this point; the admin fills them in afterwards with Edit Roster.
+ */
+export async function notifyDraftSkipped(leagueId: string): Promise<void> {
+  await safely("Draft skipped", async () => {
+    const league = await prisma.fantasyLeague.findUnique({
+      where: { id: leagueId },
+      select: { name: true, fantasyTeams: { select: { id: true, ownerUserId: true } } },
+    });
+    if (!league) {
+      return;
+    }
+    const leagueName = escapeDiscordMarkdown(league.name);
+
+    for (const team of league.fantasyTeams) {
+      await queueNotification(team.ownerUserId, "draft_complete", `draft-complete:${team.id}`, {
+        title: "Draft complete",
+        body: `The draft for **${leagueName}** is complete. Your roster will show on your roster page once an admin has entered your picks.`,
+        url: rosterUrl(leagueId, team.id),
+      });
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Leagues
 // ---------------------------------------------------------------------------
