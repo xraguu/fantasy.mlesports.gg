@@ -48,6 +48,9 @@ function Section({
       </h3>
       <div
         style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.6rem",
           fontSize: "0.92rem",
           color: "var(--text-main)",
           lineHeight: 1.7,
@@ -56,6 +59,28 @@ function Section({
         {children}
       </div>
     </div>
+  );
+}
+
+/** The gold "… →" button that opens a detail popup from a section. */
+function DetailButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        alignSelf: "flex-start",
+        padding: "0.5rem 1.1rem",
+        background: "rgba(242, 182, 50, 0.15)",
+        border: "1px solid rgba(242, 182, 50, 0.4)",
+        borderRadius: "8px",
+        color: "var(--accent)",
+        fontWeight: 700,
+        fontSize: "0.85rem",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -73,9 +98,10 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   // Every scoring option in Admin → Settings, in the same order (the
-  // Sprocket Rating bonus has its own table below)
+  // Sprocket Rating bonus has its own table below). Anything set to 0
+  // doesn't affect scores, so it's left out.
   const statRows: [string, number][] = rules
-    ? [
+    ? ([
         ["Goal", rules.goals],
         ["Goal Against", rules.goalsAgainst],
         ["Shot", rules.shots],
@@ -86,8 +112,9 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
         ["Demo Taken", rules.demosTaken],
         ["Game Won", rules.gameWin],
         ["Game Lost", rules.gameLoss],
-      ]
+      ] as [string, number][]).filter(([, value]) => value !== 0)
     : [];
+  const bonusRanges = rules ? rules.sprocketRatingRanges.filter((r) => r.points !== 0) : [];
 
   return (
     <div
@@ -215,83 +242,88 @@ function ScoringDetailModal({ onClose }: { onClose: () => void }) {
               </tbody>
             </table>
 
-            <h3
-              style={{
-                fontSize: "0.95rem",
-                fontWeight: 700,
-                color: "var(--accent)",
-                marginBottom: "0.4rem",
-              }}
-            >
-              Sprocket Rating Bonus
-            </h3>
-            <p
-              style={{
-                fontSize: "0.8rem",
-                color: "var(--text-muted)",
-                marginBottom: "0.6rem",
-              }}
-            >
-              A flat bonus is added based on which range a team&apos;s Sprocket
-              Rating falls into that week (not multiplied).
-            </p>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr
-                  style={{ borderBottom: "2px solid rgba(255,255,255,0.15)" }}
+            {bonusRanges.length > 0 && (
+              <>
+                <h3
+                  style={{
+                    fontSize: "0.95rem",
+                    fontWeight: 700,
+                    color: "var(--accent)",
+                    marginBottom: "0.4rem",
+                  }}
                 >
-                  <th
-                    style={{
-                      padding: "0.4rem 0",
-                      textAlign: "left",
-                      fontSize: "0.8rem",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    SR Range
-                  </th>
-                  <th
-                    style={{
-                      padding: "0.4rem 0",
-                      textAlign: "right",
-                      fontSize: "0.8rem",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Bonus
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rules.sprocketRatingRanges.map((r, i) => (
-                  <tr
-                    key={i}
-                    style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
-                  >
-                    <td
-                      style={{
-                        padding: "0.5rem 0",
-                        color: "var(--text-main)",
-                        fontSize: "0.9rem",
-                      }}
+                  Sprocket Rating Bonus
+                </h3>
+                <p
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "var(--text-muted)",
+                    marginBottom: "0.6rem",
+                  }}
+                >
+                  A flat bonus is added based on which range a team&apos;s
+                  Sprocket Rating falls into that week (not multiplied).
+                </p>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr
+                      style={{ borderBottom: "2px solid rgba(255,255,255,0.15)" }}
                     >
-                      {r.min} – {r.max}
-                    </td>
-                    <td
-                      style={{
-                        padding: "0.5rem 0",
-                        textAlign: "right",
-                        fontWeight: 700,
-                        fontSize: "0.9rem",
-                        color: "var(--accent)",
-                      }}
-                    >
-                      +{r.points}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <th
+                        style={{
+                          padding: "0.4rem 0",
+                          textAlign: "left",
+                          fontSize: "0.8rem",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        SR Range
+                      </th>
+                      <th
+                        style={{
+                          padding: "0.4rem 0",
+                          textAlign: "right",
+                          fontSize: "0.8rem",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        Bonus
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bonusRanges.map((r, i) => (
+                      <tr
+                        key={i}
+                        style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+                      >
+                        <td
+                          style={{
+                            padding: "0.5rem 0",
+                            color: "var(--text-main)",
+                            fontSize: "0.9rem",
+                          }}
+                        >
+                          {r.min} – {r.max}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.5rem 0",
+                            textAlign: "right",
+                            fontWeight: 700,
+                            fontSize: "0.9rem",
+                            color: r.points < 0 ? "#ef4444" : "var(--accent)",
+                          }}
+                        >
+                          {r.points > 0 ? "+" : ""}
+                          {r.points}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
           </>
         )}
       </div>
@@ -352,8 +384,8 @@ function WaiverSystemsModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1.25rem" }}>
-          Your league admin picks one of these three when the league is created — check your league&apos;s
-          settings to see which one applies to you.
+          Each league uses one of these three, chosen when it&apos;s created. The Waivers tab on your roster
+          page shows yours: a waiver priority order, or your FAAB budget.
         </p>
 
         <div style={{ marginBottom: "1.25rem" }}>
@@ -361,11 +393,11 @@ function WaiverSystemsModal({ onClose }: { onClose: () => void }) {
             Fixed Order (Priority)
           </h3>
           <p style={{ fontSize: "0.88rem", color: "var(--text-main)", lineHeight: 1.6 }}>
-            Managers start in a priority list based on reverse draft order (last pick gets priority #1).
-            Successfully claiming a team sends you to the back of the line — but only on a
-            <strong> successful</strong> claim; if you have no claims in, or the team you wanted goes to
-            someone ahead of you, you keep your spot. Once a new week starts, the whole order resets to
-            reverse current standings — the last-place team gets priority #1 for that week.
+            Managers start in a priority order based on reverse draft order (the last pick gets priority
+            #1). When two managers claim the same team, the one higher in the order gets it. Winning a
+            claim sends you to the back of the line; if you don&apos;t win anything, you keep your spot.
+            At the start of each new week, the order resets to reverse standings, so the last-place team
+            gets priority #1.
           </p>
         </div>
 
@@ -374,10 +406,9 @@ function WaiverSystemsModal({ onClose }: { onClose: () => void }) {
             Rolling Waivers
           </h3>
           <p style={{ fontSize: "0.88rem", color: "var(--text-main)", lineHeight: 1.6 }}>
-            Works exactly like Fixed Order — starts at reverse draft order, a successful claim sends you to
-            the back of the line, and skipped/unused turns don&apos;t cost you your spot — except the order
-            never resets. It just keeps rolling over week to week for the entire season, regardless of the
-            standings.
+            Works like Fixed Order: it starts at reverse draft order, and winning a claim sends you to the
+            back of the line. The difference is that the order never resets. It keeps rolling from week to
+            week for the whole season, whatever the standings.
           </p>
         </div>
 
@@ -386,10 +417,11 @@ function WaiverSystemsModal({ onClose }: { onClose: () => void }) {
             FAAB (Free Agent Acquisition Budget)
           </h3>
           <p style={{ fontSize: "0.88rem", color: "var(--text-main)", lineHeight: 1.6 }}>
-            Every team gets a virtual budget for the whole season (set by your league admin). To claim a
-            team on waivers, you place a secret bid — the highest bidder wins and that amount comes out of
-            their budget. There&apos;s no priority order at all; every manager has an equal shot at every
-            team, limited only by how much of their budget they&apos;re willing to spend.
+            Every team gets a budget for the whole season, set by your league admin. To claim a team on
+            waivers, you place a secret bid. The highest bid wins, and that amount comes out of the
+            winner&apos;s budget. Equal bids go to whoever is higher in waiver priority (reverse draft order
+            to start, then reverse standings from each new week on). If the top bidder can&apos;t complete the claim, for example because their budget no longer
+            covers it, the next-highest bidder gets the team. FAAB can also be traded.
           </p>
         </div>
       </div>
@@ -478,131 +510,169 @@ export default function InfoGuideModal({ open, onClose }: InfoGuideModalProps) {
 
         <Section title="Your Roster">
           <p>
-            Each fantasy team has 8 slots: two <strong>2s</strong>, two{" "}
-            <strong>3s</strong>, one <strong>FLX</strong>, and three{" "}
-            <strong>Bench</strong> spots. 2s/3s slots score only that
-            mode&apos;s stats for the MLE team in them. FLX scores whichever
-            mode (2s or 3s) that team scored higher in that week. Bench slots
-            never count toward your weekly score, and never lock — you can
-            always drop, trade, or pick up into the bench whenever you want.
+            Each fantasy team has 8 spots: two <strong>2s</strong>, two{" "}
+            <strong>3s</strong>, one <strong>FLX</strong> and three{" "}
+            <strong>Bench</strong>. A 2s or 3s spot scores only that mode&apos;s
+            stats for the MLE team in it. FLX scores whichever mode that team
+            scored more in that week. Bench teams don&apos;t count toward your
+            score.
           </p>
         </Section>
 
         <Section title="The Draft">
           <p>
-            Before the season starts, managers draft MLE teams in the Draft Room
-            (linked from the top of your league once a draft is open). Each pick
-            has a countdown timer — if it expires without a pick, the server
-            auto-drafts for you: first from your draft queue (set it up ahead of
-            time in the Queue tab), or a random available team if your queue is
-            empty. You can browse every available team&apos;s last-season stats,
-            filtered by MLE league and mode, before picking. A draft can also be
-            done outside of the site if wanted. Trades, waivers, and free-agent
-            pickups are all disabled until the draft is complete.
+            Drafts happen in the Draft Room: open it with the gold{" "}
+            <strong>Draft</strong> button at the top of your league. While you
+            wait, you can browse every available team&apos;s stats from last
+            season, filtered by MLE league and mode, and line teams up in your{" "}
+            <strong>Queue</strong>.
+          </p>
+          <p>
+            Each pick has a timer. If yours runs out, the site picks for you:
+            the first team in your queue that&apos;s still available, or a random
+            team if there isn&apos;t one. It also turns on{" "}
+            <strong>Autodraft</strong>, so your later picks are made the same way
+            as soon as it&apos;s your turn. You can turn it back off in the Draft
+            Room.
+          </p>
+          <p>
+            Some leagues draft outside the site instead. An admin then enters
+            everyone&apos;s rosters. Trades, waivers, pickups and drops open once
+            your league&apos;s draft is complete.
           </p>
         </Section>
 
-        <Section title="Regular Season & Lineup Locking">
+        <Section title="Each Week">
           <p>
-            Each week, your <strong>starting lineup</strong> (2s/3s/FLX — not
-            bench) is scored against your opponent&apos;s. Lineups automatically
-            lock at 3:00am ET on the first day of matches (Thursday), and unlock
-            at 11:59pm ET on the last day of matches (Sunday) — so make your
-            changes before the match weekend begins. Bench slots are the
-            exception and never lock. Stats refresh automatically throughout the
-            weekend as games are played, so your score updates live.
+            You play one other manager each week, and your starting lineup (2s,
+            3s and FLX) is scored against theirs.
+          </p>
+          <p>
+            Lineups lock at 12:00am ET on the first day of that week&apos;s
+            matches (usually Thursday) and unlock at 11:59pm ET on the last day
+            (usually Sunday), so set your lineup before matches begin. During
+            that match weekend, you also can&apos;t pick up or drop teams or
+            propose trades, but you can still put in waiver claims.
+          </p>
+          <p>
+            Stats refresh automatically every 2 hours, so scores update as games
+            are played.
           </p>
         </Section>
 
         <Section title="Scoring">
           <p>
-            Fantasy points come from each MLE team&apos;s match stats that week:
-            goals and goals against, shots and shots against, saves, assists,
-            demos inflicted/taken, their Sprocket Rating, and every game they
-            win or lose. Leagues can also enable{" "}
-            <strong>Double Win</strong>: on top of your head-to-head result, the
-            top half of teams by score each week get a bonus win and the bottom
-            half get a bonus loss.
+            Each starting MLE team earns points from its real match stats in its
+            mode that week, such as goals, saves, assists, shots and demos. It
+            also gets a bonus based on its Sprocket Rating, and points for each
+            game it wins or loses. The exact values are set each season.
           </p>
-          <button
-            onClick={() => setShowScoringDetail(true)}
-            style={{
-              marginTop: "0.5rem",
-              padding: "0.5rem 1.1rem",
-              background: "rgba(242, 182, 50, 0.15)",
-              border: "1px solid rgba(242, 182, 50, 0.4)",
-              borderRadius: "8px",
-              color: "var(--accent)",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
-          >
-            View exact point values →
-          </button>
-        </Section>
-
-        <Section title="Playoffs">
           <p>
-            The regular season runs 7-8 weeks depending on league size, then the
-            top seeds move on to a multi-week playoff bracket (seeded by
-            regular-season standings) to decide final placements. Remaining
-            teams play in a separate consolation bracket for the lower
-            placements. Bracket matchups are generated automatically round by
-            round as each week&apos;s scores come in.
+            Some leagues also use <strong>Double Win</strong>: on top of your
+            matchup result, the top half of the league by score each
+            regular-season week gets an extra win, and the bottom half an extra
+            loss.
           </p>
+          <DetailButton onClick={() => setShowScoringDetail(true)}>
+            View exact point values →
+          </DetailButton>
         </Section>
 
         <Section title="Trades">
           <p>
-            Propose a trade with another manager from their team page. In leagues
-            on FAAB waivers, either side can also send FAAB, in whole dollars up
-            to what they have, but every trade has to include at least one team.
-            Once they accept, it doesn&apos;t execute immediately — there&apos;s a 12-hour
-            window where a league admin can veto it. If nobody vetoes, it
-            executes automatically. If a team in the trade becomes locked during
-            that window, the trade is cancelled instead of going through. Trades
-            stop being allowed once your league&apos;s playoffs begin.
+            Propose a trade from the <strong>Opponents</strong> page. If it
+            would overfill a roster, that manager picks which teams to drop. In
+            FAAB leagues, either side can also send FAAB in whole dollars, but
+            every trade has to include at least one team.
+          </p>
+          <p>
+            Once accepted, a trade waits 12 hours so a league admin can veto it,
+            then goes through automatically. If lineups lock before then, it
+            goes through as the lock starts. It&apos;s cancelled instead if a
+            team in it has left its roster, a roster no longer has room, or a
+            side no longer has the FAAB it offered.
+          </p>
+          <p>
+            The trade deadline is 11:59pm ET the night before your league&apos;s
+            first playoff matches.
           </p>
         </Section>
 
         <Section title="Waivers & Free Agents">
           <p>
-            If a team is unrostered, you can pick it up instantly as a{" "}
-            <strong>free agent</strong>. If it&apos;s currently on
-            <strong>waivers</strong> (just dropped by another manager), you
-            submit a waiver claim instead, which processes on your league&apos;s
-            scheduled waiver day. A team dropped by a manager sits on waivers
-            until the next processing run — if nobody claims it, it becomes a
-            free agent. Your own pending waiver claims are visible only to you,
-            on the Waivers tab of your roster page.
+            A team nobody has is a <strong>free agent</strong>. Pick it up right
+            away from the <strong>MLE Teams</strong> page.
           </p>
-          <button
-            onClick={() => setShowWaiverSystems(true)}
-            style={{
-              marginTop: "0.5rem",
-              padding: "0.5rem 1.1rem",
-              background: "rgba(242, 182, 50, 0.15)",
-              border: "1px solid rgba(242, 182, 50, 0.4)",
-              borderRadius: "8px",
-              color: "var(--accent)",
-              fontWeight: 700,
-              fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
-          >
+          <p>
+            A team a manager just dropped is on <strong>waivers</strong> until
+            the next waiver run, so you put in a claim for it instead. The
+            Waivers tab on your roster page shows when the next run is and your
+            pending claims, which only you can see. If nobody claims a team, it
+            becomes a free agent after the run.
+          </p>
+          <DetailButton onClick={() => setShowWaiverSystems(true)}>
             How do the waiver systems work? →
-          </button>
+          </DetailButton>
+        </Section>
+
+        <Section title="Standings & Playoffs">
+          <p>
+            Standings rank teams by win percentage, then total points scored,
+            then fewest points against.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: "1.25rem", listStyleType: "disc" }}>
+            <li>
+              <strong>8 and 10-team leagues:</strong> 8 regular-season weeks,
+              then the top 4 play a 2-week playoff.
+            </li>
+            <li>
+              <strong>12-team leagues:</strong> 7 regular-season weeks, then the
+              top 6 play a 3-week playoff, with the top 2 seeds skipping the
+              first round.
+            </li>
+          </ul>
+          <p>
+            Everyone else plays a consolation bracket for the remaining places.
+            Playoff matchups are set automatically as each week&apos;s scores
+            come in. A league that drafts late plays fewer regular-season weeks,
+            and its playoffs still start on time.
+          </p>
+        </Section>
+
+        <Section title="Discord DMs">
+          <p>
+            Turn on Discord DMs under <strong>Notifications</strong> on the home
+            page to get alerts for your draft turns, trades, waiver results,
+            lineup reminders and weekly results. You choose which ones you get.
+            To receive them, you need to be in the MLE Discord server and allow
+            DMs from its members.
+          </p>
         </Section>
 
         <Section title="Where to find things">
-          <p>
-            <strong>My Roster</strong> — Your fantasy team, lineups, and waivers.{" "}<br></br>
-            <strong>MLE Teams</strong> — Browse every MLE team and their season stats.<br></br> 
-            <strong>Scoreboard</strong> — This week&apos;s matchups and results.{" "}<br></br>
-            <strong>Standings</strong> — League standings and playoff bracket.{" "}<br></br>
-            <strong>Opponents</strong> — Your opponents&apos; fantasy teams .
-          </p>
+          <ul style={{ margin: 0, paddingLeft: "1.25rem", listStyleType: "disc" }}>
+            <li>
+              <strong>Draft</strong>: the Draft Room, until your season starts.
+            </li>
+            <li>
+              <strong>My Roster</strong>: your lineup, plus your Trades and
+              Waivers tabs.
+            </li>
+            <li>
+              <strong>MLE Teams</strong>: every MLE team&apos;s stats, and where
+              you pick up free agents or claim teams on waivers.
+            </li>
+            <li>
+              <strong>Scoreboard</strong>: this week&apos;s matchups and scores.
+            </li>
+            <li>
+              <strong>Standings</strong>: the standings and playoff brackets.
+            </li>
+            <li>
+              <strong>Opponents</strong>: the other managers&apos; rosters, and
+              where you propose trades.
+            </li>
+          </ul>
         </Section>
       </div>
     </div>
