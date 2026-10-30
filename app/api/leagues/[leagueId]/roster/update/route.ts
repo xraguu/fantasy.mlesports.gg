@@ -96,6 +96,12 @@ export async function PUT(
       );
     }
 
+    // Whether this week's matches are being played right now (matchStart
+    // through weekEnd). Used twice: to allow edits during that window (below)
+    // and to keep a currently-empty starting slot from being filled during it
+    // (in the transaction).
+    const activeSlotsLockedThisWeek = await isWeekLocked(fantasyTeam.league.season, week);
+
     // A week that's already over, or whose matches have started, is settled
     // — permanently, regardless of any slot's isLocked flag (which flips
     // back to false once a week ends, since that flag is only ever about
@@ -103,7 +109,17 @@ export async function PUT(
     // week done and historical"). The current week specifically stays
     // editable until its matchStart arrives — see isWeekFrozen's own doc
     // comment for why that's not just "week <= currentWeek."
-    if (await isWeekFrozen(fantasyTeam.league.season, week, fantasyTeam.league.currentWeek)) {
+    //
+    // The exception is the current week while its matches are being played:
+    // then each slot's own lock decides (checked in the transaction below),
+    // so bench spots and any starting spot an admin unlocked can still be
+    // rearranged, while locked starters can't. Once the week's last match
+    // day ends, it's frozen again.
+    const inLiveMatchWindow = week === fantasyTeam.league.currentWeek && activeSlotsLockedThisWeek;
+    if (
+      !inLiveMatchWindow &&
+      (await isWeekFrozen(fantasyTeam.league.season, week, fantasyTeam.league.currentWeek))
+    ) {
       return NextResponse.json(
         { error: "This week's matches have already started and its lineup can't be changed" },
         { status: 423 }
@@ -143,13 +159,11 @@ export async function PUT(
     // exact prior state just read, so a losing concurrent save fails
     // cleanly instead of silently interleaving its writes with this one.
     // A genuinely empty active (non-bench) slot has no RosterSlot row, so
-    // there's nothing for runAutoLockSweep to have locked — without this
-    // check, a manager could drag a team into an empty active slot mid-week
-    // once results start coming in, exactly what the lock rule exists to
-    // prevent. Only applies to the week actually being edited — future
-    // weeks (the cascade below) are never locked yet.
-    const activeSlotsLockedThisWeek = await isWeekLocked(fantasyTeam.league.season, week);
-
+    // there's nothing for runAutoLockSweep to have locked — without the
+    // activeSlotsLockedThisWeek check below, a manager could drag a team into
+    // an empty active slot mid-week once results start coming in, exactly
+    // what the lock rule exists to prevent. Only applies to the week actually
+    // being edited — future weeks (the cascade below) are never locked yet.
     try {
       await prisma.$transaction(async (tx) => {
         const existingSlots = await tx.rosterSlot.findMany({
