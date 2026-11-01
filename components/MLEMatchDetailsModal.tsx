@@ -30,6 +30,7 @@ interface MatchTeam {
 
 export interface MLEMatchDetailsData {
   week: number;
+  mode: "2s" | "3s";
   homeTeam: MatchTeam;
   awayTeam: MatchTeam;
   homePlayers: string[];
@@ -167,7 +168,7 @@ export default function MLEMatchDetailsModal({
           }}
         >
           <h2 style={{ fontSize: "clamp(1.2rem, 5vw, 1.8rem)", fontWeight: 700, color: "#ffffff", margin: 0 }}>
-            {isLoading ? "Loading Match..." : data ? `Week ${data.week} Match` : "Match Details"}
+            {isLoading ? "Loading Match..." : data ? `Week ${data.week} Match (${data.mode})` : "Match Details"}
           </h2>
           <button
             onClick={onClose}

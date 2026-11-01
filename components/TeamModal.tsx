@@ -267,7 +267,8 @@ export default function TeamModal({
     fetchWeeklyStats();
   }, [teamId, fantasyLeagueId]);
 
-  // Fetch the real MLE-vs-MLE match details when a week is selected
+  // Fetch the real MLE-vs-MLE match details when a week is selected, in the
+  // mode (2s or 3s) of the weekly breakdown being viewed
   useEffect(() => {
     if (!selectedWeek || !teamId || !fantasyLeagueId) return;
 
@@ -275,7 +276,7 @@ export default function TeamModal({
       try {
         setLoadingMatchup(true);
         const response = await fetch(
-          `/api/leagues/${fantasyLeagueId}/mle-teams/${teamId}/match-details?week=${selectedWeek}`
+          `/api/leagues/${fantasyLeagueId}/mle-teams/${teamId}/match-details?week=${selectedWeek}&mode=${gameMode}`
         );
 
         if (!response.ok) {
@@ -293,7 +294,7 @@ export default function TeamModal({
     };
 
     fetchMatchData();
-  }, [selectedWeek, teamId, fantasyLeagueId]);
+  }, [selectedWeek, teamId, fantasyLeagueId, gameMode]);
 
   if (!team) return null;
 
