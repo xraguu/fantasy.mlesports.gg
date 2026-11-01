@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { TeamWeeklyStats } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getFantasyStandings, getDoubleWinResultsByTeam, compareStandings, getLastFinishedWeek } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
+import { getTeamSeasonStats } from "@/lib/teamSeasonStats";
 
 /**
  * GET /api/leagues/[leagueId]/standings
@@ -65,6 +65,19 @@ export async function GET(
     const fantasyStandings = await getFantasyStandings(leagueId, undefined, doubleWinResultsByTeamId);
     const standingByTeamId = new Map(fantasyStandings.map((s) => [s.teamId, s]));
 
+    // Every manager's current roster, and each of those MLE teams' season
+    // fantasy points in 2s and in 3s separately (for "top performing team")
+    const rosterSlots = await prisma.rosterSlot.findMany({
+      where: { fantasyTeam: { fantasyLeagueId: leagueId }, week: league.currentWeek },
+      include: { mleTeam: true },
+    });
+    const rosterTeamIds = [...new Set(rosterSlots.map((s) => s.mleTeamId))];
+    const [stats2s, stats3s] = await Promise.all(
+      (["2s", "3s"] as const).map((lens) =>
+        getTeamSeasonStats({ teamIds: rosterTeamIds, season: league.season, throughWeek: league.currentWeek, lens })
+      )
+    );
+
     // Calculate standings for each team
     const standings = await Promise.all(
       fantasyTeams.map(async (team) => {
@@ -105,67 +118,31 @@ export async function GET(
           ...(doubleWinResultsByTeamId.get(team.id) ?? []),
         ]);
 
-        // Get roster slots to find top performing team
-        const rosterSlots = await prisma.rosterSlot.findMany({
-          where: {
-            fantasyTeamId: team.id,
-          },
-          include: {
-            mleTeam: {
-              include: {
-                // This league's own season only
-                weeklyStats: { where: { season: league.season } },
-              },
-            },
-          },
-          distinct: ["mleTeamId"],
-        });
-
-        // Calculate fantasy points for each MLE team
-        const calculateFantasyPoints = (stats: TeamWeeklyStats) => {
-          return (
-            stats.goals * 2 +
-            stats.shots * 0.1 +
-            stats.saves * 1 +
-            stats.assists * 1.5 +
-            stats.demosInflicted * 0.5
-          );
-        };
-
-        interface TopTeamInfo {
-          id: string;
-          name: string;
-          leagueId: string;
-          slug: string;
-          logoPath: string;
-          primaryColor: string;
-          secondaryColor: string;
-        }
-        let topTeam: TopTeamInfo | null = null;
-        let topTeamFpts = 0;
-
-        rosterSlots.forEach((slot) => {
-          if (!slot.mleTeam) return;
-
-          const weeklyStats = slot.mleTeam.weeklyStats;
-          const totalFantasyPoints = weeklyStats.reduce(
-            (sum, stats) => sum + calculateFantasyPoints(stats),
-            0
-          );
-
-          if (totalFantasyPoints > topTeamFpts) {
-            topTeamFpts = totalFantasyPoints;
-            topTeam = {
-              id: slot.mleTeam.id,
-              name: slot.mleTeam.name,
-              leagueId: slot.mleTeam.leagueId,
-              slug: slot.mleTeam.slug,
-              logoPath: slot.mleTeam.logoPath,
-              primaryColor: slot.mleTeam.primaryColor,
-              secondaryColor: slot.mleTeam.secondaryColor,
-            };
+        // Top performing team: the single best MLE team-and-mode on this
+        // manager's current roster — a team's 2s and 3s points are never
+        // added together
+        let top: { mleTeam: (typeof rosterSlots)[number]["mleTeam"]; mode: "2s" | "3s"; fpts: number } | null = null;
+        for (const slot of rosterSlots.filter((s) => s.fantasyTeamId === team.id)) {
+          for (const [mode, stats] of [["2s", stats2s], ["3s", stats3s]] as const) {
+            const row = stats.get(slot.mleTeamId);
+            if (row && row.weeksPlayed > 0 && (!top || row.fpts > top.fpts)) {
+              top = { mleTeam: slot.mleTeam, mode, fpts: row.fpts };
+            }
           }
-        });
+        }
+        const topTeam = top
+          ? {
+              id: top.mleTeam.id,
+              name: top.mleTeam.name,
+              leagueId: top.mleTeam.leagueId,
+              slug: top.mleTeam.slug,
+              logoPath: top.mleTeam.logoPath,
+              primaryColor: top.mleTeam.primaryColor,
+              secondaryColor: top.mleTeam.secondaryColor,
+            }
+          : null;
+        const topTeamFpts = top?.fpts ?? 0;
+        const topTeamMode = top?.mode ?? null;
 
         return {
           fantasyTeamId: team.id,
@@ -177,6 +154,7 @@ export async function GET(
           avgPoints,
           topTeam: topTeam,
           topTeamFpts,
+          topTeamMode,
           pointsFor: totalPoints,
           pointsAgainst,
           streak: streakString,

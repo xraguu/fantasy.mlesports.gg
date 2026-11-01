@@ -28,6 +28,7 @@ interface Standing {
   avgPoints: number;
   topTeam: TopTeam | null;
   topTeamFpts: number;
+  topTeamMode: "2s" | "3s" | null; // the mode topTeamFpts was scored in
   pointsFor: number;
   pointsAgainst: number;
   streak: string;
@@ -267,9 +268,23 @@ export default function StandingsPage() {
                               <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--text-main)", marginBottom: "0.25rem" }}>
                                   {team.topTeam.leagueId} {team.topTeam.name}
+                                  {team.topTeamMode && (
+                                    <span style={{
+                                      marginLeft: "0.5rem",
+                                      padding: "0.1rem 0.45rem",
+                                      borderRadius: "4px",
+                                      fontSize: "0.75rem",
+                                      fontWeight: 700,
+                                      verticalAlign: "middle",
+                                      background: "rgba(242, 182, 50, 0.15)",
+                                      color: "var(--accent)",
+                                    }}>
+                                      {team.topTeamMode}
+                                    </span>
+                                  )}
                                 </div>
                                 <div style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-                                  {team.topTeamFpts.toFixed(1)} Total Points
+                                  {team.topTeamFpts.toFixed(1)} Total Points{team.topTeamMode ? ` in ${team.topTeamMode}` : ""}
                                 </div>
                               </div>
                             </div>
