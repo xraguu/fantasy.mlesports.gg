@@ -170,6 +170,16 @@ export async function PUT(
           where: { fantasyTeamId, week },
         });
 
+        // A lineup save only rearranges teams already on this roster — a
+        // new team has to come in through a pickup, waiver claim or trade,
+        // each with its own checks (including the match-weekend pickup
+        // lock). Without this, a crafted payload could drop any MLE team
+        // into a bench slot at any time.
+        const rosteredTeamIds = new Set(existingSlots.map((s) => s.mleTeamId));
+        if (filledIncoming.some((slot: IncomingRosterSlot) => !rosteredTeamIds.has(slot.mleTeam!.id))) {
+          throw new ConflictError("That lineup includes a team that isn't on your roster — refresh and try again");
+        }
+
         // The client sends the whole roster on every save, not just the
         // slots it actually changed — so "included in the payload" isn't
         // the same as "being edited." Only treat a slot as a real edit if

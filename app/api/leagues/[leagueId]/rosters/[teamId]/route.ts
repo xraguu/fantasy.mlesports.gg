@@ -361,6 +361,11 @@ export async function GET(
     const lockInstant = lockWeekDates?.matchStart ? etDateTime(lockWeekDates.matchStart, 0, 0) : null;
     const lineupLocksAt = lockInstant && lockInstant > new Date() ? lockInstant.toISOString() : null;
 
+    // Free agent pickups are closed from the current week's matchStart
+    // through its weekEnd (same check the POST and swap routes enforce) —
+    // team-portal shows "Locked" in place of "+ Add" while this is true.
+    const freeAgentPickupsLocked = await isWeekLocked(fantasyTeam.league.season, fantasyTeam.league.currentWeek);
+
     return NextResponse.json({
       fantasyTeam: {
         id: fantasyTeam.id,
@@ -380,6 +385,7 @@ export async function GET(
       week,
       isByeWeek,
       lineupLocksAt,
+      freeAgentPickupsLocked,
       rosterSlots: enrichedSlots,
       record: { wins: myWins, losses: myLosses },
       rank,
