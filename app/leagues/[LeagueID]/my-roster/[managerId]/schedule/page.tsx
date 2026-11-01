@@ -347,7 +347,8 @@ export default function SchedulePage() {
                         textAlign: "center",
                       }}
                     >
-                      {game.result ? (
+                      {/* A week still being played shows its live score with no W/L yet */}
+                      {game.result || (game.myScore !== null && game.oppScore !== null) ? (
                         <div
                           style={{
                             display: "flex",
@@ -356,20 +357,22 @@ export default function SchedulePage() {
                             gap: "0.75rem",
                           }}
                         >
-                          <span
-                            style={{
-                              fontWeight: 700,
-                              fontSize: "1.1rem",
-                              color:
-                                game.result === "W"
-                                  ? "#4ade80"
-                                  : game.result === "L"
-                                  ? "#ef4444"
-                                  : "#facc15",
-                            }}
-                          >
-                            {game.result}
-                          </span>
+                          {game.result && (
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                fontSize: "1.1rem",
+                                color:
+                                  game.result === "W"
+                                    ? "#4ade80"
+                                    : game.result === "L"
+                                    ? "#ef4444"
+                                    : "#facc15",
+                              }}
+                            >
+                              {game.result}
+                            </span>
+                          )}
                           <span
                             style={{
                               fontSize: "1rem",

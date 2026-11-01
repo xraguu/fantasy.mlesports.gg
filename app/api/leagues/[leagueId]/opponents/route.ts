@@ -244,13 +244,9 @@ export async function GET(
       const losses = base?.losses ?? 0;
       const totalPoints = base?.pointsFor ?? 0;
 
-      // avgPoints' denominator has to stay regular-season only too — points
-      // for is already regular-season only (getFantasyStandings excludes
-      // playoffs), so dividing by a games-played count that includes
-      // playoff games would understate the real average.
-      const actualGamesPlayed = matchups.filter(
-        (m) => !m.isPlayoff && m.homeScore !== null && m.awayScore !== null
-      ).length;
+      // avgPoints' denominator counts the same games as points for:
+      // regular-season weeks that are over (getFantasyStandings).
+      const actualGamesPlayed = base?.gamesPlayed ?? 0;
       const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
       const place = base?.rank ?? 0;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { TeamWeeklyStats } from "@prisma/client";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getFantasyStandings, getDoubleWinResultsByTeam, compareStandings } from "@/lib/standings";
+import { getFantasyStandings, getDoubleWinResultsByTeam, compareStandings, getLastFinishedWeek } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
 
 /**
@@ -50,10 +50,11 @@ export async function GET(
       },
     });
 
-    // Get all regular-season matchups for the league (used for streak calc
-    // below) — playoff matchups never count toward standings.
+    // Get the league's finished regular-season matchups (used for streak
+    // calc below) — playoff matchups never count toward standings, and a
+    // week still being played doesn't count until it's over.
     const matchups = await prisma.matchup.findMany({
-      where: { fantasyLeagueId: leagueId, isPlayoff: false },
+      where: { fantasyLeagueId: leagueId, isPlayoff: false, week: { lte: await getLastFinishedWeek(leagueId) } },
     });
 
     // Shared win/loss/points source (honors double-win if enabled on this
@@ -78,9 +79,7 @@ export async function GET(
         const teamMatchups = matchups.filter(
           (m) => m.homeTeamId === team.id || m.awayTeamId === team.id
         );
-        const actualGamesPlayed = teamMatchups.filter(
-          (m) => m.homeScore !== null && m.awayScore !== null
-        ).length;
+        const actualGamesPlayed = base?.gamesPlayed ?? 0;
         const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
         // Double-win results are appended after the matchup results (not

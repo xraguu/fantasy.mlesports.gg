@@ -110,12 +110,11 @@ export async function GET(
 
     // Average is points-per-week-actually-played — deliberately NOT
     // (wins + losses), since double-win bonus credit isn't a separate game.
-    // Playoff matchups don't count toward standings (totalPoints above is
-    // already regular-season only via getFantasyStandings), so they're
-    // excluded from this denominator too — but NOT from sortedMyMatchups
-    // itself, since last/current matchup below should still show a real
-    // playoff game while one's in progress.
-    const gamesPlayed = sortedMyMatchups.filter((m) => !m.isPlayoff).length;
+    // Same games as totalPoints above (getFantasyStandings: regular-season
+    // weeks that are over) — but sortedMyMatchups itself keeps everything,
+    // since last/current matchup below should still show a real playoff or
+    // in-progress game.
+    const gamesPlayed = myStanding?.gamesPlayed ?? 0;
     const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
 
     // "Current Matchup" is whichever real Matchup row exists for the

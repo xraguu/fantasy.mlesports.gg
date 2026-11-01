@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getFantasyStandings, getDoubleWinResultsByTeam } from "@/lib/standings";
+import { getFantasyStandings, getDoubleWinResultsByTeam, getLastFinishedWeek } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
 
 /**
@@ -43,15 +43,17 @@ export async function GET(
     // getFantasyStandings, which needs the exact same (leagueId, no
     // throughWeek) result internally — without passing it through, that was
     // a second, identical query alongside this one.
+    const lastFinishedWeek = await getLastFinishedWeek(leagueId);
     const [doubleWinResultsByTeamId, matchups, rosterSlots] = await Promise.all([
       getDoubleWinResultsByTeam(leagueId),
-      // Playoff matchups never count toward standings — excluded so streak
-      // and avgPoints stay regular-season only, consistent with
-      // getFantasyStandings' wins/losses/points.
+      // Playoff matchups never count toward standings, and a week still being
+      // played doesn't count until it's over — excluded so streak and
+      // avgPoints match getFantasyStandings' wins/losses/points.
       prisma.matchup.findMany({
         where: {
           fantasyLeagueId: leagueId,
           isPlayoff: false,
+          week: { lte: lastFinishedWeek },
           OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
         },
         select: { week: true, homeTeamId: true, awayTeamId: true, homeScore: true, awayScore: true },
@@ -111,10 +113,7 @@ export async function GET(
       totalTeams: standings.length,
       streak,
       totalPoints: standing?.pointsFor ?? 0,
-      avgPoints:
-        matchups.filter((m) => m.homeScore !== null && m.awayScore !== null).length > 0
-          ? (standing?.pointsFor ?? 0) / matchups.filter((m) => m.homeScore !== null && m.awayScore !== null).length
-          : 0,
+      avgPoints: standing && standing.gamesPlayed > 0 ? standing.pointsFor / standing.gamesPlayed : 0,
       roster,
     });
   } catch (error) {

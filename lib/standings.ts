@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { etDateTime } from "@/lib/timezone";
+import type { WeekDateConfig } from "@/lib/weekMatchRange";
 
 export interface TeamStanding {
   teamId: string;
@@ -6,7 +8,37 @@ export interface TeamStanding {
   losses: number;
   pointsFor: number;
   pointsAgainst: number;
+  // Scored regular-season matchups counted above — the denominator for
+  // average points (a double-win bonus isn't a separate game)
+  gamesPlayed: number;
   rank: number;
+}
+
+/**
+ * The last week that's over — 11:59pm ET on its weekEnd date has passed —
+ * and so the last week that counts toward records. A week still being played
+ * has live, changing scores, so it doesn't add to anyone's wins, losses or
+ * points until it ends (normally the moment the next week starts). A league
+ * with no week dates configured falls back to the week before its current one.
+ */
+export async function getLastFinishedWeek(leagueId: string): Promise<number> {
+  const league = await prisma.fantasyLeague.findUnique({
+    where: { id: leagueId },
+    select: { season: true, currentWeek: true },
+  });
+  if (!league) return 0;
+
+  const settings = await prisma.seasonSettings.findFirst({
+    where: { season: league.season },
+    select: { weekDates: true },
+  });
+  const weekDates = (settings?.weekDates as WeekDateConfig[] | undefined) ?? [];
+  if (weekDates.length === 0) return league.currentWeek - 1;
+
+  const now = new Date();
+  return weekDates
+    .filter((w) => w.weekEnd && etDateTime(w.weekEnd, 23, 59) <= now)
+    .reduce((last, w) => Math.max(last, w.week), 0);
 }
 
 export interface DoubleWinWeekResult {
@@ -47,11 +79,13 @@ export async function getDoubleWinResultsByTeam(
   });
   if (!league?.doubleWinEnabled) return result;
 
+  // A week still being played gets no bonus win/loss until it's over
   const regularSeasonWeeks = league.maxTeams === 12 ? 7 : 8;
-  const maxRegularWeek =
-    throughWeek !== undefined
-      ? Math.min(throughWeek, regularSeasonWeeks)
-      : regularSeasonWeeks;
+  const maxRegularWeek = Math.min(
+    throughWeek ?? regularSeasonWeeks,
+    regularSeasonWeeks,
+    await getLastFinishedWeek(leagueId)
+  );
   if (maxRegularWeek <= 0) return result;
 
   const slots = await prisma.rosterSlot.findMany({
@@ -149,12 +183,14 @@ export async function getFantasyStandings(
   // for/against are regular-season only, no matter what week it currently
   // is. Excluded unconditionally here (not just when throughWeek happens to
   // cap at the regular season) since callers routinely fetch standings with
-  // no throughWeek at all once playoffs are underway.
-  const matchupWhere: { fantasyLeagueId: string; isPlayoff: boolean; week?: { lte: number } } = {
+  // no throughWeek at all once playoffs are underway. A week still being
+  // played doesn't count either, until it's over (getLastFinishedWeek).
+  const lastFinishedWeek = await getLastFinishedWeek(leagueId);
+  const matchupWhere = {
     fantasyLeagueId: leagueId,
     isPlayoff: false,
+    week: { lte: throughWeek === undefined ? lastFinishedWeek : Math.min(throughWeek, lastFinishedWeek) },
   };
-  if (throughWeek !== undefined) matchupWhere.week = { lte: throughWeek };
 
   const [matchups, teams] = await Promise.all([
     prisma.matchup.findMany({ where: matchupWhere }),
@@ -166,10 +202,10 @@ export async function getFantasyStandings(
 
   const base = new Map<
     string,
-    { wins: number; losses: number; pointsFor: number; pointsAgainst: number }
+    { wins: number; losses: number; pointsFor: number; pointsAgainst: number; gamesPlayed: number }
   >();
   for (const t of teams) {
-    base.set(t.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 });
+    base.set(t.id, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, gamesPlayed: 0 });
   }
 
   for (const m of matchups) {
@@ -178,6 +214,8 @@ export async function getFantasyStandings(
     const away = base.get(m.awayTeamId);
     if (!home || !away) continue;
 
+    home.gamesPlayed++;
+    away.gamesPlayed++;
     home.pointsFor += m.homeScore;
     home.pointsAgainst += m.awayScore;
     away.pointsFor += m.awayScore;
