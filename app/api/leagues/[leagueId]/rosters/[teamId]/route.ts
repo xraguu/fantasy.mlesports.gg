@@ -322,6 +322,10 @@ export async function GET(
               "2s": toStatBundle(stats2s),
               "3s": toStatBundle(stats3s),
             },
+            standing: {
+              "2s": standingsByLens.get("2s")!.get(slot.mleTeamId) ?? null,
+              "3s": standingsByLens.get("3s")!.get(slot.mleTeamId) ?? null,
+            },
           },
           opponent: opponentTeam
             ? {

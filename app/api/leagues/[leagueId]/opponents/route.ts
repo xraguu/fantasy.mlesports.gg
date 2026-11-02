@@ -321,6 +321,39 @@ export async function GET(
 
         const oppStanding = oppTeam ? standingsByLens.get(lens)!.get(oppTeam.id) ?? null : null;
 
+        // Every slot can be toggled between 2s and 3s on the page (same as
+        // My Roster), so both modes' numbers go along with it.
+        const modeStats = (mode: "2s" | "3s") => {
+          const ms = statsByLens.get(mode)!.get(slot.mleTeamId);
+          const modeOprk = oppTeam ? rankByLens.get(mode)!.get(oppTeam.id) ?? 0 : 0;
+          return {
+            score: ms?.score ?? 0,
+            opponentStanding: oppTeam ? standingsByLens.get(mode)!.get(oppTeam.id) ?? null : null,
+            oprk: modeOprk,
+            fprk: rankByLens.get(mode)!.get(slot.mleTeamId) ?? 0,
+            fpts: ms?.fpts ?? 0,
+            avg: ms?.avg ?? 0,
+            last: ms?.last ?? 0,
+            goals: ms?.goals ?? 0,
+            shots: ms?.shots ?? 0,
+            saves: ms?.saves ?? 0,
+            assists: ms?.assists ?? 0,
+            demos: ms?.demosInflicted ?? 0,
+            teamRecord: ms?.record ?? "0-0",
+            opponentGameRecord: oppTeam ? statsByLens.get(mode)!.get(oppTeam.id)?.record ?? "0-0" : "0-0",
+            opponentFantasyRank: modeOprk,
+          };
+        };
+        const byMode = { "2s": modeStats("2s"), "3s": modeStats("3s") };
+        // Default view: the slot's own mode for 2s/3s slots; for flex/bench,
+        // whichever mode scored higher that week (same as My Roster).
+        const defaultMode: "2s" | "3s" =
+          slot.position === "2s" || slot.position === "3s"
+            ? slot.position
+            : byMode["3s"].score > byMode["2s"].score
+            ? "3s"
+            : "2s";
+
         return {
           slot: slotName,
           id: slot.mleTeamId,
@@ -357,6 +390,8 @@ export async function GET(
           teamRecord: s?.record ?? "0-0",
           opponentGameRecord: oppStats?.record ?? "0-0",
           opponentFantasyRank: oprk,
+          defaultMode,
+          byMode,
         };
       });
 

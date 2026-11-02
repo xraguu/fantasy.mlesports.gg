@@ -58,6 +58,20 @@ interface OpponentRoster {
   teamRecord: string;
   opponentGameRecord: string;
   opponentFantasyRank: number;
+  // Filled slots only: the slot's numbers in each mode, and which mode it
+  // shows first (its own for 2s/3s slots, the higher-scoring one otherwise)
+  defaultMode?: "2s" | "3s";
+  byMode?: Record<"2s" | "3s", Pick<
+    OpponentRoster,
+    | "score" | "opponentStanding" | "oprk" | "fprk" | "fpts" | "avg" | "last"
+    | "goals" | "shots" | "saves" | "assists" | "demos" | "teamRecord"
+    | "opponentGameRecord" | "opponentFantasyRank"
+  >>;
+}
+
+/** A roster slot with its numbers for the given mode (empty slots unchanged). */
+function withMode(team: OpponentRoster, mode: "2s" | "3s"): OpponentRoster {
+  return team.byMode ? { ...team, ...team.byMode[mode] } : team;
 }
 
 // Color tier for how tough an opponent is, from the viewer's perspective —
@@ -186,8 +200,8 @@ export default function OpponentsPage() {
   // Track game mode for stats tab (2s or 3s)
   const [gameMode, setGameMode] = useState<"2s" | "3s">("2s");
 
-  // Track game modes for each slot
-  const [slotModes, setSlotModes] = useState<string[]>([]);
+  // Track game modes for each slot (unset → the slot's own defaultMode)
+  const [slotModes, setSlotModes] = useState<("2s" | "3s")[]>([]);
 
   // League's waiver system (admin-view overview card shows waiver priority
   // or FAAB budget depending on it) and the transactions modal's open/mode
@@ -275,10 +289,11 @@ export default function OpponentsPage() {
   const selectedManager = opponents.find((m) => m.id === selectedManagerId);
   const roster = selectedManager || null;
 
-  // Initialize slot modes when roster changes
+  // Reset per-slot mode overrides when the roster changes, so each slot
+  // falls back to its own defaultMode
   useEffect(() => {
     if (selectedManager && selectedManager.teams) {
-      setSlotModes(selectedManager.teams.map(() => "2s"));
+      setSlotModes([]);
     }
   }, [selectedManager]);
 
@@ -323,6 +338,7 @@ export default function OpponentsPage() {
     if (!roster || !roster.teams) return [];
     return roster.teams
       .filter((team) => team.name)
+      .map((team) => withMode(team, gameMode))
       .sort((a, b) => {
         const aValue = a[statsSortColumn];
         const bValue = b[statsSortColumn];
@@ -332,7 +348,7 @@ export default function OpponentsPage() {
           return aValue < bValue ? 1 : -1;
         }
       });
-  }, [statsSortColumn, statsSortDirection, roster]);
+  }, [statsSortColumn, statsSortDirection, roster, gameMode]);
 
   const handleTeamClick = (rosterTeam: OpponentRoster) => {
     // This is only reachable from within the currently selected opponent's roster,
@@ -1047,10 +1063,11 @@ export default function OpponentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {roster.teams.map((team, index) => {
+                {roster.teams.map((slotTeam, index) => {
+                  const currentMode = slotModes[index] || slotTeam.defaultMode || "2s";
+                  const team = withMode(slotTeam, currentMode);
                   const isEmpty = !team.name;
                   const isBench = team.slot === "be";
-                  const currentMode = slotModes[index] || "2s";
 
                   return (
                     <tr
@@ -1087,7 +1104,7 @@ export default function OpponentsPage() {
                                   e.stopPropagation();
                                   const newModes = [...slotModes];
                                   newModes[index] =
-                                    slotModes[index] === "2s" ? "3s" : "2s";
+                                    currentMode === "2s" ? "3s" : "2s";
                                   setSlotModes(newModes);
                                 }}
                                 style={{

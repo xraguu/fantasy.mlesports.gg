@@ -32,6 +32,10 @@ interface MLETeam {
   primaryColor: string;
   secondaryColor: string;
   stats: { "2s": StatBundle; "3s": StatBundle };
+  standing?: {
+    "2s": WithinLeagueStanding | null;
+    "3s": WithinLeagueStanding | null;
+  };
 }
 
 interface WithinLeagueStanding {
@@ -1799,6 +1803,17 @@ export default function MyRosterPage() {
                                   }
                                 >
                                   {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "var(--text-muted)",
+                                    marginTop: "0.15rem",
+                                  }}
+                                >
+                                  {slot.mleTeam!.stats[currentMode].record}
+                                  {slot.mleTeam!.standing?.[currentMode] &&
+                                    ` (${ordinal(slot.mleTeam!.standing[currentMode]!.rank)})`}
                                 </div>
                               </div>
                             </div>
