@@ -231,10 +231,10 @@ export default function StandingsPage() {
                     <span style={{ color: "#22c55e" }}>{team.wins}</span>-<span style={{ color: "#ef4444" }}>{team.losses}</span>
                   </td>
                   <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 600 }}>
-                    {team.points.toFixed(1)}
+                    {team.points.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--text-muted)" }}>
-                    {team.pointsAgainst.toFixed(1)}
+                    {team.pointsAgainst.toFixed(2)}
                   </td>
                 </tr>
 
@@ -284,7 +284,7 @@ export default function StandingsPage() {
                                   )}
                                 </div>
                                 <div style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
-                                  {team.topTeamFpts.toFixed(1)} Total Points{team.topTeamMode ? ` in ${team.topTeamMode}` : ""}
+                                  {team.topTeamFpts.toFixed(2)} Total Points{team.topTeamMode ? ` in ${team.topTeamMode}` : ""}
                                 </div>
                               </div>
                             </div>
@@ -316,7 +316,7 @@ export default function StandingsPage() {
                               border: "1px solid rgba(255,255,255,0.1)"
                             }}>
                               <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Points For</div>
-                              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-main)" }}>{team.pointsFor.toFixed(1)}</div>
+                              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-main)" }}>{team.pointsFor.toFixed(2)}</div>
                             </div>
                             <div style={{
                               padding: "1rem",
@@ -325,7 +325,7 @@ export default function StandingsPage() {
                               border: "1px solid rgba(255,255,255,0.1)"
                             }}>
                               <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Points Against</div>
-                              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-main)" }}>{team.pointsAgainst.toFixed(1)}</div>
+                              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-main)" }}>{team.pointsAgainst.toFixed(2)}</div>
                             </div>
                             <div style={{
                               padding: "1rem",
@@ -334,7 +334,7 @@ export default function StandingsPage() {
                               border: "1px solid rgba(255,255,255,0.1)"
                             }}>
                               <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Avg Points</div>
-                              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-main)" }}>{team.avgPoints.toFixed(1)}</div>
+                              <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-main)" }}>{team.avgPoints.toFixed(2)}</div>
                             </div>
                             <div style={{
                               padding: "1rem",

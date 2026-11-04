@@ -51,9 +51,9 @@ async function weekDatesBySeason(seasons: number[]): Promise<Map<number, WeekDat
   return new Map(rows.map((r) => [r.season, (r.weekDates as unknown as WeekDateConfig[] | null) ?? []]));
 }
 
-/** One decimal place, e.g. 245.3 */
+/** Two decimal places, e.g. 245.35 */
 function formatScore(points: number): string {
-  return points.toFixed(1);
+  return points.toFixed(2);
 }
 
 /** "you beat X 245.3 to 198.1", "you lost to X ...", or "you tied X at ..." */

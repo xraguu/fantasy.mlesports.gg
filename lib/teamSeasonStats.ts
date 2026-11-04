@@ -159,11 +159,11 @@ export async function getTeamSeasonStats(input: {
       wins: totals.wins,
       losses: totals.losses,
       record: `${totals.wins}-${totals.losses}`,
-      fpts: Math.round(fptsTotal * 10) / 10,
-      avg: weeksPlayed > 0 ? Math.round((fptsTotal / weeksPlayed) * 10) / 10 : 0,
-      score: Math.round((fptsByWeek.get(throughWeek) ?? 0) * 10) / 10,
-      last: Math.round((fptsByWeek.get(throughWeek - 1) ?? 0) * 10) / 10,
-      bestWeek: fptsByWeek.size > 0 ? Math.round(Math.max(...fptsByWeek.values()) * 10) / 10 : 0,
+      fpts: Math.round(fptsTotal * 100) / 100,
+      avg: weeksPlayed > 0 ? Math.round((fptsTotal / weeksPlayed) * 100) / 100 : 0,
+      score: Math.round((fptsByWeek.get(throughWeek) ?? 0) * 100) / 100,
+      last: Math.round((fptsByWeek.get(throughWeek - 1) ?? 0) * 100) / 100,
+      bestWeek: fptsByWeek.size > 0 ? Math.round(Math.max(...fptsByWeek.values()) * 100) / 100 : 0,
       weeksPlayed,
     });
   }

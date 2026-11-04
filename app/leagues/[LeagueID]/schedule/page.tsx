@@ -360,8 +360,8 @@ export default function SchedulePage() {
                               color: "var(--text-main)",
                             }}
                           >
-                            {game.myScore?.toFixed(1)} -{" "}
-                            {game.oppScore?.toFixed(1)}
+                            {game.myScore?.toFixed(2)} -{" "}
+                            {game.oppScore?.toFixed(2)}
                           </span>
                         </div>
                       ) : (

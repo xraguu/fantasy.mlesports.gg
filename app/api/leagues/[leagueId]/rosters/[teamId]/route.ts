@@ -137,9 +137,9 @@ export async function GET(
             id: m.id,
             week: m.week,
             myTeam: fantasyTeam.displayName,
-            myScore: m.homeTeamId === teamId ? Math.round(m.homeScore || 0) : Math.round(m.awayScore || 0),
+            myScore: m.homeTeamId === teamId ? m.homeScore ?? 0 : m.awayScore ?? 0,
             opponent: m.homeTeamId === teamId ? m.awayTeam.displayName : m.homeTeam.displayName,
-            opponentScore: m.homeTeamId === teamId ? Math.round(m.awayScore || 0) : Math.round(m.homeScore || 0),
+            opponentScore: m.homeTeamId === teamId ? m.awayScore ?? 0 : m.homeScore ?? 0,
           }
         : undefined;
 
@@ -394,8 +394,8 @@ export async function GET(
       record: { wins: myWins, losses: myLosses },
       rank,
       totalTeams,
-      totalPoints: Math.round(totalPoints),
-      avgPoints: Math.round(avgPoints * 10) / 10,
+      totalPoints: Math.round(totalPoints * 100) / 100,
+      avgPoints: Math.round(avgPoints * 100) / 100,
       lastMatchup: toMatchupSummary(lastMatchupRow),
       currentMatchup: toMatchupSummary(currentMatchupRow),
     });

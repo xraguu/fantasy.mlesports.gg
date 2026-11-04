@@ -1346,7 +1346,7 @@ export default function TeamModal({
                           color: "#ffffff",
                         }}
                       >
-                        {week.fpts}
+                        {week.fpts.toFixed(2)}
                       </td>
                       <td
                         style={{

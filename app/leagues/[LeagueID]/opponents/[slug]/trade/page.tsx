@@ -667,7 +667,7 @@ export default function TradePage() {
                             </div>
                           </td>
                           <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 600, fontSize: "0.9rem" }}>
-                            {team.fpts.toFixed(1)}
+                            {team.fpts.toFixed(2)}
                           </td>
                           <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.9rem", color: "var(--text-muted)" }}>
                             {team.record}
@@ -887,7 +887,7 @@ export default function TradePage() {
                       >
                         {team.name}
                       </div>
-                      <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(1)}</div>
+                      <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{team.fpts.toFixed(2)}</div>
                       <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{team.record}</div>
                       <input
                         type="checkbox"
@@ -923,7 +923,7 @@ export default function TradePage() {
                       >
                         {oppTeam.name}
                       </div>
-                      <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{oppTeam.fpts.toFixed(1)}</div>
+                      <div style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.8)", textAlign: "right" }}>{oppTeam.fpts.toFixed(2)}</div>
                       <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.7)", textAlign: "center" }}>{oppTeam.record}</div>
                       <input
                         type="checkbox"

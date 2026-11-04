@@ -652,12 +652,12 @@ export default function OpponentsPage() {
                   color: "var(--text-main)",
                 }}
               >
-                {roster.totalPoints} Fantasy Points
+                {roster.totalPoints.toFixed(2)} Fantasy Points
               </span>
               <span
                 style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}
               >
-                {roster.avgPoints} Avg Fantasy Points
+                {roster.avgPoints.toFixed(2)} Avg Fantasy Points
               </span>
             </div>
             {isAdminViewing && (
@@ -744,7 +744,7 @@ export default function OpponentsPage() {
                       marginLeft: "0.5rem",
                     }}
                   >
-                    {roster.lastMatchup.myScore}
+                    {roster.lastMatchup.myScore.toFixed(2)}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
@@ -754,7 +754,7 @@ export default function OpponentsPage() {
                   <span
                     style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
                   >
-                    {roster.lastMatchup.opponentScore}
+                    {roster.lastMatchup.opponentScore.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -801,7 +801,7 @@ export default function OpponentsPage() {
                       marginLeft: "0.5rem",
                     }}
                   >
-                    {roster.currentMatchup.myScore}
+                    {roster.currentMatchup.myScore.toFixed(2)}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
@@ -811,7 +811,7 @@ export default function OpponentsPage() {
                   <span
                     style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
                   >
-                    {roster.currentMatchup.opponentScore}
+                    {roster.currentMatchup.opponentScore.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -1222,7 +1222,7 @@ export default function OpponentsPage() {
                               : "var(--text-muted)",
                         }}
                       >
-                        {team.score > 0 ? team.score.toFixed(1) : "-"}
+                        {team.score > 0 ? team.score.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{
@@ -1299,7 +1299,7 @@ export default function OpponentsPage() {
                           fontSize: "0.95rem",
                         }}
                       >
-                        {team.fpts ? team.fpts.toFixed(1) : "-"}
+                        {team.fpts ? team.fpts.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{
@@ -1309,7 +1309,7 @@ export default function OpponentsPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        {team.avg ? team.avg.toFixed(1) : "-"}
+                        {team.avg ? team.avg.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{
@@ -1319,7 +1319,7 @@ export default function OpponentsPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        {team.last ? team.last.toFixed(1) : "-"}
+                        {team.last ? team.last.toFixed(2) : "-"}
                       </td>
                     </tr>
                   );
@@ -1781,7 +1781,7 @@ export default function OpponentsPage() {
                           color: "var(--accent)",
                         }}
                       >
-                        {team.score > 0 ? team.score.toFixed(1) : "-"}
+                        {team.score > 0 ? team.score.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{
@@ -1801,7 +1801,7 @@ export default function OpponentsPage() {
                           fontSize: "0.95rem",
                         }}
                       >
-                        {team.fpts ? team.fpts.toFixed(1) : "-"}
+                        {team.fpts ? team.fpts.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{
@@ -1811,7 +1811,7 @@ export default function OpponentsPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        {team.avg ? team.avg.toFixed(1) : "-"}
+                        {team.avg ? team.avg.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{
@@ -1821,7 +1821,7 @@ export default function OpponentsPage() {
                           fontSize: "0.9rem",
                         }}
                       >
-                        {team.last ? team.last.toFixed(1) : "-"}
+                        {team.last ? team.last.toFixed(2) : "-"}
                       </td>
                       <td
                         style={{

@@ -1079,7 +1079,7 @@ export default function HomePage() {
                             color: "var(--accent)",
                           }}
                         >
-                          {player.totalPoints.toFixed(1)}
+                          {player.totalPoints.toFixed(2)}
                         </td>
                         <td
                           style={{
@@ -1088,7 +1088,7 @@ export default function HomePage() {
                             color: "var(--text-muted)",
                           }}
                         >
-                          {player.avgPoints.toFixed(1)}
+                          {player.avgPoints.toFixed(2)}
                         </td>
                       </tr>
                     ))
@@ -1360,7 +1360,7 @@ export default function HomePage() {
                               color: "var(--accent)",
                             }}
                           >
-                            {team.points.toFixed(1)}
+                            {team.points.toFixed(2)}
                           </td>
                           <td
                             style={{
@@ -1369,7 +1369,7 @@ export default function HomePage() {
                               color: "var(--text-muted)",
                             }}
                           >
-                            {team.avgPoints.toFixed(1)}
+                            {team.avgPoints.toFixed(2)}
                           </td>
                         </tr>
                       );
@@ -1632,7 +1632,7 @@ export default function HomePage() {
                           color: "var(--accent)",
                         }}
                       >
-                        {team.score}
+                        {team.score.toFixed(2)}
                       </td>
                       <td
                         style={{
@@ -1641,7 +1641,7 @@ export default function HomePage() {
                           fontWeight: 600,
                         }}
                       >
-                        {team.fpts}
+                        {team.fpts.toFixed(2)}
                       </td>
                       <td
                         style={{
@@ -1650,7 +1650,7 @@ export default function HomePage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        {team.last}
+                        {team.last.toFixed(2)}
                       </td>
                       <td
                         style={{
@@ -1659,7 +1659,7 @@ export default function HomePage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        {team.avg}
+                        {team.avg.toFixed(2)}
                       </td>
                       <td
                         style={{

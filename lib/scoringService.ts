@@ -281,7 +281,7 @@ export async function calculateScoresForWeek(
 
     await prisma.rosterSlot.update({
       where: { id: slot.id },
-      data: { fantasyPoints: Math.round(fpts * 10) / 10 },
+      data: { fantasyPoints: Math.round(fpts * 100) / 100 },
     });
     slotsScored++;
   }
@@ -327,8 +327,8 @@ export async function calculateScoresForWeek(
     await prisma.matchup.update({
       where: { id: matchup.id },
       data: {
-        homeScore: Math.round(homeScore * 10) / 10,
-        awayScore: Math.round(awayScore * 10) / 10,
+        homeScore: Math.round(homeScore * 100) / 100,
+        awayScore: Math.round(awayScore * 100) / 100,
       },
     });
     matchupsUpdated++;

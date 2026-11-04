@@ -410,7 +410,7 @@ export default function ScoreboardPage() {
                   ),
                 }}
               >
-                {selectedMatch.team1.score}
+                {selectedMatch.team1.score.toFixed(2)}
               </span>
               <span
                 style={{
@@ -433,7 +433,7 @@ export default function ScoreboardPage() {
                   ),
                 }}
               >
-                {selectedMatch.team2.score}
+                {selectedMatch.team2.score.toFixed(2)}
               </span>
             </div>
 
@@ -649,7 +649,7 @@ export default function ScoreboardPage() {
                       textAlign: "right",
                     }}
                   >
-                    {slot1.mleTeam ? slot1.fantasyPoints.toFixed(1) : "-"}
+                    {slot1.mleTeam ? slot1.fantasyPoints.toFixed(2) : "-"}
                   </div>
 
                   {/* Position */}
@@ -674,7 +674,7 @@ export default function ScoreboardPage() {
                       textAlign: "left",
                     }}
                   >
-                    {slot2.mleTeam ? slot2.fantasyPoints.toFixed(1) : "-"}
+                    {slot2.mleTeam ? slot2.fantasyPoints.toFixed(2) : "-"}
                   </div>
 
                   {/* Team 2 Player */}
@@ -1037,7 +1037,7 @@ export default function ScoreboardPage() {
                                     fontWeight: 600,
                                   }}
                                 >
-                                  {slot.fantasyPoints.toFixed(1)}
+                                  {slot.fantasyPoints.toFixed(2)}
                                 </span>
                               </>
                             )}
@@ -1069,7 +1069,7 @@ export default function ScoreboardPage() {
                       textAlign: "right",
                     }}
                   >
-                    {matchup.team1.score.toFixed(1)}
+                    {matchup.team1.score.toFixed(2)}
                   </div>
 
                   {/* Team 2 name/manager */}
@@ -1222,7 +1222,7 @@ export default function ScoreboardPage() {
                                     fontWeight: 600,
                                   }}
                                 >
-                                  {slot.fantasyPoints.toFixed(1)}
+                                  {slot.fantasyPoints.toFixed(2)}
                                 </span>
                               </>
                             )}
@@ -1254,7 +1254,7 @@ export default function ScoreboardPage() {
                       textAlign: "right",
                     }}
                   >
-                    {matchup.team2.score.toFixed(1)}
+                    {matchup.team2.score.toFixed(2)}
                   </div>
                 </div>
 

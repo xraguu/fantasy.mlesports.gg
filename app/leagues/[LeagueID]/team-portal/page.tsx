@@ -881,7 +881,7 @@ export default function TeamPortalPage() {
                               </div>
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 600, fontSize: "0.9rem", color: "var(--accent)" }}>
-                              {slot.fantasyPoints?.toFixed(1) || "-"}
+                              {slot.fantasyPoints?.toFixed(2) || "-"}
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                               <button
@@ -1381,13 +1381,13 @@ export default function TeamPortalPage() {
                     )}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 600, fontSize: "0.95rem" }}>
-                    {team.fpts}
+                    {team.fpts.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {team.avg}
+                    {team.avg.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {team.last}
+                    {team.last.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
                     {team.goals}

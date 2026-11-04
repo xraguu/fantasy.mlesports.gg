@@ -1033,7 +1033,7 @@ export default function DraftPage() {
                           </div>
                           {team.stats ? (
                             <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                              {team.stats.fpts} fpts · {team.stats.gameRecord}
+                              {team.stats.fpts.toFixed(2)} fpts · {team.stats.gameRecord}
                             </div>
                           ) : (
                             <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>No last-season stats</div>

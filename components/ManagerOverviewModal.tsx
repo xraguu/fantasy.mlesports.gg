@@ -140,8 +140,8 @@ export default function ManagerOverviewModal({ leagueId, fantasyTeamId, onClose 
               <StatBox label="Record" value={`${data.wins}-${data.losses}`} />
               <StatBox label="Standing" value={data.rank ? `#${data.rank} of ${data.totalTeams}` : "—"} />
               <StatBox label="Streak" value={data.streak} />
-              <StatBox label="Avg Fpts" value={data.avgPoints.toFixed(1)} />
-              <StatBox label="Total Fpts" value={data.totalPoints.toFixed(1)} />
+              <StatBox label="Avg Fpts" value={data.avgPoints.toFixed(2)} />
+              <StatBox label="Total Fpts" value={data.totalPoints.toFixed(2)} />
             </div>
 
             <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "var(--accent)", marginBottom: "0.75rem" }}>

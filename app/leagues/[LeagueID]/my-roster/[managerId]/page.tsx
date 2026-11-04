@@ -1089,12 +1089,12 @@ export default function MyRosterPage() {
                   color: "var(--text-main)",
                 }}
               >
-                {rosterData.totalPoints ?? 0} Fantasy Points
+                {(rosterData.totalPoints ?? 0).toFixed(2)} Fantasy Points
               </span>
               <span
                 style={{ whiteSpace: "nowrap", color: "var(--text-muted)" }}
               >
-                {rosterData.avgPoints ?? 0} Avg Fantasy Points
+                {(rosterData.avgPoints ?? 0).toFixed(2)} Avg Fantasy Points
               </span>
             </div>
             <div
@@ -1171,7 +1171,7 @@ export default function MyRosterPage() {
                       marginLeft: "0.5rem",
                     }}
                   >
-                    {rosterData.lastMatchup.myScore}
+                    {rosterData.lastMatchup.myScore.toFixed(2)}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
@@ -1181,7 +1181,7 @@ export default function MyRosterPage() {
                   <span
                     style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
                   >
-                    {rosterData.lastMatchup.opponentScore}
+                    {rosterData.lastMatchup.opponentScore.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -1244,7 +1244,7 @@ export default function MyRosterPage() {
                       marginLeft: "0.5rem",
                     }}
                   >
-                    {rosterData.currentMatchup.myScore}
+                    {rosterData.currentMatchup.myScore.toFixed(2)}
                   </span>
                 </div>
                 <div style={{ fontSize: "0.95rem" }}>
@@ -1254,7 +1254,7 @@ export default function MyRosterPage() {
                   <span
                     style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}
                   >
-                    {rosterData.currentMatchup.opponentScore}
+                    {rosterData.currentMatchup.opponentScore.toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -1831,7 +1831,7 @@ export default function MyRosterPage() {
                           }}
                         >
                           {slot.mleTeam
-                            ? slot.mleTeam.stats[currentMode].score.toFixed(1)
+                            ? slot.mleTeam.stats[currentMode].score.toFixed(2)
                             : "-"}
                         </td>
                         <td
@@ -1924,7 +1924,7 @@ export default function MyRosterPage() {
                           }}
                         >
                           {slot.mleTeam
-                            ? slot.mleTeam.stats[currentMode].fpts.toFixed(1)
+                            ? slot.mleTeam.stats[currentMode].fpts.toFixed(2)
                             : "-"}
                         </td>
                         <td
@@ -1936,7 +1936,7 @@ export default function MyRosterPage() {
                           }}
                         >
                           {slot.mleTeam
-                            ? slot.mleTeam.stats[currentMode].avg.toFixed(1)
+                            ? slot.mleTeam.stats[currentMode].avg.toFixed(2)
                             : "-"}
                         </td>
                         <td
@@ -1948,7 +1948,7 @@ export default function MyRosterPage() {
                           }}
                         >
                           {slot.mleTeam
-                            ? slot.mleTeam.stats[currentMode].last.toFixed(1)
+                            ? slot.mleTeam.stats[currentMode].last.toFixed(2)
                             : "-"}
                         </td>
                       </tr>
@@ -2363,7 +2363,7 @@ export default function MyRosterPage() {
                       }}
                     >
                       {team.displayStats.score > 0
-                        ? team.displayStats.score.toFixed(1)
+                        ? team.displayStats.score.toFixed(2)
                         : "-"}
                     </td>
                     <td
@@ -2384,7 +2384,7 @@ export default function MyRosterPage() {
                         fontSize: "0.95rem",
                       }}
                     >
-                      {team.displayStats.fpts.toFixed(1)}
+                      {team.displayStats.fpts.toFixed(2)}
                     </td>
                     <td
                       style={{
@@ -2394,7 +2394,7 @@ export default function MyRosterPage() {
                         fontSize: "0.9rem",
                       }}
                     >
-                      {team.displayStats.avg.toFixed(1)}
+                      {team.displayStats.avg.toFixed(2)}
                     </td>
                     <td
                       style={{
@@ -2404,7 +2404,7 @@ export default function MyRosterPage() {
                         fontSize: "0.9rem",
                       }}
                     >
-                      {team.displayStats.last.toFixed(1)}
+                      {team.displayStats.last.toFixed(2)}
                     </td>
                     <td
                       style={{

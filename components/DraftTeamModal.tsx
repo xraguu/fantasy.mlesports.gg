@@ -434,7 +434,7 @@ export default function DraftTeamModal({
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
                 {[
-                  { label: "Fantasy Pts", value: historicalStats.fpts },
+                  { label: "Fantasy Pts", value: historicalStats.fpts.toFixed(2) },
                   { label: "Goals", value: historicalStats.goals },
                   { label: "Goals Against", value: historicalStats.goalsAgainst },
                   { label: "Shots", value: historicalStats.shots },
