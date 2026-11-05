@@ -18,7 +18,7 @@ interface PlayerWithStats {
     totalSaves: number;
     totalAssists: number;
     totalDemosInflicted: number;
-    gamesPlayed: number;
+    matchesPlayed: number;
   } | null;
   standardStats: {
     totalGoals: number;
@@ -26,7 +26,7 @@ interface PlayerWithStats {
     totalSaves: number;
     totalAssists: number;
     totalDemosInflicted: number;
-    gamesPlayed: number;
+    matchesPlayed: number;
   } | null;
 }
 
@@ -1054,7 +1054,7 @@ export default function TeamModal({
                             color: "rgba(255,255,255,0.8)",
                           }}
                         >
-                          {stats?.gamesPlayed || 0}
+                          {stats?.matchesPlayed || 0}
                         </td>
                       </tr>
                     );

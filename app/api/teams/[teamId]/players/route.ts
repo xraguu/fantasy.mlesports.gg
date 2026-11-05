@@ -21,8 +21,9 @@ function sumWeeks(rows: WeekRow[]) {
     totalSaves: rows.reduce((sum, r) => sum + r.saves, 0),
     totalAssists: rows.reduce((sum, r) => sum + r.assists, 0),
     totalDemosInflicted: rows.reduce((sum, r) => sum + r.demosInflicted, 0),
-    // Real games played, not weeks played — a week can be a multi-game series.
-    gamesPlayed: rows.reduce((sum, r) => sum + r.wins + r.losses, 0),
+    // Usages: matches played, not games — each row is one week's match in
+    // this mode (its wins/losses are the team's games, e.g. 5 for a series).
+    matchesPlayed: rows.length,
   };
 }
 
