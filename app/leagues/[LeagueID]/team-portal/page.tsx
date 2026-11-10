@@ -19,17 +19,20 @@ interface MLETeam {
 }
 
 interface TeamWithStats extends MLETeam {
-  rank: number;
-  fpts: number;
-  avg: number;
-  last: number;
-  goals: number;
-  shots: number;
-  saves: number;
-  assists: number;
-  demos: number;
-  record: string;
-  status: "free-agent" | "waiver" | "rostered";
+  // Optional so a minimal MLETeam (e.g. a roster slot's team, which has no
+  // season stats fetched alongside it) can still be opened in TeamModal —
+  // the modal itself already treats all of these as optional.
+  rank?: number;
+  fpts?: number;
+  avg?: number;
+  last?: number;
+  goals?: number;
+  shots?: number;
+  saves?: number;
+  assists?: number;
+  demos?: number;
+  record?: string;
+  status?: "free-agent" | "waiver" | "rostered";
   rosteredBy?: { rosterName: string; managerName: string; fantasyTeamId: string };
 }
 
@@ -66,7 +69,10 @@ interface RosterData {
       id: string;
       name: string;
       leagueId: string;
+      slug: string;
       logoPath: string;
+      primaryColor: string;
+      secondaryColor: string;
     } | null;
   }>;
   record?: {
@@ -341,8 +347,8 @@ export default function TeamPortalPage() {
 
     // Then sort the filtered data
     return filteredData.sort((a, b) => {
-      const aValue = a[sortColumn];
-      const bValue = b[sortColumn];
+      const aValue = a[sortColumn] ?? 0;
+      const bValue = b[sortColumn] ?? 0;
 
       if (sortDirection === "asc") {
         return aValue > bValue ? 1 : -1;
@@ -560,7 +566,7 @@ export default function TeamPortalPage() {
         >
           <div
             style={{
-              width: "min(900px, 92vw)",
+              width: "min(560px, 92vw)",
               background: "linear-gradient(135deg, #1a2332 0%, #0f1419 100%)",
               border: "2px solid rgba(242, 182, 50, 0.3)",
               borderRadius: "16px",
@@ -831,8 +837,7 @@ export default function TeamPortalPage() {
                     <thead>
                       <tr style={{ borderBottom: "2px solid rgba(255, 255, 255, 0.2)" }}>
                         <th style={{ padding: "0.75rem 0.5rem", textAlign: "left", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Team</th>
-                        <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}>Score</th>
-                        <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600 }}></th>
+                        <th style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontSize: "0.85rem", color: "var(--text-muted)", fontWeight: 600, width: "56px" }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -859,7 +864,13 @@ export default function TeamPortalPage() {
                             }}
                           >
                             <td style={{ padding: "0.75rem 0.5rem" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <div
+                                onClick={() => {
+                                  setSelectedTeam({ ...slot.mleTeam!, status: "rostered" });
+                                  setShowModal(true);
+                                }}
+                                style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", width: "fit-content" }}
+                              >
                                 <Image
                                   src={slot.mleTeam!.logoPath}
                                   alt={slot.mleTeam!.name}
@@ -867,7 +878,11 @@ export default function TeamPortalPage() {
                                   height={24}
                                   style={{ borderRadius: "4px" }}
                                 />
-                                <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>
+                                <span
+                                  style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)", transition: "color 0.2s" }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.color = "var(--accent)")}
+                                  onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-main)")}
+                                >
                                   {slot.mleTeam!.leagueId} {slot.mleTeam!.name}
                                 </span>
                                 {slot.isLocked && (
@@ -879,9 +894,6 @@ export default function TeamPortalPage() {
                                   </span>
                                 )}
                               </div>
-                            </td>
-                            <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 600, fontSize: "0.9rem", color: "var(--accent)" }}>
-                              {slot.fantasyPoints?.toFixed(2) || "-"}
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                               <button
@@ -1381,13 +1393,13 @@ export default function TeamPortalPage() {
                     )}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 600, fontSize: "0.95rem" }}>
-                    {team.fpts.toFixed(2)}
+                    {(team.fpts ?? 0).toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {team.avg.toFixed(2)}
+                    {(team.avg ?? 0).toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {team.last.toFixed(2)}
+                    {(team.last ?? 0).toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
                     {team.goals}
