@@ -37,8 +37,26 @@ export async function register() {
     const { runStatsRefresh } = await import("@/lib/statsRefresh");
     const { runAutoLockSweep } = await import("@/lib/autoLock");
     const { runWaiverProcessingSweep } = await import("@/lib/waiverProcessing");
+    const { runCsvImports } = await import("@/lib/csvImports");
 
     const refresh = async () => {
+      try {
+        // Player names/salaries/team assignments/franchise staff — unlike
+        // team/player performance stats below, nothing else ever refreshes
+        // this, so it used to only ever update when an admin manually
+        // clicked "Players & Franchise Staff" on the CSV Import page.
+        // Confirmed stale in practice: salaries drifted out of sync with
+        // Sprocket's live numbers for ~5% of players before this existed.
+        // Diff-based (lib/csvImports.ts), so a quiet cycle with nothing
+        // changed is a cheap no-op.
+        const [playersResult] = await runCsvImports(["players"]);
+        if (playersResult.error) {
+          console.error("[stats-refresh] Scheduled players import failed:", playersResult.error);
+        }
+      } catch (error) {
+        console.error("[stats-refresh] Scheduled players import failed:", error);
+      }
+
       try {
         // Every league's own currentWeek/lock state/roster carry-forward is
         // otherwise only ever advanced lazily, from that specific league's
