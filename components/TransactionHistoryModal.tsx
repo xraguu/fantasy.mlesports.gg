@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { formatFaab } from "@/lib/tradeFaab";
 
 interface TeamRef {
   id: string;
@@ -27,6 +28,8 @@ interface TransactionItem {
   receiverGivesTeams?: TeamRef[];
   proposerDropsTeams?: TeamRef[];
   receiverDropsTeams?: TeamRef[];
+  proposerFaab?: number; // FAAB dollars each side of a trade sends (0 = none)
+  receiverFaab?: number;
   status: string;
   timestamp: string;
 }
@@ -222,6 +225,12 @@ export default function TransactionHistoryModal({
                             <span style={{ color: "var(--text-main)" }}>{team.leagueId} {team.name}</span>
                           </div>
                         ))}
+                        {(t.receiverFaab ?? 0) > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                            <span style={{ color: "#22c55e", fontWeight: 700 }}>+</span>
+                            <span style={{ color: "var(--text-main)" }}>{formatFaab(t.receiverFaab ?? 0)}</span>
+                          </div>
+                        )}
                         {(t.proposerDropsTeams ?? []).map((team) => (
                           <div key={`pdrop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
                             <span style={{ color: "#ef4444", fontWeight: 700 }}>−</span>
@@ -241,6 +250,12 @@ export default function TransactionHistoryModal({
                             <span style={{ color: "var(--text-main)" }}>{team.leagueId} {team.name}</span>
                           </div>
                         ))}
+                        {(t.proposerFaab ?? 0) > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                            <span style={{ color: "#22c55e", fontWeight: 700 }}>+</span>
+                            <span style={{ color: "var(--text-main)" }}>{formatFaab(t.proposerFaab ?? 0)}</span>
+                          </div>
+                        )}
                         {(t.receiverDropsTeams ?? []).map((team) => (
                           <div key={`rdrop-${team.id}`} style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
                             <span style={{ color: "#ef4444", fontWeight: 700 }}>−</span>

@@ -10,7 +10,7 @@ Managers draft real MLE teams (not individual players) into 2s, 3s and flex slot
 - **Drafts.** Snake or linear drafts with a pick timer. A manager can turn on autodraft, and the site picks for anyone whose timer runs out.
 - **Rosters and lineups.** Each league sets its number of 2s, 3s, flex and bench slots. Lineups lock automatically when a week's matches start.
 - **Waivers.** FAAB bidding or waiver priority, processed on a schedule the admins set.
-- **Trades.** Managers propose and accept trades, and admins have a 12-hour window to veto each one.
+- **Trades.** Managers propose and accept trades, and admins have a 12-hour window to veto each one. In FAAB leagues, FAAB budget can be traded too.
 - **Scoring.** Stats come from MLE's public Sprocket datasets and refresh every 2 hours. Admins can override a team's stats by hand.
 - **Matchups, standings and playoffs.** Weekly scoreboards, standings, playoff brackets and final standings.
 - **Discord DM notifications.** Optional DMs for draft turns, trades, waiver results, lineup reminders and weekly results. See [Discord notifications](#discord-notifications).
@@ -77,7 +77,7 @@ Locally these go in `.env.local`; on the server, in `.env` next to the Docker Co
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `AUTH_SECRET` | Yes | Signs sign-in sessions. Generate one with `openssl rand -base64 32` |
-| `AUTH_URL` | In production | The site's public address, such as `https://fantasy.mlesports.gg`. Also used for links in DMs |
+| `AUTH_URL` | In production | The site's public address, such as `https://fantasy.mlesports.gg`. Also used for links in DMs, except a localhost address: DMs from a local copy link to `https://fantasy.mlesports.gg` |
 | `AUTH_DISCORD_ID` | Yes | The Discord application's client ID |
 | `AUTH_DISCORD_SECRET` | Yes | The Discord application's client secret |
 | `ADMIN_DISCORD_IDS` | Yes | Comma-separated Discord user IDs (no spaces) that become admins on their first sign-in. After that, roles are changed on the admin Users page |
@@ -123,8 +123,8 @@ The site runs its own scheduled jobs inside the server process, started from [`i
 
 The site can DM managers and admins through a Discord bot. It only sends one-way messages; it doesn't read messages or take commands.
 
-- The bot is the "Bot" of the same Discord application used for sign-in. Set its token as `DISCORD_BOT_TOKEN`.
-- The bot must be in the MLE Discord server. Discord only lets it DM members of a server it shares with them who allow DMs from that server's members.
+- The bot is the MLE Fantasy alert bot, its own Discord application (client ID `1558281951033425930`), separate from the application used for sign-in. Set its bot token as `DISCORD_BOT_TOKEN`.
+- The bot must be in the MLE Discord server. Discord only lets it DM members of a server it shares with them who allow DMs from that server's members. Add it with this invite link (it needs no permissions, only to be a member): https://discord.com/oauth2/authorize?client_id=1558281951033425930&scope=bot&permissions=0
 - Users turn each type of DM on or off under **Notifications** on the home page.
 - The admin **Notifications** page shows whether the bot is set up, what was sent recently and any failures. It also has a button to send yourself a test DM.
 

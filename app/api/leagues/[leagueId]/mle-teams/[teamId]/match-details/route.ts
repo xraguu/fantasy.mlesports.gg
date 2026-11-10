@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse } from "csv-parse/sync";
 import { prisma } from "@/lib/prisma";
-import { SPROCKET_BASE_URL, fetchCsvText } from "@/lib/sprocketStats";
+import { SPROCKET_BASE_URL, fetchCsvText, MATCH_GAMEMODE_TO_KEY, SprocketMatch } from "@/lib/sprocketStats";
 import { getEffectiveWeekMatchRange } from "@/lib/weekMatchRange";
 
 interface RoundRow {
@@ -58,8 +58,9 @@ function aggregateTeamStats(rows: PlayerStatRow[]) {
 }
 
 /**
- * GET /api/leagues/[leagueId]/mle-teams/[teamId]/match-details?week=X
- * Returns the real MLE-vs-MLE match series for this team in the given week:
+ * GET /api/leagues/[leagueId]/mle-teams/[teamId]/match-details?week=X&mode=2s|3s
+ * Returns the real MLE-vs-MLE match series for this team in the given week
+ * and mode (2s by default — each week has a separate Doubles and Standard match):
  * per-round scores + team stats, and the distinct players who appeared for
  * each side (handles substitutions). Round/player-level detail isn't stored
  * in our DB, so it's fetched live from Sprocket, filtered to the match found
@@ -78,6 +79,7 @@ export async function GET(
       return NextResponse.json({ error: "week is required" }, { status: 400 });
     }
     const week = parseInt(weekParam);
+    const mode = searchParams.get("mode") === "3s" ? "3s" : "2s";
 
     // Real MLE match data already exists for every week of the season
     // (it's already over), but this app still paces fantasy stats one week
@@ -131,7 +133,8 @@ export async function GET(
 
     const { start, end } = (await getEffectiveWeekMatchRange(weekDates, week))!;
 
-    const match = await prisma.match.findFirst({
+    // Usually two: the week's Doubles and Standard matches
+    const weekMatches = await prisma.match.findMany({
       where: {
         scheduledDate: { gte: start, lt: end },
         OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }],
@@ -139,7 +142,7 @@ export async function GET(
       include: { homeTeam: true, awayTeam: true },
     });
 
-    if (!match) {
+    if (weekMatches.length === 0) {
       return NextResponse.json({
         match: null,
         message: "No match found for this team in the specified week",
@@ -152,10 +155,27 @@ export async function GET(
     // translation is needed here.
     const sprocketSeason = league.season;
 
-    const [roundsCsv, playerStatsCsv] = await Promise.all([
+    const [roundsCsv, playerStatsCsv, matchesCsv] = await Promise.all([
       fetchCsvText(`${SPROCKET_BASE_URL}/rounds_s${sprocketSeason}.csv`),
       fetchCsvText(`${SPROCKET_BASE_URL}/player_stats_s${sprocketSeason}.csv`),
+      fetchCsvText(`${SPROCKET_BASE_URL}/matches.csv`),
     ]);
+
+    // Our Match rows don't store the mode, so pick the requested one using
+    // matches.csv's game_mode
+    const candidateIds = new Set(weekMatches.map((m) => m.id));
+    const modeById = new Map(
+      (parse(matchesCsv, { columns: true, skip_empty_lines: true, trim: true }) as SprocketMatch[])
+        .filter((m) => candidateIds.has(m.match_id))
+        .map((m) => [m.match_id, MATCH_GAMEMODE_TO_KEY[m.game_mode]])
+    );
+    const match = weekMatches.find((m) => modeById.get(m.id) === mode);
+    if (!match) {
+      return NextResponse.json({
+        match: null,
+        message: `No ${mode} match found for this team in the specified week`,
+      });
+    }
 
     const allRounds = parse(roundsCsv, {
       columns: true,
@@ -214,6 +234,7 @@ export async function GET(
 
     return NextResponse.json({
       week,
+      mode,
       homeTeam: {
         id: match.homeTeam.id,
         name: match.homeTeam.name,

@@ -131,8 +131,8 @@ export async function getTeamHistoricalStats(
       gameWins: totals.gameWins,
       gameLosses: totals.gameLosses,
       gameRecord: `${totals.gameWins}-${totals.gameLosses}`,
-      fpts: Math.round(fpts * 10) / 10,
-      avg: Math.round(avg * 10) / 10,
+      fpts: Math.round(fpts * 100) / 100,
+      avg: Math.round(avg * 100) / 100,
     });
   }
 

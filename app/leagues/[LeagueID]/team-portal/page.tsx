@@ -55,6 +55,7 @@ interface RosterData {
       be: number;
     };
   };
+  freeAgentPickupsLocked: boolean;
   rosterSlots: Array<{
     id: string;
     position: string;
@@ -880,7 +881,7 @@ export default function TeamPortalPage() {
                               </div>
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 600, fontSize: "0.9rem", color: "var(--accent)" }}>
-                              {slot.fantasyPoints?.toFixed(1) || "-"}
+                              {slot.fantasyPoints?.toFixed(2) || "-"}
                             </td>
                             <td style={{ padding: "0.75rem 0.5rem", textAlign: "center" }}>
                               <button
@@ -1319,6 +1320,22 @@ export default function TeamPortalPage() {
                       >
                         Draft in progress
                       </div>
+                    ) : team.status === "free-agent" && rosterData?.freeAgentPickupsLocked ? (
+                      <div
+                        title="Free agent pickups are locked while this week's matches are being played — they reopen once the week is over"
+                        style={{
+                          border: "1px solid var(--text-muted)",
+                          borderRadius: "6px",
+                          padding: "0.4rem 0.9rem",
+                          fontSize: "0.85rem",
+                          color: "var(--text-muted)",
+                          fontWeight: 600,
+                          display: "inline-block",
+                          cursor: "not-allowed",
+                        }}
+                      >
+                        Locked
+                      </div>
                     ) : team.status === "free-agent" ? (
                       <button
                         className="btn btn-warning"
@@ -1364,13 +1381,13 @@ export default function TeamPortalPage() {
                     )}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: 600, fontSize: "0.95rem" }}>
-                    {team.fpts}
+                    {team.fpts.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {team.avg}
+                    {team.avg.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-                    {team.last}
+                    {team.last.toFixed(2)}
                   </td>
                   <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontSize: "0.9rem" }}>
                     {team.goals}

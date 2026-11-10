@@ -105,7 +105,7 @@ export async function GET(
           week: stat.week,
           gamemode: stat.gamemode,
           opponent: opponentName ?? "—",
-          fpts: Math.round(fpts * 10) / 10,
+          fpts: Math.round(fpts * 100) / 100,
           sprocketRating: stat.sprocketRating,
           goals: stat.goals,
           saves: stat.saves,

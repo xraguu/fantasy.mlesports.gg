@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
-import { getFantasyStandings, getDoubleWinResultsByTeam, DoubleWinWeekResult, compareStandings } from "@/lib/standings";
+import { getFantasyStandings, getDoubleWinResultsByTeam, getLastFinishedWeek, DoubleWinWeekResult, compareStandings } from "@/lib/standings";
 import { computeStreak } from "@/lib/streak";
 import { getCurrentSeason } from "@/lib/currentWeek";
 
@@ -50,10 +50,13 @@ export async function GET() {
     // Win/loss/points per team, computed per-league so double-win bonuses
     // (which are league-scoped) are honored correctly for each league.
     const leagueIds = [...new Set(fantasyTeams.map((t) => t.fantasyLeagueId))];
-    const [standingsByLeague, doubleWinByLeague] = await Promise.all([
+    const [standingsByLeague, doubleWinByLeague, lastFinishedWeeks] = await Promise.all([
       Promise.all(leagueIds.map((id) => getFantasyStandings(id))),
       Promise.all(leagueIds.map((id) => getDoubleWinResultsByTeam(id))),
+      Promise.all(leagueIds.map((id) => getLastFinishedWeek(id))),
     ]);
+    // A week still being played doesn't count toward the streak until it's over
+    const lastFinishedWeekByLeague = new Map(leagueIds.map((id, i) => [id, lastFinishedWeeks[i]]));
     const standingByTeamId = new Map(
       standingsByLeague.flat().map((s) => [s.teamId, s])
     );
@@ -72,11 +75,9 @@ export async function GET() {
       const totalPoints = base?.pointsFor ?? 0;
       const pointsAgainst = base?.pointsAgainst ?? 0;
 
-      const gamesPlayed = [...team.homeMatchups, ...team.awayMatchups].filter(
-        (m) => m.homeScore !== null && m.awayScore !== null
-      ).length;
-
+      const gamesPlayed = base?.gamesPlayed ?? 0;
       const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
+      const lastFinishedWeek = lastFinishedWeekByLeague.get(team.fantasyLeagueId) ?? 0;
       // Win rate's denominator has to be total decisions (wins + losses),
       // not raw games played — a double-win league hands out a second
       // win/loss off the same game (best half of the league by points that
@@ -93,7 +94,7 @@ export async function GET() {
       // the more recent of the two, matching the real order those two
       // results actually happen in.
       const streak = computeStreak([
-        ...team.homeMatchups.map((m) => ({
+        ...team.homeMatchups.filter((m) => m.week <= lastFinishedWeek).map((m) => ({
           week: m.week,
           result:
             m.homeScore === null || m.awayScore === null
@@ -104,7 +105,7 @@ export async function GET() {
               ? ("L" as const)
               : null,
         })),
-        ...team.awayMatchups.map((m) => ({
+        ...team.awayMatchups.filter((m) => m.week <= lastFinishedWeek).map((m) => ({
           week: m.week,
           result:
             m.homeScore === null || m.awayScore === null

@@ -21,14 +21,15 @@ function sumWeeks(rows: WeekRow[]) {
     totalSaves: rows.reduce((sum, r) => sum + r.saves, 0),
     totalAssists: rows.reduce((sum, r) => sum + r.assists, 0),
     totalDemosInflicted: rows.reduce((sum, r) => sum + r.demosInflicted, 0),
-    // Real games played, not weeks played — a week can be a multi-game series.
-    gamesPlayed: rows.reduce((sum, r) => sum + r.wins + r.losses, 0),
+    // Usages: matches played, not games — each row is one week's match in
+    // this mode (its wins/losses are the team's games, e.g. 5 for a series).
+    matchesPlayed: rows.length,
   };
 }
 
 /**
  * GET /api/teams/[teamId]/players
- * Get all players for a specific MLE team, each with their CURRENT-season
+ * Get the playing roster for a specific MLE team, each with their CURRENT-season
  * stats (summed PlayerWeeklyStats through the real current week) — not
  * last season's PlayerHistoricalStats. Before the season actually starts
  * (or for a player with no weeks recorded yet), stats come back null, same
@@ -55,10 +56,14 @@ export async function GET(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Fetch players for this team
+    // Fetch this team's players, leaving out non-playing ones: franchise
+    // staff (FM, GM, AGM, Captain) whose players.csv slot is "NONE", which
+    // the import stores as no roster slot. They still show in the staff
+    // section (GET /api/teams/[teamId]/staff).
     const players = await prisma.mLEPlayer.findMany({
       where: {
         teamId: teamId,
+        OR: [{ rosterSlot: { not: null } }, { staffPosition: null }],
       },
       select: {
         id: true,

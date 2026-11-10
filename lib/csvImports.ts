@@ -341,12 +341,29 @@ async function importSchedule(getCsv: ReturnType<typeof createCsvCache>): Promis
     getCsv("matches.csv"),
   ]);
 
-  // Fixtures first — every Match row references one.
+  // Fixtures first — every Match row references one. A fixture's date is its
+  // match group's start from match_groups.csv. Sprocket can publish a new
+  // season's matches before adding its groups to that file (Season 20 did),
+  // so a fixture whose group is missing is dated from its matches' earliest
+  // scheduling time instead, which is that same group start.
   const groupStart = new Map(groupRows.map((g) => [g.match_group_id, new Date(g.start)]));
+  const earliestMatchTime = new Map<string, Date>();
+  for (const m of matchRows) {
+    const time = new Date(m.scheduling_start_time);
+    if (isNaN(time.getTime())) continue;
+    const current = earliestMatchTime.get(m.fixture_id);
+    if (!current || time < current) earliestMatchTime.set(m.fixture_id, time);
+  }
   const desiredFixtures = new Map<string, Date>();
+  let datedFromMatches = 0;
   for (const f of fixtureRows) {
-    const date = groupStart.get(f.match_group_id);
-    if (date && !isNaN(date.getTime())) desiredFixtures.set(f.fixture_id, date);
+    const groupDate = groupStart.get(f.match_group_id);
+    if (groupDate && !isNaN(groupDate.getTime())) {
+      desiredFixtures.set(f.fixture_id, groupDate);
+    } else if (earliestMatchTime.has(f.fixture_id)) {
+      desiredFixtures.set(f.fixture_id, earliestMatchTime.get(f.fixture_id)!);
+      datedFromMatches++;
+    }
   }
   const existingFixtures = new Map(
     (await prisma.fixture.findMany({ select: { id: true, date: true } })).map((f) => [f.id, f.date])
@@ -427,6 +444,9 @@ async function importSchedule(getCsv: ReturnType<typeof createCsvCache>): Promis
   const notes: string[] = [];
   if (unresolved > 0) notes.push(`${unresolved} match row(s) skipped — league/team not found (e.g. a franchise with no team in that league).`);
   if (undated > 0) notes.push(`${undated} match row(s) skipped — no scheduling date.`);
+  if (datedFromMatches > 0) {
+    notes.push(`${datedFromMatches} fixture(s) dated from their matches — their match group isn't in match_groups.csv yet.`);
+  }
   return {
     stats: [
       { label: "New Matches", value: creates.length },

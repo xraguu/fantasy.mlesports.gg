@@ -7,8 +7,8 @@ import { getTeamSeasonStats, GamemodeLens, compareByFpts } from "@/lib/teamSeaso
 
 /**
  * GET /api/teams/top
- * Top 10 MLE teams by cumulative season fantasy points, for each of three
- * lenses: 2s-only, 3s-only, and combined (2s+3s summed).
+ * Top 10 MLE teams by cumulative season fantasy points, for 2s and for 3s
+ * (the two modes are ranked separately, never summed).
  */
 export async function GET() {
   try {
@@ -21,7 +21,7 @@ export async function GET() {
     // it right now" the automatic stats refresh itself uses.
     const current = await getCurrentSeasonWeek();
     if (!current) {
-      return NextResponse.json({ throughWeek: null, twoS: [], threeS: [], combined: [] });
+      return NextResponse.json({ throughWeek: null, twoS: [], threeS: [] });
     }
 
     // Count only through the latest week of the current season whose
@@ -35,7 +35,7 @@ export async function GET() {
       .filter((wd) => wd.week <= current.week && wd.matchStart && now >= etDateTime(wd.matchStart, 0, 0))
       .map((wd) => wd.week);
     if (startedWeeks.length === 0) {
-      return NextResponse.json({ throughWeek: null, twoS: [], threeS: [], combined: [] });
+      return NextResponse.json({ throughWeek: null, twoS: [], threeS: [] });
     }
     const throughWeek = Math.max(...startedWeeks);
 
@@ -84,13 +84,9 @@ export async function GET() {
         });
     };
 
-    const [twoS, threeS, combined] = await Promise.all([
-      buildTop10("2s"),
-      buildTop10("3s"),
-      buildTop10("combined"),
-    ]);
+    const [twoS, threeS] = await Promise.all([buildTop10("2s"), buildTop10("3s")]);
 
-    return NextResponse.json({ throughWeek, twoS, threeS, combined });
+    return NextResponse.json({ throughWeek, twoS, threeS });
   } catch (error) {
     console.error("Error fetching top teams:", error);
     return NextResponse.json(

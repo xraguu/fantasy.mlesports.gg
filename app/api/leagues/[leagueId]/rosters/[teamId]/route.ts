@@ -110,12 +110,11 @@ export async function GET(
 
     // Average is points-per-week-actually-played — deliberately NOT
     // (wins + losses), since double-win bonus credit isn't a separate game.
-    // Playoff matchups don't count toward standings (totalPoints above is
-    // already regular-season only via getFantasyStandings), so they're
-    // excluded from this denominator too — but NOT from sortedMyMatchups
-    // itself, since last/current matchup below should still show a real
-    // playoff game while one's in progress.
-    const gamesPlayed = sortedMyMatchups.filter((m) => !m.isPlayoff).length;
+    // Same games as totalPoints above (getFantasyStandings: regular-season
+    // weeks that are over) — but sortedMyMatchups itself keeps everything,
+    // since last/current matchup below should still show a real playoff or
+    // in-progress game.
+    const gamesPlayed = myStanding?.gamesPlayed ?? 0;
     const avgPoints = gamesPlayed > 0 ? totalPoints / gamesPlayed : 0;
 
     // "Current Matchup" is whichever real Matchup row exists for the
@@ -138,9 +137,9 @@ export async function GET(
             id: m.id,
             week: m.week,
             myTeam: fantasyTeam.displayName,
-            myScore: m.homeTeamId === teamId ? Math.round(m.homeScore || 0) : Math.round(m.awayScore || 0),
+            myScore: m.homeTeamId === teamId ? m.homeScore ?? 0 : m.awayScore ?? 0,
             opponent: m.homeTeamId === teamId ? m.awayTeam.displayName : m.homeTeam.displayName,
-            opponentScore: m.homeTeamId === teamId ? Math.round(m.awayScore || 0) : Math.round(m.homeScore || 0),
+            opponentScore: m.homeTeamId === teamId ? m.awayScore ?? 0 : m.homeScore ?? 0,
           }
         : undefined;
 
@@ -323,6 +322,10 @@ export async function GET(
               "2s": toStatBundle(stats2s),
               "3s": toStatBundle(stats3s),
             },
+            standing: {
+              "2s": standingsByLens.get("2s")!.get(slot.mleTeamId) ?? null,
+              "3s": standingsByLens.get("3s")!.get(slot.mleTeamId) ?? null,
+            },
           },
           opponent: opponentTeam
             ? {
@@ -362,6 +365,11 @@ export async function GET(
     const lockInstant = lockWeekDates?.matchStart ? etDateTime(lockWeekDates.matchStart, 0, 0) : null;
     const lineupLocksAt = lockInstant && lockInstant > new Date() ? lockInstant.toISOString() : null;
 
+    // Free agent pickups are closed from the current week's matchStart
+    // through its weekEnd (same check the POST and swap routes enforce) —
+    // team-portal shows "Locked" in place of "+ Add" while this is true.
+    const freeAgentPickupsLocked = await isWeekLocked(fantasyTeam.league.season, fantasyTeam.league.currentWeek);
+
     return NextResponse.json({
       fantasyTeam: {
         id: fantasyTeam.id,
@@ -381,12 +389,13 @@ export async function GET(
       week,
       isByeWeek,
       lineupLocksAt,
+      freeAgentPickupsLocked,
       rosterSlots: enrichedSlots,
       record: { wins: myWins, losses: myLosses },
       rank,
       totalTeams,
-      totalPoints: Math.round(totalPoints),
-      avgPoints: Math.round(avgPoints * 10) / 10,
+      totalPoints: Math.round(totalPoints * 100) / 100,
+      avgPoints: Math.round(avgPoints * 100) / 100,
       lastMatchup: toMatchupSummary(lastMatchupRow),
       currentMatchup: toMatchupSummary(currentMatchupRow),
     });

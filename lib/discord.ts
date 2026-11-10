@@ -1,8 +1,10 @@
 /**
  * Minimal Discord bot client for sending DMs, over Discord's REST API (no
  * gateway connection or bot library needed just to send messages). The bot
- * token comes from DISCORD_BOT_TOKEN; it's the "Bot" token of the same
- * Discord application the site uses for sign-in.
+ * token comes from DISCORD_BOT_TOKEN. It belongs to the MLE Fantasy alert
+ * bot, its own Discord application (client ID 1558281951033425930), not the
+ * application the site uses for sign-in. Invite link:
+ * https://discord.com/oauth2/authorize?client_id=1558281951033425930&scope=bot&permissions=0
  *
  * Discord only lets a bot DM someone who shares a server with it (the bot
  * has to be in the MLE Discord) and who allows DMs from that server's

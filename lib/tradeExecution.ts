@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assignTeamToRosterSlot, getRosterCapacity, type RosterConfigShape } from "@/lib/rosterSlotAssignment";
 import { markTeamDroppedForWaivers } from "@/lib/waiverPeriods";
@@ -10,9 +11,30 @@ export function tradeVetoDeadline(acceptedAt: Date): Date {
 }
 
 /**
+ * Moves FAAB from one team to another, inside a trade's transaction. Uses
+ * the same guarded step as waiver bids: the sender is only charged if its
+ * balance still covers the amount, so a waiver run landing at the same
+ * instant can never push it below 0. If it no longer does, this throws,
+ * which rolls the whole trade back; the next sweep tries it again.
+ */
+async function moveFaab(tx: Prisma.TransactionClient, fromTeamId: string, toTeamId: string, amount: number) {
+  if (amount <= 0) return;
+  const charged = await tx.fantasyTeam.updateMany({
+    where: { id: fromTeamId, faabRemaining: { gte: amount } },
+    data: { faabRemaining: { decrement: amount } },
+  });
+  if (charged.count === 0) {
+    throw new Error("A team's FAAB balance changed while the trade was executing");
+  }
+  // COALESCE so a team with no balance set yet still receives it
+  await tx.$executeRaw`UPDATE "FantasyTeam" SET "faabRemaining" = COALESCE("faabRemaining", 0) + ${amount} WHERE "id" = ${toTeamId}`;
+}
+
+/**
  * Actually executes an accepted trade: swaps the traded MLE teams between
- * the two fantasy rosters for the league's current week, marks the trade
- * "accepted", and writes the two Transaction history rows. Used both by the
+ * the two fantasy rosters for the league's current week, moves any FAAB
+ * either side sends, marks the trade "accepted", and writes the two
+ * Transaction history rows. Used both by the
  * 12-hour auto-process sweep and (defensively) inline if a veto attempt
  * arrives after the window has already closed.
  *
@@ -126,6 +148,23 @@ export async function executeTrade(tradeId: string, options: { atLockStart?: boo
     if (proposerAfter > capacity || receiverAfter > capacity) {
       await cancelTrade("Cancelled — a roster no longer had room for this trade by the time it was set to execute");
       return { executed: false as const };
+    }
+
+    // FAAB each side sends. Waivers can spend some of it during the veto
+    // window, so if either side can no longer cover its share, cancel —
+    // checked before anything moves, so a cancelled trade changes nothing.
+    if (trade.proposerFaab > 0 || trade.receiverFaab > 0) {
+      const balances = await tx.fantasyTeam.findMany({
+        where: { id: { in: [trade.proposerTeamId, trade.receiverTeamId] } },
+        select: { id: true, faabRemaining: true },
+      });
+      const balanceOf = (teamId: string) => balances.find((t) => t.id === teamId)?.faabRemaining ?? 0;
+      if (balanceOf(trade.proposerTeamId) < trade.proposerFaab || balanceOf(trade.receiverTeamId) < trade.receiverFaab) {
+        await cancelTrade("Cancelled — a team no longer had the FAAB it was sending in this trade");
+        return { executed: false as const };
+      }
+      await moveFaab(tx, trade.proposerTeamId, trade.receiverTeamId, trade.proposerFaab);
+      await moveFaab(tx, trade.receiverTeamId, trade.proposerTeamId, trade.receiverFaab);
     }
 
     // Remove each side's outgoing teams first, so the incoming teams below

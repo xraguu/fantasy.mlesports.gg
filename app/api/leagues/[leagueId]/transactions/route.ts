@@ -78,6 +78,8 @@ export async function GET(
         receiverGives: true,
         proposerDrops: true,
         receiverDrops: true,
+        proposerFaab: true,
+        receiverFaab: true,
       },
     });
     const tradeMap = new Map(relatedTrades.map((t) => [t.id, t]));
@@ -181,6 +183,8 @@ export async function GET(
           receiverGivesTeams: trade ? resolveTeams(trade.receiverGives) : [],
           proposerDropsTeams: trade ? resolveTeams(trade.proposerDrops) : [],
           receiverDropsTeams: trade ? resolveTeams(trade.receiverDrops) : [],
+          proposerFaab: trade?.proposerFaab ?? 0,
+          receiverFaab: trade?.receiverFaab ?? 0,
           status: transaction.status === "approved" ? "Accepted" : "Denied",
           timestamp: transaction.processedAt,
         };

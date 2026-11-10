@@ -244,13 +244,9 @@ export async function GET(
       const losses = base?.losses ?? 0;
       const totalPoints = base?.pointsFor ?? 0;
 
-      // avgPoints' denominator has to stay regular-season only too — points
-      // for is already regular-season only (getFantasyStandings excludes
-      // playoffs), so dividing by a games-played count that includes
-      // playoff games would understate the real average.
-      const actualGamesPlayed = matchups.filter(
-        (m) => !m.isPlayoff && m.homeScore !== null && m.awayScore !== null
-      ).length;
+      // avgPoints' denominator counts the same games as points for:
+      // regular-season weeks that are over (getFantasyStandings).
+      const actualGamesPlayed = base?.gamesPlayed ?? 0;
       const avgPoints = actualGamesPlayed > 0 ? totalPoints / actualGamesPlayed : 0;
 
       const place = base?.rank ?? 0;
@@ -325,6 +321,39 @@ export async function GET(
 
         const oppStanding = oppTeam ? standingsByLens.get(lens)!.get(oppTeam.id) ?? null : null;
 
+        // Every slot can be toggled between 2s and 3s on the page (same as
+        // My Roster), so both modes' numbers go along with it.
+        const modeStats = (mode: "2s" | "3s") => {
+          const ms = statsByLens.get(mode)!.get(slot.mleTeamId);
+          const modeOprk = oppTeam ? rankByLens.get(mode)!.get(oppTeam.id) ?? 0 : 0;
+          return {
+            score: ms?.score ?? 0,
+            opponentStanding: oppTeam ? standingsByLens.get(mode)!.get(oppTeam.id) ?? null : null,
+            oprk: modeOprk,
+            fprk: rankByLens.get(mode)!.get(slot.mleTeamId) ?? 0,
+            fpts: ms?.fpts ?? 0,
+            avg: ms?.avg ?? 0,
+            last: ms?.last ?? 0,
+            goals: ms?.goals ?? 0,
+            shots: ms?.shots ?? 0,
+            saves: ms?.saves ?? 0,
+            assists: ms?.assists ?? 0,
+            demos: ms?.demosInflicted ?? 0,
+            teamRecord: ms?.record ?? "0-0",
+            opponentGameRecord: oppTeam ? statsByLens.get(mode)!.get(oppTeam.id)?.record ?? "0-0" : "0-0",
+            opponentFantasyRank: modeOprk,
+          };
+        };
+        const byMode = { "2s": modeStats("2s"), "3s": modeStats("3s") };
+        // Default view: the slot's own mode for 2s/3s slots; for flex/bench,
+        // whichever mode scored higher that week (same as My Roster).
+        const defaultMode: "2s" | "3s" =
+          slot.position === "2s" || slot.position === "3s"
+            ? slot.position
+            : byMode["3s"].score > byMode["2s"].score
+            ? "3s"
+            : "2s";
+
         return {
           slot: slotName,
           id: slot.mleTeamId,
@@ -361,6 +390,8 @@ export async function GET(
           teamRecord: s?.record ?? "0-0",
           opponentGameRecord: oppStats?.record ?? "0-0",
           opponentFantasyRank: oprk,
+          defaultMode,
+          byMode,
         };
       });
 
@@ -370,8 +401,8 @@ export async function GET(
         teamName: team.displayName,
         record: `${wins}-${losses}`,
         place: place > 0 ? formatPlacement(place) : "N/A",
-        totalPoints: Math.round(totalPoints),
-        avgPoints: Math.round(avgPoints),
+        totalPoints: Math.round(totalPoints * 100) / 100,
+        avgPoints: Math.round(avgPoints * 100) / 100,
         currentWeek: league.currentWeek,
         waiverPriority: team.waiverPriority,
         faabRemaining: team.faabRemaining,
@@ -381,17 +412,17 @@ export async function GET(
           id: lastMatchup.id,
           week: lastMatchup.week,
           myTeam: team.displayName,
-          myScore: lastMatchup.homeTeamId === team.id ? Math.round(lastMatchup.homeScore || 0) : Math.round(lastMatchup.awayScore || 0),
+          myScore: lastMatchup.homeTeamId === team.id ? lastMatchup.homeScore ?? 0 : lastMatchup.awayScore ?? 0,
           opponent: lastMatchup.homeTeamId === team.id ? lastMatchup.awayTeam.displayName : lastMatchup.homeTeam.displayName,
-          opponentScore: lastMatchup.homeTeamId === team.id ? Math.round(lastMatchup.awayScore || 0) : Math.round(lastMatchup.homeScore || 0),
+          opponentScore: lastMatchup.homeTeamId === team.id ? lastMatchup.awayScore ?? 0 : lastMatchup.homeScore ?? 0,
         } : undefined,
         currentMatchup: currentMatchup ? {
           id: currentMatchup.id,
           week: currentMatchup.week,
           myTeam: team.displayName,
-          myScore: currentMatchup.homeTeamId === team.id ? Math.round(currentMatchup.homeScore || 0) : Math.round(currentMatchup.awayScore || 0),
+          myScore: currentMatchup.homeTeamId === team.id ? currentMatchup.homeScore ?? 0 : currentMatchup.awayScore ?? 0,
           opponent: currentMatchup.homeTeamId === team.id ? currentMatchup.awayTeam.displayName : currentMatchup.homeTeam.displayName,
-          opponentScore: currentMatchup.homeTeamId === team.id ? Math.round(currentMatchup.awayScore || 0) : Math.round(currentMatchup.homeScore || 0),
+          opponentScore: currentMatchup.homeTeamId === team.id ? currentMatchup.awayScore ?? 0 : currentMatchup.homeScore ?? 0,
         } : undefined,
         teams: roster,
       };

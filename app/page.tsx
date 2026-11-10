@@ -158,14 +158,13 @@ export default function HomePage() {
   const [topTeamsByMode, setTopTeamsByMode] = useState<{
     twoS: TopTeam[];
     threeS: TopTeam[];
-    combined: TopTeam[];
-  }>({ twoS: [], threeS: [], combined: [] });
+  }>({ twoS: [], threeS: [] });
   const [loading, setLoading] = useState(true);
   const [userLeagues, setUserLeagues] = useState<UserLeague[]>([]);
   const [loadingLeagues, setLoadingLeagues] = useState(true);
   const [globalLeaderboard, setGlobalLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(true);
-  const [gameMode, setGameMode] = useState<"2s" | "3s" | "all">("all");
+  const [gameMode, setGameMode] = useState<"2s" | "3s">("2s");
   const [managerStatsTab, setManagerStatsTab] = useState<"global" | "league">(
     "global",
   );
@@ -178,7 +177,7 @@ export default function HomePage() {
   const [leagueStandings, setLeagueStandings] = useState<LeagueStandingEntry[]>([]);
   const [loadingLeagueStandings, setLoadingLeagueStandings] = useState(false);
 
-  // Fetch top teams from API (real 2s/3s/combined season leaderboards)
+  // Fetch top teams from API (real 2s and 3s season leaderboards)
   useEffect(() => {
     const fetchTopTeams = async () => {
       try {
@@ -188,15 +187,14 @@ export default function HomePage() {
           setTopTeamsByMode({
             twoS: data.twoS ?? [],
             threeS: data.threeS ?? [],
-            combined: data.combined ?? [],
           });
         } else {
           console.warn("Failed to fetch top teams");
-          setTopTeamsByMode({ twoS: [], threeS: [], combined: [] });
+          setTopTeamsByMode({ twoS: [], threeS: [] });
         }
       } catch (error) {
         console.error("Error fetching top teams:", error);
-        setTopTeamsByMode({ twoS: [], threeS: [], combined: [] });
+        setTopTeamsByMode({ twoS: [], threeS: [] });
       } finally {
         setLoading(false);
       }
@@ -344,12 +342,7 @@ export default function HomePage() {
   };
 
   // Pick the real per-mode top-10 list matching the selected toggle
-  const topTeams =
-    gameMode === "2s"
-      ? topTeamsByMode.twoS
-      : gameMode === "3s"
-        ? topTeamsByMode.threeS
-        : topTeamsByMode.combined;
+  const topTeams = gameMode === "2s" ? topTeamsByMode.twoS : topTeamsByMode.threeS;
 
   const sortedTeams = [...topTeams].sort((a, b) => {
     let aValue: number | string = 0;
@@ -1086,7 +1079,7 @@ export default function HomePage() {
                             color: "var(--accent)",
                           }}
                         >
-                          {player.totalPoints.toFixed(1)}
+                          {player.totalPoints.toFixed(2)}
                         </td>
                         <td
                           style={{
@@ -1095,7 +1088,7 @@ export default function HomePage() {
                             color: "var(--text-muted)",
                           }}
                         >
-                          {player.avgPoints.toFixed(1)}
+                          {player.avgPoints.toFixed(2)}
                         </td>
                       </tr>
                     ))
@@ -1367,7 +1360,7 @@ export default function HomePage() {
                               color: "var(--accent)",
                             }}
                           >
-                            {team.points.toFixed(1)}
+                            {team.points.toFixed(2)}
                           </td>
                           <td
                             style={{
@@ -1376,7 +1369,7 @@ export default function HomePage() {
                               color: "var(--text-muted)",
                             }}
                           >
-                            {team.avgPoints.toFixed(1)}
+                            {team.avgPoints.toFixed(2)}
                           </td>
                         </tr>
                       );
@@ -1415,23 +1408,6 @@ export default function HomePage() {
                 borderRadius: "8px",
               }}
             >
-              <button
-                onClick={() => setGameMode("all")}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  fontSize: "0.9rem",
-                  fontWeight: 600,
-                  border: "none",
-                  cursor: "pointer",
-                  backgroundColor:
-                    gameMode === "all" ? "var(--accent)" : "transparent",
-                  color: gameMode === "all" ? "#1a1a2e" : "var(--text-main)",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Both
-              </button>
               <button
                 onClick={() => setGameMode("2s")}
                 style={{
@@ -1656,7 +1632,7 @@ export default function HomePage() {
                           color: "var(--accent)",
                         }}
                       >
-                        {team.score}
+                        {team.score.toFixed(2)}
                       </td>
                       <td
                         style={{
@@ -1665,7 +1641,7 @@ export default function HomePage() {
                           fontWeight: 600,
                         }}
                       >
-                        {team.fpts}
+                        {team.fpts.toFixed(2)}
                       </td>
                       <td
                         style={{
@@ -1674,7 +1650,7 @@ export default function HomePage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        {team.last}
+                        {team.last.toFixed(2)}
                       </td>
                       <td
                         style={{
@@ -1683,7 +1659,7 @@ export default function HomePage() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        {team.avg}
+                        {team.avg.toFixed(2)}
                       </td>
                       <td
                         style={{

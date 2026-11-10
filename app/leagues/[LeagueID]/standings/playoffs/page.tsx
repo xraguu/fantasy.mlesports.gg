@@ -197,7 +197,7 @@ function TeamRow({
       </div>
       {score !== null && (
         <div style={{ fontSize: "1.3rem", fontWeight: 800, color: won ? theme.accent : "rgba(255,255,255,0.65)", flexShrink: 0, marginLeft: "0.5rem" }}>
-          {score.toFixed(1)}
+          {score.toFixed(2)}
         </div>
       )}
     </div>

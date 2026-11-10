@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getFantasyStandings, formatPlacement } from "@/lib/standings";
+import { getFantasyStandings, formatPlacement, getLastFinishedWeek } from "@/lib/standings";
 
 /**
  * GET /api/leagues/[leagueId]/schedule?teamId=xxx
@@ -94,6 +94,7 @@ export async function GET(
 
     // Shared win/loss/points/rank source (honors double-win if enabled)
     const fantasyStandings = await getFantasyStandings(leagueId);
+    const lastFinishedWeek = await getLastFinishedWeek(leagueId);
     const teamRecords = new Map(
       fantasyStandings.map((s) => [s.teamId, { wins: s.wins, losses: s.losses }])
     );
@@ -119,8 +120,10 @@ export async function GET(
         ? (isHome ? matchup.awayScore : matchup.homeScore)
         : null;
 
+      // The score shows live, but a week still being played has no result
+      // (W/L) until it's over — same as the standings
       let result = null;
-      if (myScore !== null && oppScore !== null) {
+      if (myScore !== null && oppScore !== null && matchup.week <= lastFinishedWeek) {
         result = myScore > oppScore ? "W" : myScore < oppScore ? "L" : "T";
       }
 

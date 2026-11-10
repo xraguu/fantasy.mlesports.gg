@@ -98,6 +98,8 @@ export async function GET(
       receiverGivesTeams: resolveTeams(trade.receiverGives),
       proposerDropsTeams: resolveTeams(trade.proposerDrops),
       receiverDropsTeams: resolveTeams(trade.receiverDrops),
+      proposerFaab: trade.proposerFaab,
+      receiverFaab: trade.receiverFaab,
       status: trade.status === "awaiting_veto" ? "Awaiting veto window" : "Awaiting response",
       timestamp: trade.createdAt,
     }));

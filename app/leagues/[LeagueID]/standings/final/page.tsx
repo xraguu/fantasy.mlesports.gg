@@ -111,7 +111,7 @@ function PodiumPillar({
           {place}
         </div>
         <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: "0.3rem" }}>
-          {standing.points.toFixed(1)} pts
+          {standing.points.toFixed(2)} pts
         </div>
         <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
           <span style={{ color: "#22c55e" }}>{standing.wins}</span>-<span style={{ color: "#ef4444" }}>{standing.losses}</span>
@@ -280,8 +280,8 @@ export default function FinalStandingsPage() {
                   <td style={{ padding: "0.75rem 0.5rem", textAlign: "center", fontWeight: 500 }}>
                     <span style={{ color: "#22c55e" }}>{team.wins}</span>-<span style={{ color: "#ef4444" }}>{team.losses}</span>
                   </td>
-                  <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 600 }}>{team.points.toFixed(1)}</td>
-                  <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--text-muted)" }}>{team.pointsAgainst.toFixed(1)}</td>
+                  <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", fontWeight: 600 }}>{team.points.toFixed(2)}</td>
+                  <td style={{ padding: "0.75rem 0.5rem", textAlign: "right", color: "var(--text-muted)" }}>{team.pointsAgainst.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

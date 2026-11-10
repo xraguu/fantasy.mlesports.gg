@@ -11,13 +11,14 @@ interface PlayerWithStats {
   id: string;
   name: string;
   skillGroup: string | null;
+  salary: number | null; // from players.csv's "salary" column (Players & Franchise Staff import)
   doublesStats: {
     totalGoals: number;
     totalShots: number;
     totalSaves: number;
     totalAssists: number;
     totalDemosInflicted: number;
-    gamesPlayed: number;
+    matchesPlayed: number;
   } | null;
   standardStats: {
     totalGoals: number;
@@ -25,7 +26,7 @@ interface PlayerWithStats {
     totalSaves: number;
     totalAssists: number;
     totalDemosInflicted: number;
-    gamesPlayed: number;
+    matchesPlayed: number;
   } | null;
 }
 
@@ -266,7 +267,8 @@ export default function TeamModal({
     fetchWeeklyStats();
   }, [teamId, fantasyLeagueId]);
 
-  // Fetch the real MLE-vs-MLE match details when a week is selected
+  // Fetch the real MLE-vs-MLE match details when a week is selected, in the
+  // mode (2s or 3s) of the weekly breakdown being viewed
   useEffect(() => {
     if (!selectedWeek || !teamId || !fantasyLeagueId) return;
 
@@ -274,7 +276,7 @@ export default function TeamModal({
       try {
         setLoadingMatchup(true);
         const response = await fetch(
-          `/api/leagues/${fantasyLeagueId}/mle-teams/${teamId}/match-details?week=${selectedWeek}`
+          `/api/leagues/${fantasyLeagueId}/mle-teams/${teamId}/match-details?week=${selectedWeek}&mode=${gameMode}`
         );
 
         if (!response.ok) {
@@ -292,7 +294,7 @@ export default function TeamModal({
     };
 
     fetchMatchData();
-  }, [selectedWeek, teamId, fantasyLeagueId]);
+  }, [selectedWeek, teamId, fantasyLeagueId, gameMode]);
 
   if (!team) return null;
 
@@ -324,6 +326,15 @@ export default function TeamModal({
   };
 
   const sortedPlayers = [...players].sort((a, b) => {
+    // Salary doesn't depend on the 2s/3s stats, so it sorts every player
+    // (no salary sorts last)
+    if (playerSortColumn === "salary") {
+      const aSalary = a.salary ?? -Infinity;
+      const bSalary = b.salary ?? -Infinity;
+      if (aSalary === bSalary) return 0;
+      return playerSortDirection === "asc" ? (aSalary < bSalary ? -1 : 1) : aSalary > bSalary ? -1 : 1;
+    }
+
     const stats = gameMode === "2s" ? "doublesStats" : "standardStats";
     const aStats = a[stats];
     const bStats = b[stats];
@@ -808,6 +819,21 @@ export default function TeamModal({
                     Player
                   </th>
                   <th
+                    onClick={() => handlePlayerSort("salary")}
+                    style={{
+                      padding: "0.75rem 1rem",
+                      textAlign: "right",
+                      fontSize: "0.85rem",
+                      color: "rgba(255,255,255,0.9)",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                  >
+                    Salary
+                    <PlayerSortIcon column="salary" />
+                  </th>
+                  <th
                     onClick={() => handlePlayerSort("goals")}
                     style={{
                       padding: "0.75rem 1rem",
@@ -899,7 +925,7 @@ export default function TeamModal({
                 {loadingPlayers ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -912,7 +938,7 @@ export default function TeamModal({
                 ) : sortedPlayers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       style={{
                         padding: "2rem",
                         textAlign: "center",
@@ -959,6 +985,16 @@ export default function TeamModal({
                           }
                         >
                           {player.name}
+                        </td>
+                        <td
+                          style={{
+                            padding: "0.75rem 1rem",
+                            textAlign: "right",
+                            fontSize: "0.9rem",
+                            color: "rgba(255,255,255,0.95)",
+                          }}
+                        >
+                          {player.salary != null ? player.salary.toFixed(1) : "—"}
                         </td>
                         <td
                           style={{
@@ -1018,7 +1054,7 @@ export default function TeamModal({
                             color: "rgba(255,255,255,0.8)",
                           }}
                         >
-                          {stats?.gamesPlayed || 0}
+                          {stats?.matchesPlayed || 0}
                         </td>
                       </tr>
                     );
@@ -1310,7 +1346,7 @@ export default function TeamModal({
                           color: "#ffffff",
                         }}
                       >
-                        {week.fpts}
+                        {week.fpts.toFixed(2)}
                       </td>
                       <td
                         style={{
